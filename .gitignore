@@ -9,3 +9,4 @@ backups/
 logs/
 logs-test/
 .pytest_cache/
+.tmp/

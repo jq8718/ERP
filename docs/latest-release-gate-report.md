@@ -1,6 +1,6 @@
 # ERP 发布前门禁报告
 
-- 生成时间：2026-06-11 23:12:51
+- 生成时间：2026-06-12 07:14:29
 - 总体结果：通过
 - 检查步骤数：13
 
@@ -17,5 +17,5 @@
 | 低频入口烟测 | OK | 低频入口烟测通过：91 个入口可反转，44 个非写入口可访问，47 个导出或对象级入口仅做反转检查，用户 admin | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py check_low_frequency_entrypoints` |
 | 迁移一致性检查 | OK | No changes detected | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py makemigrations --check --dry-run` |
 | Python 依赖检查 | OK | No broken requirements found. | `D:\XC\2026\ERP\.venv\Scripts\python.exe -m pip check` |
-| 业务冒烟测试 | OK | 业务冒烟测试通过：tag=20260611150601A5F9, operator=admin, 已回滚冒烟数据 | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py business_smoke_test` |
-| 完整自动测试 | OK | Ran 720 tests in 404.019s | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py test --noinput --verbosity 1` |
+| 业务冒烟测试 | OK | 业务冒烟测试通过：tag=20260611230732D4CC, operator=admin, 已回滚冒烟数据 | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py business_smoke_test` |
+| 完整自动测试 | OK | Ran 728 tests in 410.680s | `D:\XC\2026\ERP\.venv\Scripts\python.exe D:\XC\2026\ERP\manage.py test --noinput --verbosity 1` |
