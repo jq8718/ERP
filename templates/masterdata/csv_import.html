@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url list_url_name %}">返回列表</a>
+  <a class="button" href="{% url template_url_name %}">下载导入模板</a>
+</div>
+
+<section class="panel">
+  <h2>上传 CSV</h2>
+  <form method="post" enctype="multipart/form-data" style="padding: 14px;">
+    {% csrf_token %}
+    <label class="form-row">CSV 文件
+      <input type="file" name="import_file" accept=".csv" required>
+    </label>
+    <div class="form-actions">
+      <button class="button primary" type="submit">开始导入</button>
+    </div>
+  </form>
+</section>
+
+{% if errors %}
+  <section class="panel" style="margin-top: 16px;">
+    <h2>校验错误</h2>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>行号</th>
+            <th>字段</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for error in errors %}
+            <tr>
+              <td>{{ error.row }}</td>
+              <td>{{ error.field }}</td>
+              <td>{{ error.message }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

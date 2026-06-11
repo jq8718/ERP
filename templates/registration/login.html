@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block auth_content %}
+<main class="auth-page">
+  <section class="auth-box">
+    <h1>ERP 登录</h1>
+    {% if form.errors %}
+      <div class="error">
+        {% for error in form.non_field_errors %}
+          <div>{{ error }}</div>
+        {% empty %}
+          用户名或密码不正确。
+        {% endfor %}
+      </div>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ form.username.id_for_label }}">用户名</label>
+        {{ form.username }}
+      </div>
+      <div class="field">
+        <label for="{{ form.password.id_for_label }}">密码</label>
+        {{ form.password }}
+      </div>
+      <button class="button primary" type="submit">登录</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

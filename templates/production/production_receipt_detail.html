@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ receipt.production_receipt_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'production:production_receipt_list' %}">返回列表</a>
+  <a class="button" href="{% url 'production:production_receipt_print' receipt.pk %}" target="_blank">打印</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'production:production_receipt_edit' receipt.pk %}">编辑</a>
+  {% endif %}
+  {% if can_confirm %}
+    <form method="post" action="{% url 'production:production_receipt_confirm' receipt.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认生产入库</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">生产单</div>
+    <div class="detail-value">{{ receipt.production_order.production_order_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">入库日期</div>
+    <div class="detail-value">{{ receipt.receipt_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ receipt.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ receipt.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ receipt.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>入库明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>成品</th>
+          <th>入库数量</th>
+          <th>库位</th>
+          <th>批次</th>
+          <th>批次号</th>
+          <th>质检状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in receipt.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.finished_material.material_code }} {{ item.finished_material.material_name }}</td>
+            <td>{{ item.receipt_qty }}</td>
+            <td>{{ item.location.location_code }}</td>
+            <td>{{ item.batch.batch_no|default:"" }}</td>
+            <td>{{ item.batch_no }}</td>
+            <td>{{ item.get_quality_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

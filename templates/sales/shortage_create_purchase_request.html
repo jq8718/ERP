@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-row">
+      <label for="merge_mode">合并方式</label>
+      <select id="merge_mode" name="merge_mode">
+        <option value="by_material">按物料合并</option>
+        <option value="separate_by_order">按销售订单拆分</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>未处理欠料</h2>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      {% if shortages %}
+        <table>
+          <thead>
+            <tr>
+              <th>选择</th>
+              <th>欠料号</th>
+              <th>销售订单</th>
+              <th>物料</th>
+              <th>需求</th>
+              <th>可用</th>
+              <th>缺口</th>
+              <th>必需</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for shortage in shortages %}
+              <tr>
+                <td><input type="checkbox" name="shortage_ids" value="{{ shortage.id }}" checked></td>
+                <td>{{ shortage.shortage_no }}</td>
+                <td>{{ shortage.sales_order.sales_order_no }}</td>
+                <td>{{ shortage.material.material_code }} {{ shortage.material.material_name }}</td>
+                <td>{{ shortage.required_qty }}</td>
+                <td>{{ shortage.available_qty }}</td>
+                <td>{{ shortage.shortage_qty }}</td>
+                <td>{{ shortage.is_required|yesno:"是,否" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty">暂无可生成采购需求的欠料</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit" {% if not shortages %}disabled{% endif %}>生成采购需求</button>
+    <a class="button" href="{% url 'sales:shortage_alert_list' %}">返回欠料列表</a>
+  </div>
+</form>
+{% endblock %}

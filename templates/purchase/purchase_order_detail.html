@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ purchase_order.purchase_order_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'purchase:purchase_order_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'purchase:purchase_order_edit' purchase_order.pk %}">编辑</a>
+  {% endif %}
+  <a class="button" href="{% url 'purchase:purchase_order_print' purchase_order.pk %}" target="_blank">打印</a>
+  {% if can_void %}
+    <form method="post" action="{% url 'purchase:purchase_order_void' purchase_order.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ purchase_order.supplier.supplier_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">订单日期</div>
+    <div class="detail-value">{{ purchase_order.order_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ purchase_order.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ purchase_order.total_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ purchase_order.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ purchase_order.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>采购明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>物料</th>
+          <th>采购数量</th>
+          <th>已到货</th>
+          <th>单价</th>
+          <th>金额</th>
+          <th>需求日期</th>
+          <th>来源需求行</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in purchase_order.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.order_qty }}</td>
+            <td>{{ item.received_qty }}</td>
+            <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ item.line_amount }}{% else %}******{% endif %}</td>
+            <td>{{ item.needed_date|default:"" }}</td>
+            <td>{{ item.purchase_request_item.purchase_request.purchase_request_no|default:"" }}</td>
+            <td>{{ item.get_line_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_create_receipt %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>生成进货单</h2>
+    <form method="post" action="{% url 'purchase:purchase_order_create_receipt' purchase_order.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">入库日期
+          <input type="date" name="receipt_date" value="{{ today }}">
+        </label>
+        <label class="form-row">入库库位
+          <select name="location">
+            <option value="">请选择</option>
+            {% for location in locations %}
+              <option value="{{ location.pk }}">{{ location.location_code }} {{ location.location_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">备注
+          <input type="text" name="remark">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">生成进货单</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+
+{% if can_add_item %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>新增明细</h2>
+    <form method="post" action="{% url 'purchase:purchase_order_item_create' purchase_order.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">物料
+          <select name="material">
+            <option value="">请选择</option>
+            {% for material in materials %}
+              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">采购数量
+          <input type="text" name="order_qty">
+        </label>
+        {% if can_view_amount %}
+          <label class="form-row">采购单价
+            <input type="text" name="unit_price">
+          </label>
+        {% endif %}
+        <label class="form-row">需求日期
+          <input type="date" name="needed_date">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">新增明细</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

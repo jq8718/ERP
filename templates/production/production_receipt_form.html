@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label>生产单</label>
+        <input type="text" value="{{ receipt.production_order.production_order_no }}" disabled>
+      </div>
+      <div class="form-row">
+        <label for="{{ form.receipt_date.id_for_label }}">入库日期</label>
+        {{ form.receipt_date }}
+        {{ form.receipt_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>入库明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>成品</th>
+            <th>入库数量</th>
+            <th>库位</th>
+            <th>批次号</th>
+            <th>质检状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>{{ item_form.instance.finished_material.material_code }} {{ item_form.instance.finished_material.material_name }}</td>
+              <td>{{ item_form.receipt_qty }}{{ item_form.receipt_qty.errors }}</td>
+              <td>{{ item_form.location }}{{ item_form.location.errors }}</td>
+              <td>{{ item_form.batch_no }}{{ item_form.batch_no.errors }}</td>
+              <td>
+                {{ item_form.quality_status }}{{ item_form.quality_status.errors }}
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                {{ item_form.non_field_errors }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">保存</button>
+    <a class="button" href="{% url 'production:production_receipt_detail' receipt.pk %}">返回详情</a>
+  </div>
+</form>
+{% endblock %}

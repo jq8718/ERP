@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ stock_count.stock_count_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'inventory:stock_count_list' %}">返回列表</a>
+  <a class="button" href="{% url 'inventory:stock_count_print' stock_count.pk %}" target="_blank">打印</a>
+  {% if can_confirm %}
+    <form method="post" action="{% url 'inventory:stock_count_confirm' stock_count.pk %}">
+      {% csrf_token %}
+      <input type="text" name="adjust_reason" placeholder="调整原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认调整库存</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">范围类型</div>
+    <div class="detail-value">{{ stock_count.scope_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">范围值</div>
+    <div class="detail-value">{{ stock_count.scope_value }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">快照时间</div>
+    <div class="detail-value">{{ stock_count.snapshot_at }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ stock_count.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ stock_count.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ stock_count.created_at }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>盘点明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>物料</th>
+          <th>批次</th>
+          <th>库位</th>
+          <th>账面数量</th>
+          <th>实盘数量</th>
+          <th>差异数量</th>
+          <th>差异原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in stock_count.items.all %}
+          <tr>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.batch.batch_no|default:"" }}</td>
+            <td>{{ item.location.location_code }}</td>
+            <td>{{ item.book_qty }}</td>
+            <td>{{ item.counted_qty|default:"" }}</td>
+            <td>{{ item.difference_qty }}</td>
+            <td>{{ item.difference_reason }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_add_item %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>新增盘点明细</h2>
+    <form method="post" action="{% url 'inventory:stock_count_item_create' stock_count.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">物料
+          <select name="material">
+            <option value="">请选择</option>
+            {% for material in materials %}
+              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">库位
+          <select name="location">
+            <option value="">请选择</option>
+            {% for location in locations %}
+              <option value="{{ location.pk }}">{{ location.location_code }} {{ location.location_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">批次
+          <select name="batch">
+            <option value="">无批次盘盈</option>
+            {% for batch in batches %}
+              <option value="{{ batch.pk }}">{{ batch.batch_no }} / {{ batch.material.material_code }} / {{ batch.location.location_code }} / {{ batch.remaining_qty }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">账面数量
+          <input type="text" name="book_qty" value="0">
+        </label>
+        <label class="form-row">实盘数量
+          <input type="text" name="counted_qty">
+        </label>
+        <label class="form-row">差异原因
+          <input type="text" name="difference_reason">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">新增明细</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

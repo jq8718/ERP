@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ rule.doc_type }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'approvals:approval_rule_list' %}">返回列表</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">单据类型</div>
+    <div class="detail-value">{{ rule.doc_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">审批级次</div>
+    <div class="detail-value">{{ rule.level_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">审批角色</div>
+    <div class="detail-value">{{ rule.approver_role|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">审批人员</div>
+    <div class="detail-value">{{ rule.approver_user|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">允许重复审批人自动跳过</div>
+    <div class="detail-value">{{ rule.allow_auto_skip_same_user|yesno:"是,否" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">需要二次验证</div>
+    <div class="detail-value">{{ rule.require_second_verify|yesno:"是,否" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ rule.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ rule.created_by|default:"" }}</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>适用条件</h2>
+  <div style="padding: 14px;">
+    {% if rule.condition_json %}
+      <div class="table-wrap" style="border: 0; border-radius: 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>条件</th>
+              <th>值</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for key, value in rule.condition_json.items %}
+              <tr>
+                <td>{{ key }}</td>
+                <td>{{ value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">无额外条件</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>备注</h2>
+  <div style="padding: 14px;">{{ rule.remark|default:"" }}</div>
+</section>
+{% endblock %}

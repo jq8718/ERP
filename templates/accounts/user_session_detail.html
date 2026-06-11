@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>登录会话</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'user_session_list' %}">返回列表</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">用户</div>
+    <div class="detail-value">{{ user_session.user }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ user_session.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">IP</div>
+    <div class="detail-value">{{ user_session.ip_address|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">最近访问</div>
+    <div class="detail-value">{{ user_session.last_seen_at|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ user_session.created_at }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">强制失效时间</div>
+    <div class="detail-value">{{ user_session.revoked_at|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">当前会话</div>
+    <div class="detail-value">{{ is_current_session|yesno:"是,否" }}</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>客户端信息</h2>
+  <div style="padding: 14px;">
+    <div class="muted" style="word-break: break-all;">{{ user_session.user_agent|default:"" }}</div>
+  </div>
+</section>
+
+{% if can_revoke %}
+<section class="panel">
+  <h2>强制失效</h2>
+  <form method="post" action="{% url 'user_session_revoke' user_session.pk %}" style="padding: 14px;">
+    {% csrf_token %}
+    <label class="form-row">当前登录密码
+      <input type="password" name="current_password" autocomplete="current-password">
+    </label>
+    <label class="form-row">操作原因
+      <input type="text" name="reason">
+    </label>
+    <div class="form-actions">
+      <button class="button" type="submit">强制失效</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

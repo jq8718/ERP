@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ order.sales_order_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:sales_order_list' %}">返回列表</a>
+  <a class="button" href="{% url 'sales:sales_order_print' order.pk %}" target="_blank">打印</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'sales:sales_order_edit' order.pk %}">编辑</a>
+  {% endif %}
+  {% if can_submit %}
+    <form method="post" action="{% url 'sales:sales_order_submit' order.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">提交审核</button>
+    </form>
+  {% endif %}
+  {% if can_confirm %}
+    <form method="post" action="{% url 'sales:sales_order_confirm' order.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">审核确认</button>
+    </form>
+  {% endif %}
+  {% if can_create_shipment %}
+    <form method="post" action="{% url 'sales:sales_order_create_shipment' order.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">生成出库单</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'sales:sales_order_void' order.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ order.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">订单日期</div>
+    <div class="detail-value">{{ order.order_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">交期</div>
+    <div class="detail-value">{{ order.delivery_date|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ order.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ order.total_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">审核人</div>
+    <div class="detail-value">{{ order.approved_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">审核时间</div>
+    <div class="detail-value">{{ order.approved_at|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ order.remark|default:"" }}</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 16px;">
+  <h2>订单明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>客户产品</th>
+          <th>成品</th>
+          <th>数量</th>
+          <th>已发货</th>
+          <th>单价</th>
+          <th>金额</th>
+          <th>BOM</th>
+          <th>库存检查</th>
+          <th>行状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.customer_product.customer_product_name }}</td>
+            <td>{{ item.finished_material.material_code }}</td>
+            <td>{{ item.order_qty }}</td>
+            <td>{{ item.shipped_qty }}</td>
+            <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ item.line_amount }}{% else %}******{% endif %}</td>
+            <td>{{ item.locked_bom.bom_no|default:"" }} {{ item.locked_bom_version }}</td>
+            <td>{{ item.get_inventory_check_status_display }}</td>
+            <td>{{ item.get_line_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="10" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>欠料提醒</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>欠料号</th>
+          <th>物料</th>
+          <th>需求</th>
+          <th>可用</th>
+          <th>缺口</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for shortage in order.shortage_alerts.all %}
+          <tr>
+            <td>{{ shortage.shortage_no }}</td>
+            <td>{{ shortage.material.material_code }}</td>
+            <td>{{ shortage.required_qty }}</td>
+            <td>{{ shortage.available_qty }}</td>
+            <td>{{ shortage.shortage_qty }}</td>
+            <td>{{ shortage.get_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">暂无欠料</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

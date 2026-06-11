@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>上传附件</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'files:attachment_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>附件信息</h2>
+  <form method="post" enctype="multipart/form-data" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      <label class="form-row">来源类型
+        <input type="text" name="source_doc_type" placeholder="sales_order">
+      </label>
+      <label class="form-row">来源 ID
+        <input type="text" name="source_doc_id">
+      </label>
+      <label class="form-row">来源单号
+        <input type="text" name="source_doc_no">
+      </label>
+      <label class="form-row">附件文件
+        <input type="file" name="file">
+      </label>
+      <label class="form-row">
+        <span>敏感附件</span>
+        <input type="checkbox" name="is_sensitive">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">上传</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

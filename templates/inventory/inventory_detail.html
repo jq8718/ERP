@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'inventory:inventory_list' %}">返回库存汇总</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">物料</div>
+    <div class="detail-value">{{ inventory.material.material_code }} {{ inventory.material.material_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">库位</div>
+    <div class="detail-value">{{ inventory.location.location_code }} {{ inventory.location.location_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">库存类型</div>
+    <div class="detail-value">{{ inventory.get_inventory_type_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">当前数量</div>
+    <div class="detail-value">{{ inventory.qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">更新时间</div>
+    <div class="detail-value">{{ inventory.updated_at }}</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>相关批次</h2>
+  {% if batches %}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>批次号</th>
+            <th>入库时间</th>
+            <th>期初数量</th>
+            <th>剩余数量</th>
+            <th>成本单价</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for batch in batches %}
+            <tr>
+              <td><a href="{% url 'inventory:inventory_batch_detail' batch.pk %}">{{ batch.batch_no }}</a></td>
+              <td>{{ batch.received_at }}</td>
+              <td>{{ batch.initial_qty }}</td>
+              <td>{{ batch.remaining_qty }}</td>
+              <td>{{ batch.cost_price|default:"-" }}</td>
+              <td>{{ batch.get_batch_status_display }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">暂无相关批次</div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>近期库存流水</h2>
+  {% if transactions %}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>流水号</th>
+            <th>类型</th>
+            <th>批次</th>
+            <th>数量变化</th>
+            <th>来源单号</th>
+            <th>操作人</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for transaction in transactions %}
+            <tr>
+              <td><a href="{% url 'inventory:inventory_transaction_detail' transaction.pk %}">{{ transaction.transaction_no }}</a></td>
+              <td>{{ transaction.get_transaction_type_display }}</td>
+              <td>{{ transaction.batch.batch_no|default:"-" }}</td>
+              <td>{{ transaction.qty_delta }}</td>
+              <td>{{ transaction.source_doc_no }}</td>
+              <td>{{ transaction.created_by.username|default:"-" }}</td>
+              <td>{{ transaction.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">暂无库存流水</div>
+  {% endif %}
+</section>
+{% endblock %}

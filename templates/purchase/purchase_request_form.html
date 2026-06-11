@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.needed_date.id_for_label }}">需求日期</label>
+        {{ form.needed_date }}
+        {{ form.needed_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>需求明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>物料</th>
+            <th>需求数量</th>
+            <th>建议供应商</th>
+            <th>需求日期</th>
+            <th>删除</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
+              <td>{{ item_form.request_qty }}{{ item_form.request_qty.errors }}</td>
+              <td>{{ item_form.suggested_supplier }}{{ item_form.suggested_supplier.errors }}</td>
+              <td>{{ item_form.needed_date }}{{ item_form.needed_date.errors }}</td>
+              <td>
+                {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button" type="submit" name="action" value="draft">保存草稿</button>
+    {% if can_submit_for_approval %}
+      <button class="button primary" type="submit" name="action" value="submit">保存并提交审核</button>
+    {% endif %}
+    {% if is_edit %}
+      <a class="button" href="{% url 'purchase:purchase_request_detail' purchase_request.pk %}">返回详情</a>
+    {% else %}
+      <a class="button" href="{% url 'purchase:purchase_request_list' %}">返回列表</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

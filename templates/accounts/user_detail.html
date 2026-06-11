@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>用户详情</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'account_user_list' %}">返回列表</a>
+  <a class="button primary" href="{% url 'account_user_edit' account_user.pk %}">编辑</a>
+  <a class="button" href="{% url 'account_user_password_reset' account_user.pk %}">重置密码</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">用户名</div>
+    <div class="detail-value">{{ account_user.username }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">姓名</div>
+    <div class="detail-value">{{ account_user.display_name|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">部门</div>
+    <div class="detail-value">{{ account_user.department|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">职位</div>
+    <div class="detail-value">{{ account_user.position|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">账号状态</div>
+    <div class="detail-value">{{ account_user.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">安全级别</div>
+    <div class="detail-value">{{ account_user.get_security_level_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">逻辑删除</div>
+    <div class="detail-value">{{ account_user.is_deleted|yesno:"是,否" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">最后登录</div>
+    <div class="detail-value">{{ account_user.last_login|default:"" }}</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>角色</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>角色编码</th>
+          <th>角色名称</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for role in account_user.roles.all %}
+          <tr>
+            <td><a href="{% url 'role_detail' role.pk %}">{{ role.role_code }}</a></td>
+            <td>{{ role.role_name }}</td>
+            <td>{{ role.get_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">暂无角色</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>有效权限</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>权限码</th>
+          <th>名称</th>
+          <th>类型</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for permission in effective_permissions %}
+          <tr>
+            <td>{{ permission.permission_code }}</td>
+            <td>{{ permission.permission_name }}</td>
+            <td>{{ permission.get_permission_type_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">暂无有效权限</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>最近会话</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>状态</th>
+          <th>IP</th>
+          <th>最近访问</th>
+          <th>创建时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for session in recent_sessions %}
+          <tr>
+            <td><a href="{% url 'user_session_detail' session.pk %}">{{ session.get_status_display }}</a></td>
+            <td>{{ session.ip_address|default:"" }}</td>
+            <td>{{ session.last_seen_at|default:"" }}</td>
+            <td>{{ session.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">暂无会话</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

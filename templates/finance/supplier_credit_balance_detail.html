@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ balance.source_doc_no|default:balance.pk }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:supplier_credit_balance_list' %}">返回列表</a>
+  <a class="button" href="{% url 'finance:supplier_credit_balance_print' balance.pk %}" target="_blank">打印</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ balance.supplier.supplier_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源单据</div>
+    <div class="detail-value">{{ balance.source_doc_type }} {{ balance.source_doc_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">余额金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ balance.balance_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">已使用</div>
+    <div class="detail-value">{% if can_view_amount %}{{ balance.used_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">剩余金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ balance.remaining_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ balance.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ balance.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">处理原因</div>
+    <div class="detail-value">{{ balance.process_reason }}</div>
+  </div>
+</section>
+
+{% if can_apply %}
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>处理供应商余额</h2>
+  <form method="post" action="{% url 'finance:supplier_credit_balance_apply' balance.pk %}" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      <label class="form-row">动作
+        <select name="action_type">
+          {% for value, label in action_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-row">金额
+        <input type="text" name="amount" value="{{ balance.remaining_amount }}">
+      </label>
+      <label class="form-row">目标进货单 ID
+        <input type="text" name="target_purchase_receipt_id">
+      </label>
+      <label class="form-row">原因
+        <input type="text" name="reason">
+      </label>
+      <label class="form-row">当前密码
+        <input type="password" name="current_password" required>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">确认处理</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>处理记录</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>流水号</th>
+          <th>动作</th>
+          <th>金额</th>
+          <th>目标单据</th>
+          <th>原因</th>
+          <th>创建时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in balance.transactions.all %}
+          <tr>
+            <td>{{ row.transaction_no }}</td>
+            <td>{{ row.get_action_type_display }}</td>
+            <td>{% if can_view_amount %}{{ row.amount }}{% else %}******{% endif %}</td>
+            <td>{{ row.target_doc_no }}</td>
+            <td>{{ row.reason }}</td>
+            <td>{{ row.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">暂无处理记录</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

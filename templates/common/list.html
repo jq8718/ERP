@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% load erp_extras %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+{% if create_url_name or page_actions %}
+  <p class="form-actions">
+    {% if create_url_name %}
+      <a class="button primary" href="{% url create_url_name %}">新建</a>
+    {% endif %}
+    {% for label, url_name, style in page_actions %}
+      <a class="button {{ style }}" href="{% url url_name %}{% if active_query_string %}?{{ active_query_string }}{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </p>
+{% endif %}
+{% if has_search or status_choices or extra_filters %}
+  <form method="get" class="panel" style="padding: 12px; margin-bottom: 14px;">
+    <div class="form-actions" style="margin: 0;">
+      {% if has_search %}
+        <input type="text" name="q" value="{{ search_query }}" placeholder="搜索" style="min-width: 220px;">
+      {% endif %}
+      {% if status_choices %}
+        <select name="status" style="min-width: 160px; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;">
+          <option value="">全部状态</option>
+          {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if status_value == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      {% for filter in extra_filters %}
+        <select name="{{ filter.param_name }}" style="min-width: 160px; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;">
+          <option value="">全部{{ filter.label }}</option>
+          {% for value, label in filter.choices %}
+            <option value="{{ value }}" {% if filter.value == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      {% endfor %}
+      <button class="button primary" type="submit">筛选</button>
+      {% if active_query_string %}
+        <a class="button" href="{{ request.path }}">清除</a>
+      {% endif %}
+    </div>
+  </form>
+{% endif %}
+{% if has_search or status_choices or extra_filters or saved_filters %}
+  <section class="panel" style="padding: 12px; margin-bottom: 14px;">
+    <form method="post" action="{% url 'system:saved_filter_save' %}" class="form-actions" style="margin: 0 0 10px;">
+      {% csrf_token %}
+      <input type="hidden" name="module" value="{{ saved_filter_module }}">
+      <input type="hidden" name="query_string" value="{{ active_query_string }}">
+      <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
+      <input type="text" name="filter_name" placeholder="筛选名称" style="min-width: 180px;">
+      <label class="button" style="gap: 6px;">
+        <input type="checkbox" name="is_default"> 设为默认
+      </label>
+      <button class="button" type="submit">保存筛选</button>
+    </form>
+    {% if saved_filters %}
+      <div class="form-actions" style="margin: 0;">
+        {% for saved_filter in saved_filters %}
+          <a class="button" href="{{ request.path }}{% if saved_filter.query_string %}?{{ saved_filter.query_string }}{% endif %}">
+            {{ saved_filter.filter_name }}{% if saved_filter.is_default %}（默认）{% endif %}
+          </a>
+          <form method="post" action="{% url 'system:saved_filter_default' saved_filter.id %}" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
+            <button class="button" type="submit">默认</button>
+          </form>
+          <form method="post" action="{% url 'system:saved_filter_delete' saved_filter.id %}" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
+            <button class="button" type="submit">删除</button>
+          </form>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+{% endif %}
+<div class="table-wrap">
+  {% if object_list %}
+    {% if bulk_actions and bulk_action_url_name %}
+      <form method="post" action="{% url bulk_action_url_name %}">
+        {% csrf_token %}
+    {% endif %}
+      <table>
+        <thead>
+          <tr>
+            {% if bulk_actions and bulk_action_url_name %}
+              <th style="width: 42px;"><input type="checkbox" onclick="document.querySelectorAll('[data-row-check]').forEach(function(el){ el.checked = event.target.checked; })"></th>
+            {% endif %}
+            {% for label, field in columns %}
+              <th>
+                {% with sort=sort_links|get_item:field %}
+                  {% if sort %}
+                    <a href="?{{ sort.query_string }}">
+                      {{ label }}{% if sort.active %}{% if sort.direction == "desc" %} ↓{% else %} ↑{% endif %}{% endif %}
+                    </a>
+                  {% else %}
+                    {{ label }}
+                  {% endif %}
+                {% endwith %}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in object_list %}
+            <tr>
+              {% if bulk_actions and bulk_action_url_name %}
+                <td><input type="checkbox" name="{{ bulk_select_name|default:'selected_ids' }}" value="{{ row.pk }}" data-row-check></td>
+              {% endif %}
+              {% for label, field in columns %}
+                <td>
+                  {% if forloop.first and detail_url_name %}
+                    <a href="{% url detail_url_name row.pk %}">{{ row|attr:field }}</a>
+                  {% elif mask_sensitive_columns and sensitive_columns|contains:field %}
+                    ******
+                  {% else %}
+                    {{ row|attr:field }}
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% if bulk_actions and bulk_action_url_name %}
+        <div class="form-actions" style="padding: 12px; margin: 0;">
+          {% for action_value, label in bulk_actions %}
+            <button class="button" type="submit" name="action" value="{{ action_value }}">{{ label }}</button>
+          {% endfor %}
+        </div>
+      </form>
+    {% endif %}
+  {% else %}
+    <div class="empty">
+      <strong>{% if is_filtered_list %}筛选无结果{% else %}暂无数据{% endif %}</strong>
+      <p>{{ empty_message }}</p>
+      <div class="form-actions" style="justify-content: center;">
+        {% if empty_clear_url %}
+          <a class="button" href="{{ empty_clear_url }}">清除筛选</a>
+        {% elif create_url_name %}
+          <a class="button primary" href="{% url create_url_name %}">新建</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% if is_paginated %}
+  <p class="muted">
+    {% if page_obj.has_previous %}<a href="?{% if active_query_string %}{{ active_query_string }}&{% endif %}page={{ page_obj.previous_page_number }}">上一页</a>{% endif %}
+    第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页
+    {% if page_obj.has_next %}<a href="?{% if active_query_string %}{{ active_query_string }}&{% endif %}page={{ page_obj.next_page_number }}">下一页</a>{% endif %}
+  </p>
+{% endif %}
+{% endblock %}

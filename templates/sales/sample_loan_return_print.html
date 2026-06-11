@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <title>{{ page_title }}</title>
+  <style>
+    body {
+      margin: 24px;
+      color: #111827;
+      font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    button {
+      border: 1px solid #9ca3af;
+      background: #fff;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    h1 {
+      margin: 0 0 18px;
+      text-align: center;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid #9ca3af;
+      border-bottom: 0;
+    }
+    .cell {
+      min-height: 36px;
+      padding: 8px;
+      border-right: 1px solid #9ca3af;
+      border-bottom: 1px solid #9ca3af;
+    }
+    .cell:nth-child(4n) { border-right: 0; }
+    .label {
+      color: #6b7280;
+      font-size: 12px;
+    }
+    .value {
+      margin-top: 2px;
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    th, td {
+      border: 1px solid #9ca3af;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f3f4f6; }
+    .signatures {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+      margin-top: 34px;
+    }
+    .signature {
+      border-top: 1px solid #374151;
+      padding-top: 8px;
+    }
+    @media print {
+      body { margin: 12mm; }
+      .toolbar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">打印</button>
+    <button type="button" onclick="window.close()">关闭</button>
+  </div>
+
+  <h1>借样归还单</h1>
+
+  <section class="meta">
+    <div class="cell">
+      <div class="label">归还单号</div>
+      <div class="value">{{ sample_return.sample_return_no }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">借样单</div>
+      <div class="value">{{ sample_return.sample_loan.sample_loan_no }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">客户</div>
+      <div class="value">{{ sample_return.customer.customer_name }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">归还日期</div>
+      <div class="value">{{ sample_return.return_date }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">状态</div>
+      <div class="value">{{ sample_return.get_status_display }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">打印时间</div>
+      <div class="value">{% now "Y-m-d H:i" %}</div>
+    </div>
+    <div class="cell">
+      <div class="label">备注</div>
+      <div class="value">{{ sample_return.remark }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">原借样状态</div>
+      <div class="value">{{ sample_return.sample_loan.get_status_display }}</div>
+    </div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>借样行</th>
+        <th>物料</th>
+        <th>归还数量</th>
+        <th>库位</th>
+        <th>库存类型</th>
+        <th>样品状态</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in sample_return.items.all %}
+        <tr>
+          <td>{{ item.sample_loan_item.line_no }}</td>
+          <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+          <td>{{ item.return_qty }}</td>
+          <td>{{ item.location.location_code }}</td>
+          <td>{{ item.inventory_type }}</td>
+          <td>{{ item.get_sample_condition_display }}</td>
+          <td>{{ item.remark }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7">暂无明细</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="signatures">
+    <div class="signature">销售</div>
+    <div class="signature">仓库</div>
+    <div class="signature">客户确认</div>
+  </section>
+</body>
+</html>

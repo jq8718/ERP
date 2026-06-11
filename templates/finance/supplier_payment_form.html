@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title|default:"新建供应商付款" }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:supplier_payment_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>付款信息</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      <label class="form-row">供应商
+        <select name="supplier">
+          <option value="">请选择</option>
+          {% for supplier in suppliers %}
+            <option value="{{ supplier.pk }}" {% if payment.supplier_id == supplier.pk %}selected{% endif %}>{{ supplier.supplier_no }} {{ supplier.supplier_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-row">付款日期
+        <input type="text" name="payment_date" value="{% if payment %}{{ payment.payment_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}">
+      </label>
+      <label class="form-row">付款金额
+        <input type="text" name="payment_amount" value="{{ payment.payment_amount|default:'' }}">
+      </label>
+      <label class="form-row">付款方式
+        <select name="payment_method">
+          {% for value, label in payment_methods %}
+            <option value="{{ value }}" {% if payment.payment_method == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-row">备注
+        <input type="text" name="remark" value="{{ payment.remark|default:'' }}">
+      </label>
+      {% include "common/operation_reason_field.html" %}
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存</button>
+      {% if is_edit %}
+        <a class="button" href="{% url 'finance:supplier_payment_detail' payment.pk %}">返回详情</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{% endblock %}

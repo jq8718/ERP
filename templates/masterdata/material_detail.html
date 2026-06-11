@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ material.material_code }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'masterdata:material_list' %}">返回列表</a>
+  <a class="button" href="{% url 'masterdata:material_edit' material.pk %}">编辑</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">名称</div>
+    <div class="detail-value">{{ material.material_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">类型</div>
+    <div class="detail-value">{{ material.get_material_type_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">规格</div>
+    <div class="detail-value">{{ material.spec }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">基础单位</div>
+    <div class="detail-value">{{ material.base_unit }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">数量精度</div>
+    <div class="detail-value">{{ material.qty_precision }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">最低库存</div>
+    <div class="detail-value">{{ material.min_stock_qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">最新采购价</div>
+    <div class="detail-value">{% if can_view_amount %}{{ material.latest_purchase_price|default:"" }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ material.get_status_display }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>单位换算</h2>
+  <div class="form-actions" style="padding: 0 14px 12px; margin: 0;">
+    <a class="button" href="{% url 'masterdata:material_unit_conversion_create' material.pk %}">新增单位换算</a>
+  </div>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>来源单位</th>
+          <th>目标单位</th>
+          <th>比例</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in material.unit_conversions.all %}
+          <tr>
+            <td>{{ row.source_unit }}</td>
+            <td>{{ row.target_unit }}</td>
+            <td>{{ row.ratio }}</td>
+            <td>{{ row.get_status_display }}</td>
+            <td><a href="{% url 'masterdata:material_unit_conversion_edit' row.pk %}">编辑</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无单位换算</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>供应商价格</h2>
+  {% if can_view_amount %}
+    <div class="form-actions" style="padding: 0 14px 12px; margin: 0;">
+      <a class="button" href="{% url 'masterdata:material_supplier_price_create' material.pk %}">新增供应商价格</a>
+    </div>
+  {% endif %}
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>供应商</th>
+          <th>价格</th>
+          <th>币种</th>
+          <th>默认</th>
+          <th>状态</th>
+          {% if can_view_amount %}<th>操作</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in material.supplier_prices.all %}
+          <tr>
+            <td>{{ row.supplier.supplier_name }}</td>
+            <td>{% if can_view_amount %}{{ row.purchase_price }}{% else %}******{% endif %}</td>
+            <td>{{ row.currency }}</td>
+            <td>{{ row.is_default|yesno:"是,否" }}</td>
+            <td>{{ row.get_status_display }}</td>
+            {% if can_view_amount %}<td><a href="{% url 'masterdata:material_supplier_price_edit' row.pk %}">编辑</a></td>{% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if can_view_amount %}6{% else %}5{% endif %}" class="empty">暂无供应商价格</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

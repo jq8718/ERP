@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'inventory:warehouse_location_list' %}">返回列表</a>
+  {% if can_process_inventory %}
+    <a class="button primary" href="{% url 'inventory:warehouse_location_edit' location.id %}">编辑</a>
+  {% endif %}
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">库位编码</div>
+    <div class="detail-value">{{ location.location_code }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">库位名称</div>
+    <div class="detail-value">{{ location.location_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ location.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ location.remark|default:"-" }}</div>
+  </div>
+</section>
+{% endblock %}

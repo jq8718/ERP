@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label>采购单</label>
+        <input type="text" value="{{ receipt.purchase_order.purchase_order_no }}" disabled>
+      </div>
+      <div class="form-row">
+        <label>供应商</label>
+        <input type="text" value="{{ receipt.supplier.supplier_name }}" disabled>
+      </div>
+      <div class="form-row">
+        <label for="{{ form.receipt_date.id_for_label }}">进货日期</label>
+        {{ form.receipt_date }}
+        {{ form.receipt_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>入库明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>物料</th>
+            <th>采购数量</th>
+            <th>已到货</th>
+            <th>到货数量</th>
+            <th>合格数量</th>
+            <th>不合格数量</th>
+            {% if can_view_amount %}<th>单价</th>{% endif %}
+            <th>库位</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>{{ item_form.instance.material.material_code }} {{ item_form.instance.material.material_name }}</td>
+              <td>{{ item_form.instance.purchase_order_item.order_qty }}</td>
+              <td>{{ item_form.instance.purchase_order_item.received_qty }}</td>
+              <td>{{ item_form.received_qty }}{{ item_form.received_qty.errors }}</td>
+              <td>{{ item_form.accepted_qty }}{{ item_form.accepted_qty.errors }}</td>
+              <td>{{ item_form.rejected_qty }}{{ item_form.rejected_qty.errors }}</td>
+              {% if can_view_amount %}<td>{{ item_form.instance.unit_price }}</td>{% endif %}
+              <td>
+                {{ item_form.location }}{{ item_form.location.errors }}
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                {{ item_form.non_field_errors }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">保存</button>
+    <a class="button" href="{% url 'purchase:purchase_receipt_detail' receipt.pk %}">返回详情</a>
+  </div>
+</form>
+{% endblock %}

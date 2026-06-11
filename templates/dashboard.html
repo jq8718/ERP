@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>工作台</h1>
+
+<section class="stats">
+  <div class="stat">
+    <div class="stat-label">未读消息</div>
+    <div class="stat-value">{{ unread_messages }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">待审销售订单</div>
+    <div class="stat-value">{{ pending_sales_orders }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">活跃欠料</div>
+    <div class="stat-value">{{ active_shortages }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">待审采购需求</div>
+    <div class="stat-value">{{ pending_purchase_requests }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">待入库进货单</div>
+    <div class="stat-value">{{ pending_purchase_receipts }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">在库批次数量</div>
+    <div class="stat-value">{{ inventory_qty }}</div>
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="panel">
+    <h2>最近销售订单</h2>
+    {% if recent_sales_orders %}
+      <ul class="panel-list">
+        {% for order in recent_sales_orders %}
+          <li>{{ order.sales_order_no }} · {{ order.customer.customer_name }} · {{ order.get_status_display }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">暂无销售订单</div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h2>欠料提醒</h2>
+    {% if shortages %}
+      <ul class="panel-list">
+        {% for shortage in shortages %}
+          <li>{{ shortage.shortage_no }} · {{ shortage.material.material_code }} · 欠 {{ shortage.shortage_qty }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">暂无欠料</div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h2>系统消息</h2>
+    {% if recent_messages %}
+      <ul class="panel-list">
+        {% for message in recent_messages %}
+          <li>{{ message.title }} <span class="muted">· {{ message.get_status_display }}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">暂无消息</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ production_order.production_order_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'production:production_order_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'production:production_order_edit' production_order.pk %}">编辑</a>
+  {% endif %}
+  <a class="button" href="{% url 'production:production_order_print' production_order.pk %}" target="_blank">打印</a>
+  {% if can_cancel %}
+    <form method="post" action="{% url 'production:production_order_cancel' production_order.pk %}">
+      {% csrf_token %}
+      <input type="text" name="cancel_reason" placeholder="取消原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">取消</button>
+    </form>
+  {% endif %}
+  {% if can_create_requisition %}
+    <form method="post" action="{% url 'production:production_order_create_requisition' production_order.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">生成领料单</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">成品</div>
+    <div class="detail-value">{{ production_order.finished_material.material_code }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">生产数量</div>
+    <div class="detail-value">{{ production_order.production_qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">已入库</div>
+    <div class="detail-value">{{ production_order.received_qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ production_order.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">BOM</div>
+    <div class="detail-value">{{ production_order.locked_bom.bom_no }} {{ production_order.locked_bom_version }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ production_order.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">计划开始</div>
+    <div class="detail-value">{{ production_order.planned_start_date|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">计划完成</div>
+    <div class="detail-value">{{ production_order.planned_finish_date|default:"" }}</div>
+  </div>
+</section>
+
+{% if can_create_receipt %}
+  <section class="panel" style="margin-bottom: 18px;">
+    <h2>生成生产入库单</h2>
+    <form method="post" action="{% url 'production:production_order_create_receipt' production_order.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">入库库位
+          <select name="location">
+            <option value="">请选择</option>
+            {% for location in locations %}
+              <option value="{{ location.pk }}">{{ location.location_code }} {{ location.location_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">备注
+          <input type="text" name="remark">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">生成入库单</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>BOM 子件</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>物料</th>
+          <th>用量</th>
+          <th>单位</th>
+          <th>必需</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in production_order.locked_bom.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.component_material.material_code }} {{ item.component_material.material_name }}</td>
+            <td>{{ item.usage_qty }}</td>
+            <td>{{ item.usage_unit }}</td>
+            <td>{{ item.is_required|yesno:"是,否" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无 BOM 子件</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="panel">
+    <h2>领料单</h2>
+    <ul class="panel-list">
+      {% for requisition in production_order.material_requisitions.all %}
+        <li><a href="{% url 'production:material_requisition_detail' requisition.pk %}">{{ requisition.requisition_no }}</a> · {{ requisition.get_status_display }}</li>
+      {% empty %}
+        <li class="muted">暂无领料单</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="panel">
+    <h2>入库单</h2>
+    <ul class="panel-list">
+      {% for receipt in production_order.receipts.all %}
+        <li><a href="{% url 'production:production_receipt_detail' receipt.pk %}">{{ receipt.production_receipt_no }}</a> · {{ receipt.get_status_display }}</li>
+      {% empty %}
+        <li class="muted">暂无入库单</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

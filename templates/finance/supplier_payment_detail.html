@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ payment.payment_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:supplier_payment_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button" href="{% url 'finance:supplier_payment_edit' payment.pk %}">编辑</a>
+  {% endif %}
+  <a class="button" href="{% url 'finance:supplier_payment_print' payment.pk %}" target="_blank">打印</a>
+  {% if can_void %}
+    <form method="post" action="{% url 'finance:supplier_payment_void' payment.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ payment.supplier.supplier_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">付款日期</div>
+    <div class="detail-value">{{ payment.payment_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">付款金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ payment.payment_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">未分配</div>
+    <div class="detail-value">{% if can_view_amount %}{{ payment.unallocated_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">付款方式</div>
+    <div class="detail-value">{{ payment.get_payment_method_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ payment.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">确认人</div>
+    <div class="detail-value">{{ payment.confirmed_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ payment.remark }}</div>
+  </div>
+</section>
+
+{% if can_confirm %}
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>核销确认</h2>
+  <form method="post" action="{% url 'finance:supplier_payment_confirm' payment.pk %}">
+    {% csrf_token %}
+    <h3 style="padding: 0 14px;">进货单</h3>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>进货单</th>
+            <th>采购单</th>
+            <th>进货日期</th>
+            <th>状态</th>
+            <th>可核销金额</th>
+            <th>核销金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for target in allocation_targets %}
+            <tr>
+              <td>
+                {{ target.receipt.purchase_receipt_no }}
+                <input type="hidden" name="purchase_receipt_id" value="{{ target.receipt.pk }}">
+              </td>
+              <td>{{ target.receipt.purchase_order.purchase_order_no }}</td>
+              <td>{{ target.receipt.receipt_date }}</td>
+              <td>{{ target.receipt.get_status_display }}</td>
+              <td>{% if can_view_amount %}{{ target.available_amount|floatformat:2 }}{% else %}******{% endif %}</td>
+              <td><input type="text" name="purchase_receipt_allocated_amount" value="{{ target.suggested_amount|floatformat:2 }}"></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">暂无可核销进货单</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3 style="padding: 0 14px;">已确认对账单</h3>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>对账单</th>
+            <th>周期</th>
+            <th>状态</th>
+            <th>对账金额</th>
+            <th>可核销金额</th>
+            <th>核销金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for target in reconciliation_allocation_targets %}
+            <tr>
+              <td>
+                {{ target.reconciliation.reconciliation_no }}
+                <input type="hidden" name="reconciliation_id" value="{{ target.reconciliation.pk }}">
+              </td>
+              <td>{{ target.reconciliation.period_start }} 至 {{ target.reconciliation.period_end }}</td>
+              <td>{{ target.reconciliation.get_status_display }}</td>
+              <td>{% if can_view_amount %}{{ target.reconciliation.total_amount }}{% else %}******{% endif %}</td>
+              <td>{% if can_view_amount %}{{ target.available_amount|floatformat:2 }}{% else %}******{% endif %}</td>
+              <td><input type="text" name="reconciliation_allocated_amount" value="{{ target.suggested_amount|floatformat:2 }}"></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">暂无可核销对账单</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-actions" style="padding: 0 14px 14px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="max-width: 220px;">
+      <button class="button primary" type="submit">确认付款核销</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if can_reverse %}
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>付款红冲</h2>
+  <form method="post" action="{% url 'finance:supplier_payment_reverse' payment.pk %}" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      <label class="form-row">红冲金额
+        <input type="text" name="reversal_amount" value="{{ payment.payment_amount }}">
+      </label>
+      <label class="form-row">原因
+        <input type="text" name="reason">
+      </label>
+    </div>
+    <div class="form-actions">
+      <input type="password" name="current_password" placeholder="当前密码" required style="max-width: 220px;">
+      <button class="button primary" type="submit">确认红冲</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>核销明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>类型</th>
+          <th>进货单</th>
+          <th>对账单</th>
+          <th>金额</th>
+          <th>创建时间</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for allocation in payment.allocations.all %}
+          <tr>
+            <td>{{ allocation.get_allocation_type_display }}</td>
+            <td>{{ allocation.purchase_receipt.purchase_receipt_no|default:"" }}</td>
+            <td>{{ allocation.reconciliation.reconciliation_no|default:"" }}</td>
+            <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
+            <td>{{ allocation.created_at }}</td>
+            <td>{{ allocation.remark }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">暂无核销明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>红冲记录</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>红冲单号</th>
+          <th>金额</th>
+          <th>状态</th>
+          <th>原因</th>
+          <th>确认时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for reversal in payment.reversals.all %}
+          <tr>
+            <td>{{ reversal.reversal_no }}</td>
+            <td>{% if can_view_amount %}{{ reversal.reversal_amount }}{% else %}******{% endif %}</td>
+            <td>{{ reversal.get_status_display }}</td>
+            <td>{{ reversal.reason }}</td>
+            <td>{{ reversal.confirmed_at|default:"" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无红冲记录</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

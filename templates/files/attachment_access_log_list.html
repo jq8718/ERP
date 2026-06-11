@@ -1,0 +1,68 @@
+{% extends "common/list.html" %}
+{% load erp_extras %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="get" class="panel" style="padding: 14px; margin-bottom: 16px;">
+  <div class="form-grid">
+    <label class="form-row">文件 / 来源单号 / 附件号
+      <input type="text" name="q" value="{{ filters.q }}">
+    </label>
+    <label class="form-row">动作
+      <select name="action">
+        <option value="">全部</option>
+        {% for value, label in action_options %}
+          <option value="{{ value }}" {% if filters.action == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="form-row">操作人
+      <input type="text" name="operator" value="{{ filters.operator }}">
+    </label>
+    <label class="form-row">开始日期
+      <input type="date" name="date_from" value="{{ filters.date_from }}">
+    </label>
+    <label class="form-row">结束日期
+      <input type="date" name="date_to" value="{{ filters.date_to }}">
+    </label>
+  </div>
+  <div class="form-actions">
+    <button class="button primary" type="submit">筛选</button>
+    <a class="button" href="{% url 'files:attachment_access_log_list' %}">清空</a>
+  </div>
+</form>
+
+<div class="table-wrap">
+  {% if object_list %}
+    <table>
+      <thead>
+        <tr>
+          {% for label, field in columns %}
+            <th>{{ label }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in object_list %}
+          <tr>
+            {% for label, field in columns %}
+              <td>{{ row|attr:field }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">暂无数据</div>
+  {% endif %}
+</div>
+
+{% if is_paginated %}
+  <p class="muted">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">上一页</a>{% endif %}
+    第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">下一页</a>{% endif %}
+  </p>
+{% endif %}
+{% endblock %}

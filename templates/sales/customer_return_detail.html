@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ customer_return.return_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:customer_return_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'sales:customer_return_edit' customer_return.pk %}">编辑</a>
+  {% endif %}
+  <a class="button" href="{% url 'sales:customer_return_print' customer_return.pk %}" target="_blank">打印</a>
+  {% if can_confirm_receipt %}
+    <form method="post" action="{% url 'sales:customer_return_confirm_receipt' customer_return.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认退货入库</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'sales:customer_return_void' customer_return.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ customer_return.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源销售订单</div>
+    <div class="detail-value">{{ customer_return.sales_order.sales_order_no|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">退货日期</div>
+    <div class="detail-value">{{ customer_return.return_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ customer_return.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ customer_return.return_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ customer_return.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>退货明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>物料</th>
+          <th>退货数量</th>
+          <th>单价</th>
+          <th>金额</th>
+          <th>入库库位</th>
+          <th>库存类型</th>
+          <th>来源销售行</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in customer_return.items.all %}
+          <tr>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.return_qty }}</td>
+            <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
+            <td>{{ item.location.location_code|default:"" }}</td>
+            <td>{{ item.inventory_type }}</td>
+            <td>{{ item.sales_order_item.sales_order.sales_order_no|default:"" }}</td>
+            <td>{{ item.return_reason }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

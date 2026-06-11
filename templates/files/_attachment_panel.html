@@ -1,0 +1,59 @@
+{% if attachment_panel %}
+<section class="panel" style="margin-top: 18px;">
+  <h2>附件</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>文件名</th>
+          <th>敏感</th>
+          <th>扫描</th>
+          <th>上传人</th>
+          <th>上传时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in attachment_panel.attachments %}
+          <tr>
+            <td>
+              <a href="{% url 'files:attachment_detail' row.attachment.pk %}">{{ row.attachment.original_filename }}</a>
+            </td>
+            <td>{{ row.attachment.is_sensitive|yesno:"是,否" }}</td>
+            <td>{{ row.attachment.get_scan_status_display }}</td>
+            <td>{{ row.attachment.uploaded_by|default:"" }}</td>
+            <td>{{ row.attachment.uploaded_at }}</td>
+            <td>
+              {% if row.can_download %}
+                <a href="{% url 'files:attachment_download' row.attachment.pk %}">下载</a>
+              {% else %}
+                <span class="muted">无权限</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">暂无附件</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form method="post" action="{% url 'files:attachment_upload' %}" enctype="multipart/form-data" style="padding: 14px;">
+    {% csrf_token %}
+    <input type="hidden" name="source_doc_type" value="{{ attachment_panel.source_doc_type }}">
+    <input type="hidden" name="source_doc_id" value="{{ attachment_panel.source_doc_id }}">
+    <input type="hidden" name="source_doc_no" value="{{ attachment_panel.source_doc_no }}">
+    <div class="form-grid">
+      <label class="form-row">附件文件
+        <input type="file" name="file">
+      </label>
+      <label class="form-row">
+        <span>敏感附件</span>
+        <input type="checkbox" name="is_sensitive">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">上传附件</button>
+    </div>
+  </form>
+</section>
+{% endif %}

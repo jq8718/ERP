@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ supplier_return.supplier_return_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'purchase:supplier_return_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'purchase:supplier_return_edit' supplier_return.pk %}">编辑</a>
+  {% endif %}
+  <a class="button" href="{% url 'purchase:supplier_return_print' supplier_return.pk %}" target="_blank">打印</a>
+  {% if can_confirm_out %}
+    <form method="post" action="{% url 'purchase:supplier_return_confirm_out' supplier_return.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认退货出库</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'purchase:supplier_return_void' supplier_return.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ supplier_return.supplier.supplier_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源进货单</div>
+    <div class="detail-value">{{ supplier_return.purchase_receipt.purchase_receipt_no|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">退货日期</div>
+    <div class="detail-value">{{ supplier_return.return_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ supplier_return.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ supplier_return.return_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ supplier_return.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ supplier_return.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>退货明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>物料</th>
+          <th>退货数量</th>
+          <th>单价</th>
+          <th>金额</th>
+          <th>批次</th>
+          <th>库位</th>
+          <th>来源进货行</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in supplier_return.items.all %}
+          <tr>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.return_qty }}</td>
+            <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
+            <td>{{ item.batch.batch_no|default:"" }}</td>
+            <td>{{ item.location.location_code|default:"" }}</td>
+            <td>{{ item.purchase_receipt_item.purchase_receipt.purchase_receipt_no|default:"" }}</td>
+            <td>{{ item.return_reason }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

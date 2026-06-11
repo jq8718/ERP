@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'files:print_log_list' %}">返回打印日志</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">打印号</div>
+    <div class="detail-value">{{ print_log.print_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">模板</div>
+    <div class="detail-value">{{ print_log.template_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源类型</div>
+    <div class="detail-value">{{ print_log.source_doc_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源 ID</div>
+    <div class="detail-value">{{ print_log.source_doc_id }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源单号</div>
+    <div class="detail-value">{{ print_log.source_doc_no|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">打印人</div>
+    <div class="detail-value">{{ print_log.printed_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">打印时间</div>
+    <div class="detail-value">{{ print_log.created_at }}</div>
+  </div>
+</section>
+{% endblock %}

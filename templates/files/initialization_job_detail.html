@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'files:initialization_job_list' %}">返回初始化任务</a>
+  <a class="button" href="{% url 'inventory:inventory_list' %}">返回库存</a>
+  {% if can_confirm_initial_inventory %}
+    <form method="post" action="{% url 'inventory:initial_inventory_confirm' job.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认入账</button>
+    </form>
+  {% endif %}
+  {% if can_cancel_initial_inventory %}
+    <form method="post" action="{% url 'inventory:initial_inventory_cancel' job.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="text" name="cancel_reason" placeholder="撤销原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">撤销</button>
+    </form>
+  {% endif %}
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">任务号</div>
+    <div class="detail-value">{{ job.job_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">模板类型</div>
+    <div class="detail-value">{{ job.template_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ job.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">成功行数</div>
+    <div class="detail-value">{{ job.success_count }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">失败行数</div>
+    <div class="detail-value">{{ job.failed_count }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">确认人</div>
+    <div class="detail-value">{{ job.confirmed_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ job.created_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ job.created_at }}</div>
+  </div>
+</section>
+
+{% if preview_rows %}
+  <section class="panel" style="margin-bottom: 18px;">
+    <h2>预览明细</h2>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>物料编码</th>
+            <th>物料名称</th>
+            <th>库位</th>
+            <th>批次号</th>
+            <th>库存类型</th>
+            <th>期初数量</th>
+            <th>成本单价</th>
+            <th>入库日期</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview_rows %}
+            <tr>
+              <td>{{ row.material_code }}</td>
+              <td>{{ row.material_name }}</td>
+              <td>{{ row.location_code }} {{ row.location_name }}</td>
+              <td>{{ row.batch_no|default:"自动生成" }}</td>
+              <td>{{ row.inventory_type }}</td>
+              <td>{{ row.initial_qty }}</td>
+              <td>{{ row.cost_price }}</td>
+              <td>{{ row.received_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+
+<section class="panel">
+  <h2>错误明细</h2>
+  {% if errors %}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>行号</th>
+            <th>字段</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for error in errors %}
+            <tr>
+              <td>{{ error.row }}</td>
+              <td>{{ error.field }}</td>
+              <td>{{ error.message }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">暂无错误</div>
+  {% endif %}
+</section>
+{% endblock %}

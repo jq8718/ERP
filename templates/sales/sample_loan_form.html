@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.customer.id_for_label }}">客户</label>
+        {{ form.customer }}
+        {{ form.customer.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.loan_date.id_for_label }}">借出日期</label>
+        {{ form.loan_date }}
+        {{ form.loan_date.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.expected_return_date.id_for_label }}">预计归还日期</label>
+        {{ form.expected_return_date }}
+        {{ form.expected_return_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>借样明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>样品物料</th>
+            <th>借出数量</th>
+            <th>预计归还</th>
+            <th>批次</th>
+            <th>库位</th>
+            <th>删除</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
+              <td>{{ item_form.loan_qty }}{{ item_form.loan_qty.errors }}</td>
+              <td>{{ item_form.expected_return_date }}{{ item_form.expected_return_date.errors }}</td>
+              <td>{{ item_form.batch }}{{ item_form.batch.errors }}</td>
+              <td>{{ item_form.location }}{{ item_form.location.errors }}</td>
+              <td>
+                {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">保存借样单</button>
+    <a class="button" href="{% url 'sales:sample_loan_list' %}">返回列表</a>
+  </div>
+</form>
+{% endblock %}

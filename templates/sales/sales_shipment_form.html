@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="detail-grid" style="margin-bottom: 14px;">
+      <div class="detail-cell">
+        <div class="detail-label">销售订单</div>
+        <div class="detail-value">{{ shipment.sales_order.sales_order_no }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">客户</div>
+        <div class="detail-value">{{ shipment.customer.customer_name }}</div>
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.shipment_date.id_for_label }}">出库日期</label>
+        {{ form.shipment_date }}
+        {{ form.shipment_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>出库明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>销售行</th>
+            <th>物料</th>
+            <th>出库数量</th>
+            <th>批次</th>
+            <th>库位</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>
+                第 {{ item_form.instance.sales_order_item.line_no }} 行
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+              </td>
+              <td>{{ item_form.instance.material.material_code }} {{ item_form.instance.material.material_name }}</td>
+              <td>{{ item_form.shipment_qty }}{{ item_form.shipment_qty.errors }}</td>
+              <td>{{ item_form.batch }}{{ item_form.batch.errors }}</td>
+              <td>{{ item_form.location }}{{ item_form.location.errors }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">保存出库单</button>
+    <a class="button" href="{% url 'sales:sales_shipment_detail' shipment.pk %}">返回详情</a>
+  </div>
+</form>
+{% endblock %}

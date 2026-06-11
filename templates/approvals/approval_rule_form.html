@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>新建审批规则</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'approvals:approval_rule_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>规则信息</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="error">{{ form.non_field_errors|join:", " }}</div>
+    {% endif %}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row">{{ field.label }}
+          {{ field }}
+          {% if field.help_text %}<span class="muted">{{ field.help_text }}</span>{% endif %}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

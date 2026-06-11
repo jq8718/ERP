@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ receipt.purchase_receipt_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'purchase:purchase_receipt_list' %}">返回列表</a>
+  <a class="button" href="{% url 'purchase:purchase_receipt_print' receipt.pk %}" target="_blank">打印</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'purchase:purchase_receipt_edit' receipt.pk %}">编辑</a>
+  {% endif %}
+  {% if can_confirm %}
+    <form method="post" action="{% url 'purchase:purchase_receipt_confirm' receipt.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认入库</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">采购单</div>
+    <div class="detail-value">{{ receipt.purchase_order.purchase_order_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ receipt.supplier.supplier_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">进货日期</div>
+    <div class="detail-value">{{ receipt.receipt_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ receipt.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ receipt.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ receipt.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>入库明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>物料</th>
+          <th>到货数量</th>
+          <th>合格数量</th>
+          <th>不合格数量</th>
+          <th>单价</th>
+          <th>库位</th>
+          <th>批次</th>
+          <th>采购行状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in receipt.items.all %}
+          <tr>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.received_qty }}</td>
+            <td>{{ item.accepted_qty }}</td>
+            <td>{{ item.rejected_qty }}</td>
+            <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+            <td>{{ item.location.location_code }}</td>
+            <td>{{ item.batch.batch_no|default:"" }}</td>
+            <td>{{ item.purchase_order_item.get_line_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

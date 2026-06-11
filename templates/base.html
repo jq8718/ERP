@@ -1,0 +1,240 @@
+<!doctype html>
+{% load erp_extras %}
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title|default:"ERP" }}{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #d7dde4;
+      --text: #1f2933;
+      --muted: #687483;
+      --accent: #0f766e;
+      --accent-strong: #115e59;
+      --danger: #b42318;
+      --warn: #b54708;
+      --nav: #263238;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    a { color: inherit; text-decoration: none; }
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: 240px 1fr; }
+    .sidebar { background: var(--nav); color: #eef3f7; padding: 16px 12px; }
+    .brand { font-size: 18px; font-weight: 700; padding: 8px 10px 18px; }
+    .nav-section { margin: 10px 0 16px; }
+    .nav-title { color: #aebbc6; font-size: 12px; padding: 8px 10px; }
+    .nav-link {
+      display: block;
+      padding: 7px 10px;
+      border-radius: 6px;
+      color: #e8edf1;
+      white-space: nowrap;
+    }
+    .nav-link:hover { background: rgba(255, 255, 255, .10); }
+    .main { min-width: 0; }
+    .topbar {
+      height: 56px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .page { padding: 22px 24px 36px; }
+    h1 { margin: 0 0 18px; font-size: 22px; letter-spacing: 0; }
+    .muted { color: var(--muted); }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .button.primary { background: var(--accent); color: #fff; border-color: var(--accent-strong); }
+    .link-button {
+      display: inline;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+    .table-wrap {
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #edf2f5; font-size: 13px; color: #394650; }
+    tr:last-child td { border-bottom: 0; }
+    .empty { padding: 28px; color: var(--muted); text-align: center; }
+    .stats { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .stat-label { color: var(--muted); font-size: 13px; }
+    .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .panel h2 { margin: 0; padding: 12px 14px; font-size: 16px; border-bottom: 1px solid var(--line); }
+    .panel-list { list-style: none; padding: 0; margin: 0; }
+    .panel-list li { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    .panel-list li:last-child { border-bottom: 0; }
+    .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+    .auth-box { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
+    .field { display: grid; gap: 6px; margin-bottom: 14px; }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+    }
+    .error { color: var(--danger); margin-bottom: 12px; }
+    .messages { display: grid; gap: 8px; margin-bottom: 14px; }
+    .message { border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; background: #fff; }
+    .message.success { border-color: #9fd3bd; background: #eefaf3; }
+    .message.error { border-color: #f3b3ae; background: #fff1f0; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px; }
+    .form-row { display: grid; gap: 6px; margin-bottom: 12px; }
+    .form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .detail-cell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+    .detail-label { color: var(--muted); font-size: 13px; }
+    .detail-value { margin-top: 4px; font-weight: 600; }
+    .inline-table input, .inline-table select {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font: inherit;
+    }
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .topbar { padding: 0 14px; }
+      .page { padding: 16px 14px 28px; }
+    }
+  </style>
+</head>
+<body>
+{% if request.user.is_authenticated %}
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><a href="{% url 'system:dashboard' %}">ERP</a></div>
+      <div class="nav-section">
+        <div class="nav-title">工作</div>
+        <a class="nav-link" href="{% url 'system:dashboard' %}">工作台</a>
+        <a class="nav-link" href="{% url 'notifications:message_list' %}">系统消息</a>
+        <a class="nav-link" href="{% url 'approvals:approval_list' %}">审批</a>
+        {% has_erp_perm request.user "admin.permission_manage" as can_manage_permissions %}
+        {% if can_manage_permissions %}
+          <a class="nav-link" href="{% url 'approvals:approval_rule_list' %}">审批规则</a>
+        {% endif %}
+      </div>
+      <div class="nav-section">
+        <div class="nav-title">销售</div>
+        <a class="nav-link" href="{% url 'sales:sales_order_list' %}">销售订单</a>
+        <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
+        <a class="nav-link" href="{% url 'sales:sales_shipment_list' %}">销售出库</a>
+        <a class="nav-link" href="{% url 'sales:sample_loan_list' %}">借样</a>
+        <a class="nav-link" href="{% url 'sales:sample_loan_return_list' %}">借样归还</a>
+        <a class="nav-link" href="{% url 'sales:customer_return_list' %}">客户退货</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-title">采购与生产</div>
+        <a class="nav-link" href="{% url 'purchase:purchase_request_list' %}">采购需求</a>
+        <a class="nav-link" href="{% url 'purchase:purchase_order_list' %}">采购单</a>
+        <a class="nav-link" href="{% url 'purchase:purchase_receipt_list' %}">进货单</a>
+        <a class="nav-link" href="{% url 'purchase:supplier_return_list' %}">供应商退货</a>
+        <a class="nav-link" href="{% url 'production:production_order_list' %}">生产指令</a>
+        <a class="nav-link" href="{% url 'production:material_requisition_list' %}">生产领料</a>
+        <a class="nav-link" href="{% url 'production:production_receipt_list' %}">生产入库</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-title">库存与财务</div>
+        <a class="nav-link" href="{% url 'inventory:inventory_list' %}">库存汇总</a>
+        <a class="nav-link" href="{% url 'inventory:warehouse_location_list' %}">库位</a>
+        <a class="nav-link" href="{% url 'inventory:inventory_batch_list' %}">库存批次</a>
+        <a class="nav-link" href="{% url 'inventory:inventory_transaction_list' %}">库存流水</a>
+        <a class="nav-link" href="{% url 'inventory:location_transfer_list' %}">库位移库</a>
+        <a class="nav-link" href="{% url 'inventory:stock_count_list' %}">盘点</a>
+        <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
+        <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
+        <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
+        <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
+        <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-title">基础资料</div>
+        <a class="nav-link" href="{% url 'masterdata:material_list' %}">物料</a>
+        <a class="nav-link" href="{% url 'bom:bom_list' %}">BOM</a>
+        <a class="nav-link" href="{% url 'masterdata:customer_list' %}">客户</a>
+        <a class="nav-link" href="{% url 'masterdata:customer_product_list' %}">客户产品</a>
+        <a class="nav-link" href="{% url 'masterdata:supplier_list' %}">供应商</a>
+        <a class="nav-link" href="{% url 'files:attachment_list' %}">附件</a>
+        {% if can_manage_permissions %}
+          <a class="nav-link" href="{% url 'account_user_list' %}">用户管理</a>
+          <a class="nav-link" href="{% url 'role_list' %}">角色管理</a>
+          <a class="nav-link" href="{% url 'permission_list' %}">权限清单</a>
+          <a class="nav-link" href="{% url 'files:attachment_access_log_list' %}">附件访问日志</a>
+          <a class="nav-link" href="{% url 'files:import_job_list' %}">导入任务</a>
+          <a class="nav-link" href="{% url 'files:initialization_job_list' %}">初始化任务</a>
+          <a class="nav-link" href="{% url 'files:export_log_list' %}">导出日志</a>
+          <a class="nav-link" href="{% url 'files:print_log_list' %}">打印日志</a>
+          <a class="nav-link" href="{% url 'user_session_list' %}">登录会话</a>
+          <a class="nav-link" href="{% url 'system:backup_list' %}">备份记录</a>
+          <a class="nav-link" href="{% url 'system:background_job_list' %}">后台任务</a>
+          <a class="nav-link" href="{% url 'system:release_record_list' %}">发布记录</a>
+          <a class="nav-link" href="{% url 'system:audit_log_list' %}">审计日志</a>
+          <a class="nav-link" href="{% url 'system:health_check' %}">系统健康检查</a>
+        {% endif %}
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>{{ page_title|default:"ERP" }}</div>
+        <form method="post" action="{% url 'logout' %}" class="muted">
+          {% csrf_token %}
+          {{ request.user.get_username }} · <a href="{% url 'password_change' %}">修改密码</a> · <button class="link-button" type="submit">退出</button>
+        </form>
+      </header>
+      <section class="page">
+        {% if messages %}
+          <div class="messages">
+            {% for message in messages %}
+              <div class="message {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+{% else %}
+  {% block auth_content %}{% endblock %}
+{% endif %}
+</body>
+</html>

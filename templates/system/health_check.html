@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>系统健康检查</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'system:backup_list' %}">查看备份记录</a>
+  <a class="button" href="{% url 'system:background_job_list' %}">查看后台任务</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">数据库连接</div>
+    <div class="detail-value">{% if database_status.ok %}正常{% else %}异常{% endif %}</div>
+    <div class="muted">{{ database_status.message }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">附件目录</div>
+    <div class="detail-value">{% if media_status.ok %}可写{% else %}异常{% endif %}</div>
+    <div class="muted">{{ media_root }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备份目录</div>
+    <div class="detail-value">{% if backup_status.ok %}可写{% else %}异常{% endif %}</div>
+    <div class="muted">{{ backup_dir }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">最近备份</div>
+    <div class="detail-value">{% if latest_backup %}{{ latest_backup.get_status_display }}{% else %}暂无{% endif %}</div>
+    <div class="muted">{% if latest_backup %}{{ latest_backup.backup_no }} · {{ latest_backup.created_at }}{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">超时后台任务</div>
+    <div class="detail-value">{{ stale_running_job_count }}</div>
+    <div class="muted">阈值 {{ background_job_running_timeout_minutes }} 分钟</div>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>发布门禁</h2>
+  <section class="detail-grid">
+    <div class="detail-cell">
+      <div class="detail-label">最近结果</div>
+      <div class="detail-value">{% if release_gate_status.ok and release_gate_status.fresh %}通过{% elif release_gate_status.exists %}需复核{% else %}暂无报告{% endif %}</div>
+      <div class="muted">{{ release_gate_status.message }}</div>
+    </div>
+    <div class="detail-cell">
+      <div class="detail-label">生成时间</div>
+      <div class="detail-value">{% if release_gate_status.generated_at %}{{ release_gate_status.generated_at }}{% else %}-{% endif %}</div>
+      <div class="muted">有效期 {{ release_gate_status.max_age_hours }} 小时</div>
+    </div>
+    <div class="detail-cell">
+      <div class="detail-label">检查步骤</div>
+      <div class="detail-value">{% if release_gate_status.step_count %}{{ release_gate_status.step_count }}{% else %}-{% endif %}</div>
+      <div class="muted">{{ release_gate_status.path }}</div>
+    </div>
+  </section>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>事务后事件队列</h2>
+  <section class="detail-grid">
+    <div class="detail-cell">
+      <div class="detail-label">待处理</div>
+      <div class="detail-value">{{ pending_event_counts.pending }}</div>
+    </div>
+    <div class="detail-cell">
+      <div class="detail-label">处理中</div>
+      <div class="detail-value">{{ pending_event_counts.running }}</div>
+      <div class="muted">超时 {{ pending_event_running_timeout_minutes }} 分钟：{{ stale_running_event_count }}</div>
+    </div>
+    <div class="detail-cell">
+      <div class="detail-label">失败</div>
+      <div class="detail-value">{{ pending_event_counts.failed }}</div>
+    </div>
+  </section>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>事件类型</th>
+          <th>幂等键</th>
+          <th>重试次数</th>
+          <th>更新时间</th>
+          <th>错误</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in failed_events %}
+          <tr>
+            <td>{{ event.event_type }}</td>
+            <td>{{ event.idempotency_key }}</td>
+            <td>{{ event.retry_count }}</td>
+            <td>{{ event.updated_at }}</td>
+            <td>{{ event.last_error }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无失败事件</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>最近后台任务</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>任务号</th>
+          <th>类型</th>
+          <th>状态</th>
+          <th>开始时间</th>
+          <th>结束时间</th>
+          <th>错误</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if latest_job %}
+          <tr>
+            <td>{{ latest_job.job_no }}</td>
+            <td>{{ latest_job.job_type }}</td>
+            <td>{{ latest_job.get_status_display }}</td>
+            <td>{{ latest_job.started_at|default:"" }}</td>
+            <td>{{ latest_job.finished_at|default:"" }}</td>
+            <td>{{ latest_job.error_message }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="empty">暂无后台任务</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>最近失败任务</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>任务号</th>
+          <th>类型</th>
+          <th>触发来源</th>
+          <th>结束时间</th>
+          <th>错误</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in failed_jobs %}
+          <tr>
+            <td>{{ job.job_no }}</td>
+            <td>{{ job.job_type }}</td>
+            <td>{{ job.trigger_type }}</td>
+            <td>{{ job.finished_at|default:"" }}</td>
+            <td>{{ job.error_message }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无失败任务</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

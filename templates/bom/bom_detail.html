@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ bom.bom_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'bom:bom_list' %}">返回列表</a>
+  {% if can_edit_bom %}
+    <a class="button" href="{% url 'bom:bom_edit' bom.pk %}">编辑 BOM 信息</a>
+  {% endif %}
+  {% if can_process_bom and bom.status != bom.BomStatus.ENABLED and bom.status != bom.BomStatus.VOIDED %}
+    <form method="post" action="{% url 'bom:bom_enable' bom.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" aria-label="当前密码" style="width: 140px;">
+      <input type="text" name="reason" placeholder="启用原因" aria-label="启用原因" style="width: 140px;">
+      <button class="button primary" type="submit">启用为默认 BOM</button>
+    </form>
+  {% endif %}
+  {% if can_process_bom and bom.status == bom.BomStatus.ENABLED %}
+    <form method="post" action="{% url 'bom:bom_disable' bom.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" aria-label="当前密码" style="width: 140px;">
+      <input type="text" name="reason" placeholder="停用原因" aria-label="停用原因" style="width: 140px;">
+      <button class="button" type="submit">停用</button>
+    </form>
+  {% endif %}
+  {% if can_process_bom and bom.status != bom.BomStatus.VOIDED %}
+    <form method="post" action="{% url 'bom:bom_copy_version' bom.pk %}" class="form-actions" style="margin: 0;">
+      {% csrf_token %}
+      <input type="text" name="new_bom_no" placeholder="{{ copy_bom_no_placeholder }}" aria-label="新 BOM 编号" style="width: 160px;">
+      <input type="text" name="new_bom_version" placeholder="{{ copy_bom_version_placeholder }}" aria-label="新版本" style="width: 120px;">
+      <input type="text" name="operation_reason" placeholder="复制原因" aria-label="复制原因" style="width: 140px;">
+      <button class="button" type="submit">复制为新版本</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">成品</div>
+    <div class="detail-value">{{ bom.finished_material.material_code }} {{ bom.finished_material.material_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">版本</div>
+    <div class="detail-value">{{ bom.bom_version }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">基准数量</div>
+    <div class="detail-value">{{ bom.base_qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ bom.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">生效日期</div>
+    <div class="detail-value">{{ bom.effective_date|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">失效日期</div>
+    <div class="detail-value">{{ bom.expiry_date|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">默认 BOM</div>
+    <div class="detail-value">{{ bom.is_default|yesno:"是,否" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">版本号</div>
+    <div class="detail-value">{{ bom.version }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>BOM 明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>子件物料</th>
+          <th>用量</th>
+          <th>单位</th>
+          <th>损耗率</th>
+          <th>必需</th>
+          <th>备注</th>
+          {% if can_edit_bom %}<th>操作</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in bom.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.component_material.material_code }} {{ item.component_material.material_name }}</td>
+            <td>{{ item.usage_qty }}</td>
+            <td>{{ item.usage_unit }}</td>
+            <td>{{ item.loss_rate }}</td>
+            <td>{{ item.is_required|yesno:"是,否" }}</td>
+            <td>{{ item.remark }}</td>
+            {% if can_edit_bom %}
+              <td>
+                <div class="form-actions" style="margin: 0;">
+                  <a class="button" href="{% url 'bom:bom_item_edit' bom.pk item.pk %}">编辑</a>
+                  <form method="post" action="{% url 'bom:bom_item_delete' bom.pk item.pk %}">
+                    {% csrf_token %}
+                    <input type="password" name="current_password" placeholder="当前密码" aria-label="当前密码" style="width: 120px;">
+                    <input type="text" name="reason" placeholder="删除原因" aria-label="删除原因" style="width: 140px;">
+                    <button class="button" type="submit">删除</button>
+                  </form>
+                </div>
+              </td>
+            {% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if can_edit_bom %}8{% else %}7{% endif %}" class="empty">暂无 BOM 明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_edit_bom %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>新增明细</h2>
+    <form method="post" action="{% url 'bom:bom_item_create' bom.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">行号
+          <input type="text" name="line_no">
+        </label>
+        <label class="form-row">子件物料
+          <select name="component_material">
+            <option value="">请选择</option>
+            {% for material in component_materials %}
+              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">用量
+          <input type="text" name="usage_qty">
+        </label>
+        <label class="form-row">单位
+          <input type="text" name="usage_unit">
+        </label>
+        <label class="form-row">损耗率
+          <input type="text" name="loss_rate" value="0">
+        </label>
+        <label class="form-row">
+          <span>必需子件</span>
+          <input type="checkbox" name="is_required" checked>
+        </label>
+        <label class="form-row">备注
+          <input type="text" name="remark">
+        </label>
+        <label class="form-row">新增原因
+          <input type="text" name="operation_reason">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">新增明细</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

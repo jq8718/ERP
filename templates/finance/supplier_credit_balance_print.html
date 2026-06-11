@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <title>{{ page_title }}</title>
+  <style>
+    body { margin: 24px; color: #111827; font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif; }
+    .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+    button { border: 1px solid #9ca3af; background: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+    h1 { margin: 0 0 18px; text-align: center; font-size: 22px; letter-spacing: 0; }
+    .meta { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #9ca3af; border-bottom: 0; }
+    .cell { min-height: 36px; padding: 8px; border-right: 1px solid #9ca3af; border-bottom: 1px solid #9ca3af; }
+    .cell:nth-child(4n) { border-right: 0; }
+    .label { color: #6b7280; font-size: 12px; }
+    .value { margin-top: 2px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #9ca3af; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
+    .signature { border-top: 1px solid #374151; padding-top: 8px; }
+    @media print { body { margin: 12mm; } .toolbar { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">打印</button>
+    <button type="button" onclick="window.close()">关闭</button>
+  </div>
+
+  <h1>供应商待处理余额单</h1>
+
+  <section class="meta">
+    <div class="cell"><div class="label">供应商</div><div class="value">{{ balance.supplier.supplier_name }}</div></div>
+    <div class="cell"><div class="label">来源单据</div><div class="value">{{ balance.source_doc_type }} {{ balance.source_doc_no }}</div></div>
+    <div class="cell"><div class="label">余额金额</div><div class="value">{% if can_view_amount %}{{ balance.balance_amount }}{% else %}******{% endif %}</div></div>
+    <div class="cell"><div class="label">已使用</div><div class="value">{% if can_view_amount %}{{ balance.used_amount }}{% else %}******{% endif %}</div></div>
+    <div class="cell"><div class="label">剩余金额</div><div class="value">{% if can_view_amount %}{{ balance.remaining_amount }}{% else %}******{% endif %}</div></div>
+    <div class="cell"><div class="label">状态</div><div class="value">{{ balance.get_status_display }}</div></div>
+    <div class="cell"><div class="label">制单人</div><div class="value">{{ balance.created_by|default:"" }}</div></div>
+    <div class="cell"><div class="label">打印时间</div><div class="value">{% now "Y-m-d H:i" %}</div></div>
+    <div class="cell"><div class="label">处理原因</div><div class="value">{{ balance.process_reason }}</div></div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>流水号</th>
+        <th>动作</th>
+        <th>金额</th>
+        <th>目标单据</th>
+        <th>原因</th>
+        <th>创建时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in balance.transactions.all %}
+        <tr>
+          <td>{{ row.transaction_no }}</td>
+          <td>{{ row.get_action_type_display }}</td>
+          <td>{% if can_view_amount %}{{ row.amount }}{% else %}******{% endif %}</td>
+          <td>{{ row.target_doc_no }}</td>
+          <td>{{ row.reason }}</td>
+          <td>{{ row.created_at }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">暂无处理记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="signatures">
+    <div class="signature">财务</div>
+    <div class="signature">经办人</div>
+    <div class="signature">审核</div>
+  </section>
+</body>
+</html>

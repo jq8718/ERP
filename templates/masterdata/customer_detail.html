@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ customer.customer_name }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'masterdata:customer_list' %}">返回列表</a>
+  <a class="button" href="{% url 'masterdata:customer_edit' customer.pk %}">编辑</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户编号</div>
+    <div class="detail-value">{{ customer.customer_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">简称</div>
+    <div class="detail-value">{{ customer.short_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">销售负责人</div>
+    <div class="detail-value">{{ customer.sales_owner|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">结算方式</div>
+    <div class="detail-value">{{ customer.settlement_method }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">联系电话</div>
+    <div class="detail-value">{% if can_view_personal_info %}{{ customer.contact_phone_encrypted }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ customer.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ customer.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>客户产品</h2>
+  <div class="form-actions" style="padding: 0 14px 12px; margin: 0;">
+    <a class="button" href="{% url 'masterdata:customer_product_create' customer.pk %}">新增客户产品</a>
+  </div>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>客户产品编号</th>
+          <th>客户产品名称</th>
+          <th>关联成品</th>
+          <th>默认售价</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in customer.products.all %}
+          <tr>
+            <td><a href="{% url 'masterdata:customer_product_detail' product.pk %}">{{ product.customer_product_no }}</a></td>
+            <td>{{ product.customer_product_name }}</td>
+            <td>{{ product.finished_material.material_code|default:"" }}</td>
+            <td>{% if can_view_amount %}{{ product.default_sale_price|default:"" }}{% else %}******{% endif %}</td>
+            <td>{{ product.get_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">暂无客户产品</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>客户地址</h2>
+  {% if can_view_personal_info %}
+    <div class="form-actions" style="padding: 0 14px 12px; margin: 0;">
+      <a class="button" href="{% url 'masterdata:customer_address_create' customer.pk %}">新增客户地址</a>
+    </div>
+  {% endif %}
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>类型</th>
+          <th>收件人</th>
+          <th>电话</th>
+          <th>默认</th>
+          <th>状态</th>
+          {% if can_view_personal_info %}<th>操作</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for address in customer.addresses.all %}
+          <tr>
+            <td>{{ address.get_address_type_display }}</td>
+            <td>{% if can_view_personal_info %}{{ address.receiver_name }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_personal_info %}{{ address.receiver_phone_encrypted }}{% else %}******{% endif %}</td>
+            <td>{{ address.is_default|yesno:"是,否" }}</td>
+            <td>{{ address.get_status_display }}</td>
+            {% if can_view_personal_info %}<td><a href="{% url 'masterdata:customer_address_edit' address.pk %}">编辑</a></td>{% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if can_view_personal_info %}6{% else %}5{% endif %}" class="empty">暂无客户地址</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

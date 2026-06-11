@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>新建盘点单</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'inventory:stock_count_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>盘点范围</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row">{{ field.label }}
+          {{ field }}
+          {% if field.help_text %}<span class="muted">{{ field.help_text }}</span>{% endif %}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <p class="muted">保存后系统会按当前在库批次生成账面数量快照，实盘数量默认等于账面数量，可在详情页补充差异行。</p>
+    <div class="form-actions">
+      <button class="button primary" type="submit">创建盘点单</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

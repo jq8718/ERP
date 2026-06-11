@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title|default:"新建 BOM" }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  {% if bom %}
+    <a class="button" href="{% url 'bom:bom_detail' bom.pk %}">返回 BOM</a>
+  {% else %}
+    <a class="button" href="{% url 'bom:bom_list' %}">返回列表</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <h2>BOM 信息</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row">{{ field.label }}
+          {{ field }}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endfor %}
+      {% include "common/operation_reason_field.html" with is_edit=bom %}
+    </div>
+    <p class="muted">BOM 启用后不能直接修改，需要复制为新版本后调整。</p>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

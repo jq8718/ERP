@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ supplier.supplier_name }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'masterdata:supplier_list' %}">返回列表</a>
+  <a class="button" href="{% url 'masterdata:supplier_edit' supplier.pk %}">编辑</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">供应商编号</div>
+    <div class="detail-value">{{ supplier.supplier_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">联系人</div>
+    <div class="detail-value">{% if can_view_personal_info %}{{ supplier.contact_name }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">联系电话</div>
+    <div class="detail-value">{% if can_view_personal_info %}{{ supplier.contact_phone_encrypted }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">类型</div>
+    <div class="detail-value">{{ supplier.supplier_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">付款方式</div>
+    <div class="detail-value">{{ supplier.payment_method }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ supplier.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ supplier.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>供应物料价格</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>物料</th>
+          <th>价格</th>
+          <th>币种</th>
+          <th>默认</th>
+          <th>状态</th>
+          {% if can_view_amount %}<th>操作</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in supplier.material_prices.all %}
+          <tr>
+            <td><a href="{% url 'masterdata:material_detail' row.material.pk %}">{{ row.material.material_code }} {{ row.material.material_name }}</a></td>
+            <td>{% if can_view_amount %}{{ row.purchase_price }}{% else %}******{% endif %}</td>
+            <td>{{ row.currency }}</td>
+            <td>{{ row.is_default|yesno:"是,否" }}</td>
+            <td>{{ row.get_status_display }}</td>
+            {% if can_view_amount %}<td><a href="{% url 'masterdata:material_supplier_price_edit' row.pk %}">编辑</a></td>{% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if can_view_amount %}6{% else %}5{% endif %}" class="empty">暂无供应物料价格</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

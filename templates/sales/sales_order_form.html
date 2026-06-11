@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.customer.id_for_label }}">客户</label>
+        {{ form.customer }}
+        {{ form.customer.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.customer_address.id_for_label }}">收货地址</label>
+        {{ form.customer_address }}
+        {{ form.customer_address.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.order_date.id_for_label }}">订单日期</label>
+        {{ form.order_date }}
+        {{ form.order_date.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.delivery_date.id_for_label }}">交期</label>
+        {{ form.delivery_date }}
+        {{ form.delivery_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <section class="panel">
+    <h2>订单明细</h2>
+    {{ item_formset.management_form }}
+    {{ item_formset.non_form_errors }}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table class="inline-table">
+        <thead>
+          <tr>
+            <th>客户产品</th>
+            <th>数量</th>
+            {% if can_view_amount %}<th>单价</th>{% endif %}
+            <th>删除</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item_form in item_formset.forms %}
+            <tr>
+              <td>{{ item_form.customer_product }}{{ item_form.customer_product.errors }}</td>
+              <td>{{ item_form.order_qty }}{{ item_form.order_qty.errors }}</td>
+              {% if can_view_amount %}
+                <td>{{ item_form.unit_price }}{{ item_form.unit_price.errors }}</td>
+              {% else %}
+                {{ item_form.unit_price.as_hidden }}
+              {% endif %}
+              <td>
+                {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
+                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="button" type="submit" name="action" value="draft">保存草稿</button>
+    {% if can_submit_for_approval %}
+      <button class="button primary" type="submit" name="action" value="submit">保存并提交审核</button>
+    {% endif %}
+    {% if is_edit %}
+      <a class="button" href="{% url 'sales:sales_order_detail' order.pk %}">返回详情</a>
+    {% else %}
+      <a class="button" href="{% url 'sales:sales_order_list' %}">返回列表</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

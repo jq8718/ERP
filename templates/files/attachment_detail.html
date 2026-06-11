@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ attachment.original_filename }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'files:attachment_list' %}">返回列表</a>
+  {% if can_download %}
+    <a class="button primary" href="{% url 'files:attachment_download' attachment.pk %}">下载</a>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">附件号</div>
+    <div class="detail-value">{{ attachment.attachment_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源单据</div>
+    <div class="detail-value">{{ attachment.source_doc_type }} {{ attachment.source_doc_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">文件大小</div>
+    <div class="detail-value">{{ attachment.file_size }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">MIME</div>
+    <div class="detail-value">{{ attachment.mime_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">敏感附件</div>
+    <div class="detail-value">{{ attachment.is_sensitive|yesno:"是,否" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ attachment.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">安全扫描</div>
+    <div class="detail-value">{{ attachment.get_scan_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">上传人</div>
+    <div class="detail-value">{{ attachment.uploaded_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">上传时间</div>
+    <div class="detail-value">{{ attachment.uploaded_at }}</div>
+  </div>
+</section>
+
+{% if can_delete %}
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>删除附件</h2>
+  <form method="post" action="{% url 'files:attachment_delete' attachment.pk %}" style="padding: 14px;">
+    {% csrf_token %}
+    <label class="form-row">删除原因
+      <input type="text" name="reason">
+    </label>
+    <div class="form-actions">
+      <button class="button" type="submit">删除</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>访问日志</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>动作</th>
+          <th>操作人</th>
+          <th>IP</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in attachment.access_logs.all %}
+          <tr>
+            <td>{{ log.action }}</td>
+            <td>{{ log.operator|default:"" }}</td>
+            <td>{{ log.ip_address|default:"" }}</td>
+            <td>{{ log.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">暂无访问日志</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

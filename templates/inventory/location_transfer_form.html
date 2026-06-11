@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>新建库位移库</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'inventory:location_transfer_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>移库信息</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row">{{ field.label }}
+          {{ field }}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <p class="muted">保存后进入移库单详情页，确认后系统扣减原库位库存并在目标库位生成移入批次。</p>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存移库单</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

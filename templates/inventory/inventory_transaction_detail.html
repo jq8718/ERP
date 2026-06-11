@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'inventory:inventory_transaction_list' %}">返回库存流水</a>
+  {% if transaction.batch %}
+    <a class="button" href="{% url 'inventory:inventory_batch_detail' transaction.batch.pk %}">查看批次</a>
+  {% endif %}
+  {% if inventory_summary %}
+    <a class="button" href="{% url 'inventory:inventory_detail' inventory_summary.pk %}">查看库存汇总</a>
+  {% endif %}
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">流水号</div>
+    <div class="detail-value">{{ transaction.transaction_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">类型</div>
+    <div class="detail-value">{{ transaction.get_transaction_type_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">物料</div>
+    <div class="detail-value">{{ transaction.material.material_code }} {{ transaction.material.material_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">批次</div>
+    <div class="detail-value">
+      {% if transaction.batch %}
+        <a href="{% url 'inventory:inventory_batch_detail' transaction.batch.pk %}">{{ transaction.batch.batch_no }}</a>
+      {% else %}
+        -
+      {% endif %}
+    </div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">库位</div>
+    <div class="detail-value">{{ transaction.location.location_code }} {{ transaction.location.location_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">数量变化</div>
+    <div class="detail-value">{{ transaction.qty_delta }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源类型</div>
+    <div class="detail-value">{{ transaction.source_doc_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源 ID</div>
+    <div class="detail-value">{{ transaction.source_doc_id }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源单号</div>
+    <div class="detail-value">{{ transaction.source_doc_no|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">操作人</div>
+    <div class="detail-value">{{ transaction.created_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ transaction.created_at }}</div>
+  </div>
+</section>
+{% endblock %}

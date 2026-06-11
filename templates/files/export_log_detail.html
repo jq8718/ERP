@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'files:export_log_list' %}">返回导出日志</a>
+  {% if can_download_file %}
+    <a class="button primary" href="{% url 'files:export_log_download' export_log.id %}">下载CSV</a>
+  {% endif %}
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">导出号</div>
+    <div class="detail-value">{{ export_log.export_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">模块</div>
+    <div class="detail-value">{{ export_log.module }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">行数</div>
+    <div class="detail-value">{{ export_log.row_count }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">导出人</div>
+    <div class="detail-value">{{ export_log.exported_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">导出时间</div>
+    <div class="detail-value">{{ export_log.created_at }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">文件状态</div>
+    <div class="detail-value">
+      {% if not file_exists %}
+        文件不存在
+      {% elif can_download_file %}
+        可下载
+      {% else %}
+        仅导出人可下载
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>筛选条件</h2>
+  <div style="padding: 14px;">
+    <pre style="margin: 0; white-space: pre-wrap;">{{ export_log.filter_json }}</pre>
+  </div>
+</section>
+{% endblock %}

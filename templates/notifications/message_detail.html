@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ message_obj.title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'notifications:message_list' %}">返回列表</a>
+  {% if message_obj.action_url %}
+    <a class="button primary" href="{{ message_obj.action_url }}">打开来源</a>
+  {% endif %}
+  {% if can_process %}
+    <form method="post" action="{% url 'notifications:message_process' message_obj.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">标记已处理</button>
+    </form>
+  {% endif %}
+  {% if can_close %}
+    <form method="post" action="{% url 'notifications:message_close' message_obj.pk %}">
+      {% csrf_token %}
+      <button class="button" type="submit">关闭消息</button>
+    </form>
+  {% endif %}
+  {% if can_snooze %}
+    <form method="post" action="{% url 'notifications:message_snooze' message_obj.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="option" value="snooze_one_hour">
+      <button class="button" type="submit">1小时后提醒</button>
+    </form>
+    <form method="post" action="{% url 'notifications:message_snooze' message_obj.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="option" value="snooze_tomorrow">
+      <button class="button" type="submit">明天9点提醒</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">消息单号</div>
+    <div class="detail-value">{{ message_obj.message_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">级别</div>
+    <div class="detail-value">{{ message_obj.get_level_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ message_obj.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ message_obj.created_at }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源类型</div>
+    <div class="detail-value">{{ message_obj.source_doc_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">来源单号</div>
+    <div class="detail-value">{{ message_obj.source_doc_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">已读时间</div>
+    <div class="detail-value">{{ message_obj.read_at|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">稍后提醒时间</div>
+    <div class="detail-value">{{ message_obj.snoozed_until|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">处理时间</div>
+    <div class="detail-value">{{ message_obj.processed_at|default:"" }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>消息内容</h2>
+  <div style="padding: 14px;">
+    {% if message_obj.suggested_action %}
+      <p class="muted">建议动作：{{ message_obj.suggested_action }}</p>
+    {% endif %}
+    <p>{{ message_obj.content|linebreaksbr }}</p>
+  </div>
+</section>
+{% endblock %}

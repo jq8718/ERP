@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ loan.sample_loan_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:sample_loan_list' %}">返回列表</a>
+  <a class="button" href="{% url 'sales:sample_loan_print' loan.pk %}" target="_blank">打印</a>
+  {% if can_confirm_out %}
+    <form method="post" action="{% url 'sales:sample_loan_confirm_out' loan.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认借样出库</button>
+    </form>
+  {% endif %}
+  {% if can_create_return %}
+    <a class="button primary" href="{% url 'sales:sample_loan_return_create' loan.pk %}">登记归还</a>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ loan.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">借出日期</div>
+    <div class="detail-value">{{ loan.loan_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">预计归还</div>
+    <div class="detail-value">{{ loan.expected_return_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ loan.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">逾期状态</div>
+    <div class="detail-value">{{ loan.get_overdue_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">逾期天数</div>
+    <div class="detail-value">{{ loan.overdue_days }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ loan.created_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ loan.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>借样明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>物料</th>
+          <th>借出数量</th>
+          <th>已归还</th>
+          <th>已转销售</th>
+          <th>预计归还</th>
+          <th>批次</th>
+          <th>库位</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in loan.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.loan_qty }}</td>
+            <td>{{ item.returned_qty }}</td>
+            <td>{{ item.sold_qty }}</td>
+            <td>{{ item.expected_return_date|default:"" }}</td>
+            <td>{{ item.batch.batch_no|default:"" }}</td>
+            <td>{{ item.location.location_code|default:"" }}</td>
+            <td>{{ item.get_line_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_add_item %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>新增借样明细</h2>
+    <form method="post" action="{% url 'sales:sample_loan_item_create' loan.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="table-wrap" style="border: 0; border-radius: 0;">
+        <table class="inline-table">
+          <thead>
+            <tr>
+              <th>样品物料</th>
+              <th>借出数量</th>
+              <th>预计归还</th>
+              <th>批次</th>
+              <th>库位</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% with item_form=item_formset.forms.0 %}
+              <tr>
+                <td>{{ item_form.material }}</td>
+                <td>{{ item_form.loan_qty }}</td>
+                <td>{{ item_form.expected_return_date }}</td>
+                <td>{{ item_form.batch }}</td>
+                <td>{{ item_form.location }}</td>
+              </tr>
+            {% endwith %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button class="button primary" type="submit">新增明细</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+
+{% if can_convert_to_sales %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>转销售</h2>
+    <form method="post" action="{% url 'sales:sample_loan_convert_to_sales' loan.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="form-grid">
+        <label class="form-row">借样明细
+          <select name="sample_loan_item">
+            <option value="">请选择</option>
+            {% for row in convertible_items %}
+              <option value="{{ row.item.pk }}">第 {{ row.item.line_no }} 行 / {{ row.item.material.material_code }} / 可转 {{ row.available_qty }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="form-row">转销售数量
+          <input type="text" name="convert_qty">
+        </label>
+        <label class="form-row">销售单价
+          <input type="text" name="unit_price">
+        </label>
+      </div>
+      <p class="muted">转销售会生成待审核销售订单，不重复扣减库存。</p>
+      <div class="form-actions">
+        <button class="button primary" type="submit">转销售</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>归还记录</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>归还单号</th>
+          <th>归还日期</th>
+          <th>状态</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in loan.returns.all %}
+          <tr>
+            <td><a href="{% url 'sales:sample_loan_return_detail' row.pk %}">{{ row.sample_return_no }}</a></td>
+            <td>{{ row.return_date }}</td>
+            <td>{{ row.get_status_display }}</td>
+            <td>{{ row.remark }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">暂无归还记录</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

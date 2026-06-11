@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ transfer.transfer_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'inventory:location_transfer_list' %}">返回列表</a>
+  <a class="button" href="{% url 'inventory:location_transfer_print' transfer.pk %}" target="_blank">打印</a>
+  {% if can_confirm %}
+    <form method="post" action="{% url 'inventory:location_transfer_confirm' transfer.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认移库</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">物料</div>
+    <div class="detail-value">{{ transfer.material.material_code }} {{ transfer.material.material_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">批次</div>
+    <div class="detail-value">{{ transfer.batch.batch_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">原库位</div>
+    <div class="detail-value">{{ transfer.from_location.location_code }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">目标库位</div>
+    <div class="detail-value">{{ transfer.to_location.location_code }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">移库数量</div>
+    <div class="detail-value">{{ transfer.transfer_qty }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ transfer.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ transfer.created_at }}</div>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

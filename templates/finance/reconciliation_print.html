@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <title>{{ page_title }}</title>
+  <style>
+    body { margin: 24px; color: #111827; font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif; }
+    .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+    button { border: 1px solid #9ca3af; background: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+    h1 { margin: 0 0 18px; text-align: center; font-size: 22px; letter-spacing: 0; }
+    .meta { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #9ca3af; border-bottom: 0; }
+    .cell { min-height: 36px; padding: 8px; border-right: 1px solid #9ca3af; border-bottom: 1px solid #9ca3af; }
+    .cell:nth-child(4n) { border-right: 0; }
+    .label { color: #6b7280; font-size: 12px; }
+    .value { margin-top: 2px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #9ca3af; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
+    .signature { border-top: 1px solid #374151; padding-top: 8px; }
+    @media print { body { margin: 12mm; } .toolbar { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">打印</button>
+    <button type="button" onclick="window.close()">关闭</button>
+  </div>
+
+  <h1>对账单</h1>
+
+  <section class="meta">
+    <div class="cell"><div class="label">对账单号</div><div class="value">{{ reconciliation.reconciliation_no }}</div></div>
+    <div class="cell"><div class="label">对象类型</div><div class="value">{{ reconciliation.get_party_type_display }}</div></div>
+    <div class="cell"><div class="label">客户</div><div class="value">{{ reconciliation.customer.customer_name|default:"" }}</div></div>
+    <div class="cell"><div class="label">供应商</div><div class="value">{{ reconciliation.supplier.supplier_name|default:"" }}</div></div>
+    <div class="cell"><div class="label">周期</div><div class="value">{{ reconciliation.period_start }} 至 {{ reconciliation.period_end }}</div></div>
+    <div class="cell"><div class="label">保存金额</div><div class="value">{{ reconciliation.total_amount }}</div></div>
+    <div class="cell"><div class="label">明细合计</div><div class="value">{{ current_total }}</div></div>
+    <div class="cell"><div class="label">状态</div><div class="value">{{ reconciliation.get_status_display }}</div></div>
+    <div class="cell"><div class="label">制单人</div><div class="value">{{ reconciliation.created_by|default:"" }}</div></div>
+    <div class="cell"><div class="label">创建时间</div><div class="value">{{ reconciliation.created_at }}</div></div>
+    <div class="cell"><div class="label">备注</div><div class="value">{{ reconciliation.remark }}</div></div>
+    <div class="cell"><div class="label">打印时间</div><div class="value">{% now "Y-m-d H:i" %}</div></div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>来源类型</th>
+        <th>来源单号</th>
+        <th>日期</th>
+        <th>原始金额</th>
+        <th>退货/调整</th>
+        <th>已核销</th>
+        <th>未结金额</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.source_type_label }}</td>
+          <td>{{ row.source_no }}</td>
+          <td>{{ row.source_date }}</td>
+          <td>{{ row.gross_amount }}</td>
+          <td>{{ row.adjust_amount }}</td>
+          <td>{{ row.allocated_amount }}</td>
+          <td>{{ row.open_amount }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7">暂无可对账明细</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="signatures">
+    <div class="signature">财务</div>
+    <div class="signature">业务确认</div>
+    <div class="signature">审核</div>
+  </section>
+</body>
+</html>

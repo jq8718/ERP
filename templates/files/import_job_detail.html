@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<p class="form-actions">
+  <a class="button" href="{% url 'files:import_job_list' %}">返回导入任务</a>
+</p>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">任务号</div>
+    <div class="detail-value">{{ job.job_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">模板类型</div>
+    <div class="detail-value">{{ job.template_type }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ job.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">版本</div>
+    <div class="detail-value">{{ job.template_version|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">成功行数</div>
+    <div class="detail-value">{{ job.success_count }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">失败行数</div>
+    <div class="detail-value">{{ job.failed_count }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ job.created_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ job.created_at }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>错误明细</h2>
+  {% if errors %}
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>行号</th>
+            <th>字段</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for error in errors %}
+            <tr>
+              <td>{{ error.row }}</td>
+              <td>{{ error.field }}</td>
+              <td>{{ error.message }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">暂无错误</div>
+  {% endif %}
+</section>
+{% endblock %}

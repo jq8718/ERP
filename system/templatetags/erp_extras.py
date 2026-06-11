@@ -1,0 +1,28 @@
+from django import template
+
+from accounts.permissions import user_has_permission
+from system.view_helpers import row_value
+
+register = template.Library()
+
+
+@register.filter
+def attr(obj, attr_path):
+    return row_value(obj, attr_path)
+
+
+@register.simple_tag
+def has_erp_perm(user, permission_code):
+    return user_has_permission(user, permission_code)
+
+
+@register.filter
+def contains(value, item):
+    return item in value
+
+
+@register.filter
+def get_item(value, key):
+    if isinstance(value, dict):
+        return value.get(key)
+    return None

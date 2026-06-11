@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }}</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f4f6f8;
+      color: #1f2933;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    main {
+      width: min(460px, calc(100% - 32px));
+      background: #fff;
+      border: 1px solid #d7dde4;
+      border-radius: 8px;
+      padding: 28px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    p { margin: 0 0 18px; color: #687483; }
+    a {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: #0f766e;
+      color: #fff;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{ heading }}</h1>
+    <p>{{ error_message }}</p>
+    {% if request.user.is_authenticated %}
+      <a href="{% url 'system:dashboard' %}">返回工作台</a>
+    {% else %}
+      <a href="{% url 'login' %}">去登录</a>
+    {% endif %}
+  </main>
+</body>
+</html>

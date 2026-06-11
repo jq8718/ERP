@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ purchase_request.purchase_request_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'purchase:purchase_request_list' %}">返回列表</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'purchase:purchase_request_edit' purchase_request.pk %}">编辑</a>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'purchase:purchase_request_void' purchase_request.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if can_create_order %}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <form method="post" action="{% url 'purchase:purchase_request_create_order' purchase_request.pk %}" class="form-actions" style="margin: 0;">
+      {% csrf_token %}
+      <label class="form-row" style="margin: 0; min-width: 260px;">生成采购单供应商
+        <select name="supplier">
+          <option value="">请选择</option>
+          {% for supplier in suppliers %}
+            <option value="{{ supplier.pk }}">{{ supplier.supplier_no }} {{ supplier.supplier_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="button primary" type="submit">生成采购单</button>
+    </form>
+  </section>
+{% endif %}
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">来源</div>
+    <div class="detail-value">{{ purchase_request.get_source_type_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ purchase_request.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">需求日期</div>
+    <div class="detail-value">{{ purchase_request.needed_date|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">申请人</div>
+    <div class="detail-value">{{ purchase_request.requested_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建时间</div>
+    <div class="detail-value">{{ purchase_request.created_at }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ purchase_request.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>需求明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>物料</th>
+          <th>需求数量</th>
+          <th>建议供应商</th>
+          <th>需求日期</th>
+          <th>来源欠料</th>
+          <th>来源销售行</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in purchase_request.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.request_qty }}</td>
+            <td>{{ item.suggested_supplier|default:"" }}</td>
+            <td>{{ item.needed_date|default:"" }}</td>
+            <td>{{ item.source_shortage_alert.shortage_no|default:"" }}</td>
+            <td>{{ item.source_sales_order_item.sales_order.sales_order_no|default:"" }}</td>
+            <td>{{ item.get_line_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

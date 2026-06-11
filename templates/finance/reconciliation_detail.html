@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ reconciliation.reconciliation_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:reconciliation_list' %}">返回列表</a>
+  <a class="button" href="{% url 'finance:reconciliation_print' reconciliation.pk %}" target="_blank">打印</a>
+  {% if can_confirm %}
+    <form method="post" action="{% url 'finance:reconciliation_confirm' reconciliation.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认对账</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'finance:reconciliation_void' reconciliation.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">对象类型</div>
+    <div class="detail-value">{{ reconciliation.get_party_type_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ reconciliation.customer.customer_name|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">供应商</div>
+    <div class="detail-value">{{ reconciliation.supplier.supplier_name|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">周期</div>
+    <div class="detail-value">{{ reconciliation.period_start }} 至 {{ reconciliation.period_end }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">保存金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ reconciliation.total_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">明细合计</div>
+    <div class="detail-value">{% if can_view_amount %}{{ current_total }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ reconciliation.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ reconciliation.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>对账明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>来源类型</th>
+          <th>来源单号</th>
+          <th>日期</th>
+          <th>原始金额</th>
+          <th>退货/调整</th>
+          <th>已核销</th>
+          <th>未结金额</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.source_type_label }}</td>
+            <td>{{ row.source_no }}</td>
+            <td>{{ row.source_date }}</td>
+            <td>{% if can_view_amount %}{{ row.gross_amount }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ row.adjust_amount }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ row.allocated_amount }}{% else %}******{% endif %}</td>
+            <td>{% if can_view_amount %}{{ row.open_amount }}{% else %}******{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">暂无可对账明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

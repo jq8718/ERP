@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'masterdata:customer_product_list' %}">返回客户产品列表</a>
+  <a class="button" href="{% url 'masterdata:customer_detail' product.customer.pk %}">查看客户</a>
+  <a class="button" href="{% url 'masterdata:customer_product_edit' product.pk %}">编辑</a>
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ product.customer.customer_no }} {{ product.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">客户产品编号</div>
+    <div class="detail-value">{{ product.customer_product_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">客户产品名称</div>
+    <div class="detail-value">{{ product.customer_product_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">关联成品</div>
+    <div class="detail-value">
+      {% if product.finished_material %}
+        <a href="{% url 'masterdata:material_detail' product.finished_material.pk %}">{{ product.finished_material.material_code }} {{ product.finished_material.material_name }}</a>
+      {% else %}
+        -
+      {% endif %}
+    </div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">默认售价</div>
+    <div class="detail-value">{% if can_view_amount %}{{ product.default_sale_price|default:"-" }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ product.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">创建人</div>
+    <div class="detail-value">{{ product.created_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">更新人</div>
+    <div class="detail-value">{{ product.updated_by.username|default:"-" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">版本</div>
+    <div class="detail-value">{{ product.version }}</div>
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="panel">
+    <h2>标签要求</h2>
+    <div style="padding: 14px;">
+      <pre style="white-space: pre-wrap; margin: 0;">{{ product.label_requirements }}</pre>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>包装要求</h2>
+    <div style="padding: 14px;">
+      <pre style="white-space: pre-wrap; margin: 0;">{{ product.packaging_requirements }}</pre>
+    </div>
+  </div>
+</section>
+{% endblock %}

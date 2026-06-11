@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px; margin-bottom: 16px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.finished_material.id_for_label }}">成品</label>
+        {{ form.finished_material }}
+        {{ form.finished_material.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.production_qty.id_for_label }}">生产数量</label>
+        {{ form.production_qty }}
+        {{ form.production_qty.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.locked_bom.id_for_label }}">BOM</label>
+        {{ form.locked_bom }}
+        {{ form.locked_bom.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.planned_start_date.id_for_label }}">计划开始</label>
+        {{ form.planned_start_date }}
+        {{ form.planned_start_date.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.planned_finish_date.id_for_label }}">计划完成</label>
+        {{ form.planned_finish_date }}
+        {{ form.planned_finish_date.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.remark.id_for_label }}">备注</label>
+      {{ form.remark }}
+      {{ form.remark.errors }}
+    </div>
+    {% include "common/operation_reason_field.html" %}
+  </section>
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">保存</button>
+    {% if is_edit %}
+      <a class="button" href="{% url 'production:production_order_detail' production_order.pk %}">返回详情</a>
+    {% else %}
+      <a class="button" href="{% url 'production:production_order_list' %}">返回列表</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

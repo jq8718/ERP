@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'masterdata:material_detail' material.pk %}">返回物料</a>
+</div>
+
+<section class="panel">
+  <h2>供应商价格</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row">{{ field.label }}
+          {{ field }}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endfor %}
+      {% include "common/operation_reason_field.html" %}
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

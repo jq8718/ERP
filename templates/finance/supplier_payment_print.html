@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <title>{{ page_title }}</title>
+  <style>
+    body { margin: 24px; color: #111827; font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif; }
+    .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+    button { border: 1px solid #9ca3af; background: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+    h1 { margin: 0 0 18px; text-align: center; font-size: 22px; letter-spacing: 0; }
+    .meta { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #9ca3af; border-bottom: 0; }
+    .cell { min-height: 36px; padding: 8px; border-right: 1px solid #9ca3af; border-bottom: 1px solid #9ca3af; }
+    .cell:nth-child(4n) { border-right: 0; }
+    .label { color: #6b7280; font-size: 12px; }
+    .value { margin-top: 2px; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #9ca3af; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
+    .signature { border-top: 1px solid #374151; padding-top: 8px; }
+    @media print { body { margin: 12mm; } .toolbar { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">打印</button>
+    <button type="button" onclick="window.close()">关闭</button>
+  </div>
+
+  <h1>供应商付款凭证</h1>
+
+  <section class="meta">
+    <div class="cell"><div class="label">付款单号</div><div class="value">{{ payment.payment_no }}</div></div>
+    <div class="cell"><div class="label">供应商</div><div class="value">{{ payment.supplier.supplier_name }}</div></div>
+    <div class="cell"><div class="label">付款日期</div><div class="value">{{ payment.payment_date }}</div></div>
+    <div class="cell"><div class="label">付款方式</div><div class="value">{{ payment.get_payment_method_display }}</div></div>
+    <div class="cell"><div class="label">付款金额</div><div class="value">{% if can_view_amount %}{{ payment.payment_amount }}{% else %}******{% endif %}</div></div>
+    <div class="cell"><div class="label">未分配</div><div class="value">{% if can_view_amount %}{{ payment.unallocated_amount }}{% else %}******{% endif %}</div></div>
+    <div class="cell"><div class="label">状态</div><div class="value">{{ payment.get_status_display }}</div></div>
+    <div class="cell"><div class="label">确认人</div><div class="value">{{ payment.confirmed_by|default:"" }}</div></div>
+    <div class="cell"><div class="label">经办人</div><div class="value">{{ payment.handled_by|default:"" }}</div></div>
+    <div class="cell"><div class="label">制单人</div><div class="value">{{ payment.created_by|default:"" }}</div></div>
+    <div class="cell"><div class="label">备注</div><div class="value">{{ payment.remark }}</div></div>
+    <div class="cell"><div class="label">打印时间</div><div class="value">{% now "Y-m-d H:i" %}</div></div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>类型</th>
+        <th>进货单</th>
+        <th>对账单</th>
+        <th>核销金额</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for allocation in payment.allocations.all %}
+        <tr>
+          <td>{{ allocation.get_allocation_type_display }}</td>
+          <td>{{ allocation.purchase_receipt.purchase_receipt_no|default:"" }}</td>
+          <td>{{ allocation.reconciliation.reconciliation_no|default:"" }}</td>
+          <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
+          <td>{{ allocation.remark }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">暂无核销明细</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="signatures">
+    <div class="signature">财务</div>
+    <div class="signature">经办人</div>
+    <div class="signature">审核</div>
+  </section>
+</body>
+</html>

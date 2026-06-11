@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ sample_return.sample_return_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:sample_loan_detail' sample_return.sample_loan.pk %}">返回借样单</a>
+  <a class="button" href="{% url 'sales:sample_loan_return_print' sample_return.pk %}" target="_blank">打印</a>
+  {% if can_edit %}
+    <a class="button primary" href="{% url 'sales:sample_loan_return_edit' sample_return.pk %}">编辑</a>
+  {% endif %}
+  {% if can_confirm %}
+    <form method="post" action="{% url 'sales:sample_loan_return_confirm' sample_return.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认归还入库</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'sales:sample_loan_return_void' sample_return.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">借样单</div>
+    <div class="detail-value">{{ sample_return.sample_loan.sample_loan_no }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ sample_return.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">归还日期</div>
+    <div class="detail-value">{{ sample_return.return_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ sample_return.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ sample_return.remark }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>归还明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>借样行</th>
+          <th>物料</th>
+          <th>归还数量</th>
+          <th>库位</th>
+          <th>库存类型</th>
+          <th>样品状态</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in sample_return.items.all %}
+          <tr>
+            <td>{{ item.sample_loan_item.line_no }}</td>
+            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.return_qty }}</td>
+            <td>{{ item.location.location_code }}</td>
+            <td>{{ item.inventory_type }}</td>
+            <td>{{ item.get_sample_condition_display }}</td>
+            <td>{{ item.remark }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}
