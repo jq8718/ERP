@@ -169,6 +169,16 @@ def _check_https_security_settings() -> PreflightCheck:
         missing.append("DJANGO_SECURE_HSTS_SECONDS")
 
     if missing:
+        risk_acceptor = getattr(settings, "ERP_INTRANET_HTTP_RISK_ACCEPTED_BY", "").strip()
+        if risk_acceptor:
+            return PreflightCheck(
+                "HTTPS 安全配置",
+                True,
+                "内网 HTTP 部署未完整启用 HTTPS 安全项，已由 "
+                + risk_acceptor
+                + " 接受风险；缺失项："
+                + ", ".join(missing),
+            )
         return PreflightCheck(
             "HTTPS 安全配置",
             False,

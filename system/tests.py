@@ -1530,6 +1530,26 @@ class ProductionPreflightCommandTests(TestCase):
     @override_settings(
         IS_PRODUCTION=True,
         DEBUG=False,
+        ALLOWED_HOSTS=["192.168.1.10"],
+        SECURE_SSL_REDIRECT=False,
+        SESSION_COOKIE_SECURE=False,
+        CSRF_COOKIE_SECURE=False,
+        CSRF_TRUSTED_ORIGINS=[],
+        SECURE_HSTS_SECONDS=0,
+        ERP_INTRANET_HTTP_RISK_ACCEPTED_BY="系统管理员",
+        ERP_ATTACHMENT_SCAN_COMMAND="scanner {file}",
+    )
+    def test_preflight_accepts_intranet_http_with_risk_acceptor(self):
+        checks = run_preflight_checks()
+
+        https_check = _check_by_name(checks, "HTTPS 安全配置")
+        self.assertTrue(https_check.ok)
+        self.assertIn("内网 HTTP 部署", https_check.message)
+        self.assertIn("系统管理员", https_check.message)
+
+    @override_settings(
+        IS_PRODUCTION=True,
+        DEBUG=False,
         ALLOWED_HOSTS=["erp.example.com"],
         SECURE_SSL_REDIRECT=True,
         SESSION_COOKIE_SECURE=True,
