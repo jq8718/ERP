@@ -10,3 +10,5 @@ logs/
 logs-test/
 .pytest_cache/
 .tmp/
+installer/packages/
+installer/work/
