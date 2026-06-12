@@ -20,7 +20,8 @@ Push-Location $root
 try {
     & "$root\installer\preflight-prerequisites.ps1"
     Write-Host ""
-    Write-Host "如上方显示缺少 Python/PostgreSQL/Git/NSSM，请先从 installer\packages 手动安装后重新运行。"
+    Write-Host "如上方显示缺少 Python、PostgreSQL、PostgreSQL service 或 NSSM，请先从 installer\packages 手动安装后重新运行。"
+    Write-Host "Git 是可选项；如果 ERP 文件夹已经完整复制到服务器，可以不安装 Git。"
     $continue = Read-Host "是否继续初始化 PostgreSQL 和 ERP？输入 Y 继续"
     if ($continue -ne "Y") {
         Write-Host "已取消。"

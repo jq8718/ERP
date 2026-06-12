@@ -28,9 +28,9 @@ if ($pythonOk) {
 
 $gitOk = Test-Command "git"
 if ($gitOk) {
-    Write-Result "Git" $true ((& git --version) -join " ")
+    Write-Result "Git (optional)" $true ((& git --version) -join " ")
 } else {
-    Write-Result "Git" $false "git.exe not found"
+    Write-Result "Git (optional)" $true "not installed; OK if ERP folder was copied manually"
 }
 
 $psqlCandidates = @(
@@ -63,4 +63,4 @@ if (Test-Path -LiteralPath $nssmPath) {
 }
 
 Write-Host ""
-Write-Host "If any required item is missing, install it from installer\packages, then rerun this script."
+Write-Host "If Python, PostgreSQL, PostgreSQL service, or NSSM is missing, install it from installer\packages, then rerun this script."
