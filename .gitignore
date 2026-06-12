@@ -12,3 +12,6 @@ logs-test/
 .tmp/
 installer/packages/
 installer/work/
+installer/dist/
+ERP-Setup.exe
+ERP-Uninstall.exe
