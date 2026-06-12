@@ -10,8 +10,8 @@ if (-not (Test-Path -LiteralPath $OutputDir)) {
 }
 
 robocopy $repoRoot $OutputDir /MIR `
-    /XD .git .venv .tmp backups logs logs-test media staticfiles dist work __pycache__ "ERP安装包" `
-    /XF .env db.sqlite3 *.pyc "~*.DDF" | Out-Host
+    /XD .git .venv .tmp backups logs logs-test media staticfiles dist work __pycache__ tests_safety "ERP安装包" `
+    /XF .env db.sqlite3 *.pyc "~*.DDF" "ERP模块建设计划.md" | Out-Host
 
 if ($LASTEXITCODE -ge 8) {
     throw "robocopy failed with exit code $LASTEXITCODE"
@@ -27,7 +27,8 @@ $cleanupDirs = @(
     "logs",
     "logs-test",
     "media",
-    "staticfiles"
+    "staticfiles",
+    "tests_safety"
 )
 
 $resolvedOutput = (Resolve-Path -LiteralPath $OutputDir).Path
@@ -42,6 +43,21 @@ foreach ($relative in $cleanupDirs) {
     }
 }
 
+$cleanupFiles = @(
+    "ERP模块建设计划.md"
+)
+
+foreach ($relative in $cleanupFiles) {
+    $path = Join-Path $OutputDir $relative
+    if (Test-Path -LiteralPath $path) {
+        $resolvedPath = (Resolve-Path -LiteralPath $path).Path
+        if (-not $resolvedPath.StartsWith($resolvedOutput, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove path outside package directory: $resolvedPath"
+        }
+        Remove-Item -LiteralPath $path -Force
+    }
+}
+
 $required = @(
     "ERP-Setup.exe",
     "ERP-Uninstall.exe",
@@ -50,7 +66,8 @@ $required = @(
     "installer\packages\python-3.12.10-amd64.exe",
     "installer\packages\postgresql-17.10-1-windows-x64.exe",
     "installer\packages\nssm-2.24.zip",
-    "installer\templates\intranet.env.template"
+    "installer\templates\intranet.env.template",
+    "docs\Windows10内网ERP一键安装手册.md"
 )
 
 foreach ($relative in $required) {
