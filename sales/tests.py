@@ -515,6 +515,10 @@ class SalesServiceTests(TestCase):
 
 
 class SalesOrderViewTests(SalesServiceTests):
+    def setUp(self):
+        super().setUp()
+        self._grant_permission(PermissionCode.SALES_VIEW)
+
     def test_sales_order_list_filters_to_owned_customer_without_view_all(self):
         other_user = get_user_model().objects.create_user(username="other-sales", password="x")
         owned_customer = Customer.objects.create(customer_no="C-OWN", customer_name="我的客户", sales_owner=self.user)
@@ -820,7 +824,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("sales_order_no,customer_no,customer_address_id,order_date", content)
+        self.assertIn("销售订单号,客户编号,客户地址 ID,订单日期", content)
         self.assertIn("SO-INIT-001", content)
 
     def test_sales_order_import_creates_draft_order_with_multiple_lines(self):
@@ -843,7 +847,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_orders.csv",
             (
-                "sales_order_no,customer_no,customer_address_id,order_date,delivery_date,customer_product_no,order_qty,unit_price,remark\n"
+                "销售订单号,客户编号,客户地址 ID,订单日期,交期,客户产品编号,订单数量,单价,备注\n"
                 "SO-IMP-001,C001,,2026-06-10,2026-06-20,CP001,3,12.5000,导入订单\n"
                 "SO-IMP-001,C001,,2026-06-10,2026-06-20,CP002,2,6.0000,\n"
             ).encode("utf-8-sig"),
@@ -874,7 +878,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_orders.csv",
             (
-                "sales_order_no,customer_no,customer_address_id,order_date,delivery_date,customer_product_no,order_qty,unit_price,remark\n"
+                "销售订单号,客户编号,客户地址 ID,订单日期,交期,客户产品编号,订单数量,单价,备注\n"
                 "SO-IMP-NO-AMOUNT,C001,,2026-06-10,,CP001,4,99.9999,无金额权限\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -894,7 +898,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_orders.csv",
             (
-                "sales_order_no,customer_no,customer_address_id,order_date,delivery_date,customer_product_no,order_qty,unit_price,remark\n"
+                "销售订单号,客户编号,客户地址 ID,订单日期,交期,客户产品编号,订单数量,单价,备注\n"
                 "SO-BAD,C001,,bad-date,2026-06-01,CP001,-1,-5,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -928,7 +932,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("sample_loan_no,customer_no,loan_date,expected_return_date", content)
+        self.assertIn("借样单号,客户编号,借样日期,预计归还日期", content)
         self.assertIn("SL-INIT-001", content)
 
     def test_sample_loan_import_creates_pending_loan_with_multiple_lines(self):
@@ -954,7 +958,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sample_loans.csv",
             (
-                "sample_loan_no,customer_no,loan_date,expected_return_date,material_code,loan_qty,batch_no,location_code,line_expected_return_date,remark\n"
+                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,备注\n"
                 "SL-IMP-001,C001,2026-06-10,2026-06-20,FG001,2,SL-B001,SL-A01,2026-06-20,导入借样\n"
                 "SL-IMP-001,C001,2026-06-10,2026-06-20,FG002,1,,,2026-06-22,\n"
             ).encode("utf-8-sig"),
@@ -988,7 +992,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sample_loans.csv",
             (
-                "sample_loan_no,customer_no,loan_date,expected_return_date,material_code,loan_qty,batch_no,location_code,line_expected_return_date,remark\n"
+                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,备注\n"
                 "SL-BAD,C001,bad-date,2026-06-01,RM-MISSING,-1,B-MISSING,L-MISSING,bad-line,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -1024,7 +1028,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("return_no,customer_no,sales_order_no,return_date", content)
+        self.assertIn("客户退货单号,客户编号,销售订单号,退货日期", content)
         self.assertIn("RT-INIT-001", content)
 
     def test_customer_return_import_creates_draft_return_with_source_order_line(self):
@@ -1042,7 +1046,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "customer_returns.csv",
             (
-                "return_no,customer_no,sales_order_no,return_date,sales_order_line_no,material_code,return_qty,unit_price,location_code,inventory_type,return_reason,remark\n"
+                "客户退货单号,客户编号,销售订单号,退货日期,销售订单行号,物料编码,退货数量,单价,库位编码,库存类型,退货原因,备注\n"
                 "RT-IMP-001,C001,SO-RETURN-IMPORT,2026-06-10,1,FG001,2,9.5000,RT-A01,available,客户退回,导入退货\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -1081,7 +1085,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "customer_returns.csv",
             (
-                "return_no,customer_no,sales_order_no,return_date,sales_order_line_no,material_code,return_qty,unit_price,location_code,inventory_type,return_reason,remark\n"
+                "客户退货单号,客户编号,销售订单号,退货日期,销售订单行号,物料编码,退货数量,单价,库位编码,库存类型,退货原因,备注\n"
                 "RT-IMP-NO-AMOUNT,C001,SO-RETURN-NO-AMOUNT,2026-06-10,1,FG001,2,99.9900,,available,客户退回,无金额权限\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -1102,7 +1106,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "customer_returns.csv",
             (
-                "return_no,customer_no,sales_order_no,return_date,sales_order_line_no,material_code,return_qty,unit_price,location_code,inventory_type,return_reason,remark\n"
+                "客户退货单号,客户编号,销售订单号,退货日期,销售订单行号,物料编码,退货数量,单价,库位编码,库存类型,退货原因,备注\n"
                 "RT-BAD,C001,SO-MISSING,bad-date,1,RM-MISSING,-1,-5,L-MISSING,bad-type,错误,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -1139,7 +1143,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("shipment_no,sales_order_no,shipment_date", content)
+        self.assertIn("销售出库单号,销售订单号,出库日期", content)
         self.assertIn("SS-INIT-001", content)
 
     def test_sales_shipment_import_creates_pending_shipment_without_deducting_inventory(self):
@@ -1155,7 +1159,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_shipments.csv",
             (
-                "shipment_no,sales_order_no,shipment_date,sales_order_line_no,material_code,shipment_qty,batch_no,location_code,remark\n"
+                "销售出库单号,销售订单号,出库日期,销售订单行号,物料编码,出库数量,批次号,库位编码,备注\n"
                 f"SS-IMP-001,SO-SHIP-IMPORT,2026-06-10,1,FG001,4,{batch.batch_no},{self.location.location_code},导入出库\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -1197,7 +1201,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_shipments.csv",
             (
-                "shipment_no,sales_order_no,shipment_date,sales_order_line_no,material_code,shipment_qty,batch_no,location_code,remark\n"
+                "销售出库单号,销售订单号,出库日期,销售订单行号,物料编码,出库数量,批次号,库位编码,备注\n"
                 "SS-BAD,SO-SHIP-BAD,bad-date,1,FG001,20,B-MISSING,L-MISSING,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -1258,7 +1262,7 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sales_shipments.csv",
             (
-                "shipment_no,sales_order_no,shipment_date,sales_order_line_no,material_code,shipment_qty,batch_no,location_code,remark\n"
+                "销售出库单号,销售订单号,出库日期,销售订单行号,物料编码,出库数量,批次号,库位编码,备注\n"
                 f"SS-SCOPE,SO-SHIP-SCOPE,2026-06-10,1,FG001,1,{batch.batch_no},{self.location.location_code},越权导入\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -1672,6 +1676,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
     def test_purchase_request_detail_renders_items(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_VIEW)
         self._batch(self.raw, Decimal("5"))
         order, item = self._sales_order()
         confirm_sales_order(order.id, self.user.id)
@@ -2563,6 +2568,13 @@ class SalesOrderViewTests(SalesServiceTests):
 
     def test_sample_loan_print_respects_sales_scope(self):
         other_user = get_user_model().objects.create_user(username="loan-print-other", password="x")
+        permission, _ = Permission.objects.get_or_create(
+            permission_code=PermissionCode.SALES_VIEW,
+            defaults={"permission_name": PermissionCode.SALES_VIEW, "permission_type": Permission.PermissionType.MODULE},
+        )
+        role = Role.objects.create(role_code=f"sales-view-other-{other_user.id}", role_name="销售查看")
+        role.permissions.add(permission)
+        other_user.roles.add(role)
         self.client.force_login(other_user)
         loan, loan_item, sample_return = self._sample_return()
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ attachment.original_filename }}</h1>
@@ -17,7 +18,7 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源单据</div>
-    <div class="detail-value">{{ attachment.source_doc_type }} {{ attachment.source_doc_no }}</div>
+    <div class="detail-value">{{ attachment.source_doc_type|code_name }} {{ attachment.source_doc_no }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">文件大小</div>
@@ -79,7 +80,7 @@
       <tbody>
         {% for log in attachment.access_logs.all %}
           <tr>
-            <td>{{ log.action }}</td>
+            <td>{{ log.action|code_name }}</td>
             <td>{{ log.operator|default:"" }}</td>
             <td>{{ log.ip_address|default:"" }}</td>
             <td>{{ log.created_at }}</td>

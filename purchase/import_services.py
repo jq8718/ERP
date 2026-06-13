@@ -10,7 +10,7 @@ from django.db.models import Sum as models_sum
 from django.utils import timezone
 
 from files.models import ImportJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material, MaterialSupplierPrice, Supplier
 from system.services import ServiceResult, next_document_no
@@ -38,7 +38,7 @@ PURCHASE_REQUEST_IMPORT_COLUMNS = (
 )
 
 PURCHASE_REQUEST_IMPORT_TEMPLATE_ROWS = (
-    PURCHASE_REQUEST_IMPORT_COLUMNS,
+    csv_import_header_row(PURCHASE_REQUEST_IMPORT_COLUMNS),
     ("PR-INIT-001", "2026-06-20", "RM001", "100", "S001", "2026-06-20", "示例行，导入前可删除"),
     ("PR-INIT-001", "2026-06-20", "RM002", "50", "", "2026-06-22", ""),
 )
@@ -55,7 +55,7 @@ PURCHASE_ORDER_IMPORT_COLUMNS = (
 )
 
 PURCHASE_ORDER_IMPORT_TEMPLATE_ROWS = (
-    PURCHASE_ORDER_IMPORT_COLUMNS,
+    csv_import_header_row(PURCHASE_ORDER_IMPORT_COLUMNS),
     ("PO-INIT-001", "S001", "2026-06-20", "RM001", "100", "2.500000", "2026-06-25", "示例行，导入前可删除"),
     ("PO-INIT-001", "S001", "2026-06-20", "RM002", "50", "3.200000", "2026-06-28", ""),
 )
@@ -76,7 +76,7 @@ SUPPLIER_RETURN_IMPORT_COLUMNS = (
 )
 
 SUPPLIER_RETURN_IMPORT_TEMPLATE_ROWS = (
-    SUPPLIER_RETURN_IMPORT_COLUMNS,
+    csv_import_header_row(SUPPLIER_RETURN_IMPORT_COLUMNS),
     ("SR-INIT-001", "S001", "GR001", "2026-06-10", "1", "RM001", "2", "2.500000", "BATCH001", "A01", "质量问题", "示例行，导入前可删除"),
     ("SR-INIT-001", "S001", "GR001", "2026-06-10", "2", "RM002", "1", "3.200000", "BATCH002", "A01", "", ""),
 )
@@ -95,7 +95,7 @@ PURCHASE_RECEIPT_IMPORT_COLUMNS = (
 )
 
 PURCHASE_RECEIPT_IMPORT_TEMPLATE_ROWS = (
-    PURCHASE_RECEIPT_IMPORT_COLUMNS,
+    csv_import_header_row(PURCHASE_RECEIPT_IMPORT_COLUMNS),
     ("GR-INIT-001", "PO001", "2026-06-10", "1", "RM001", "100", "98", "2", "A01", "示例行，导入前可删除"),
     ("GR-INIT-001", "PO001", "2026-06-10", "2", "RM002", "50", "50", "0", "A01", ""),
 )

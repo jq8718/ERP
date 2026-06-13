@@ -9,7 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from files.models import ImportJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from masterdata.models import Customer, Supplier
 from system.services import ServiceResult, next_document_no
 
@@ -26,7 +26,7 @@ CUSTOMER_RECEIPT_IMPORT_COLUMNS = (
 )
 
 CUSTOMER_RECEIPT_IMPORT_TEMPLATE_ROWS = (
-    CUSTOMER_RECEIPT_IMPORT_COLUMNS,
+    csv_import_header_row(CUSTOMER_RECEIPT_IMPORT_COLUMNS),
     ("RC-INIT-001", "C001", "2026-06-10", "1000.00", "transfer", "示例行，导入前可删除"),
     ("", "C002", "2026-06-11", "500.00", "cash", ""),
 )
@@ -41,7 +41,7 @@ SUPPLIER_PAYMENT_IMPORT_COLUMNS = (
 )
 
 SUPPLIER_PAYMENT_IMPORT_TEMPLATE_ROWS = (
-    SUPPLIER_PAYMENT_IMPORT_COLUMNS,
+    csv_import_header_row(SUPPLIER_PAYMENT_IMPORT_COLUMNS),
     ("PY-INIT-001", "S001", "2026-06-10", "800.00", "transfer", "示例行，导入前可删除"),
     ("", "S002", "2026-06-11", "300.00", "cash", ""),
 )

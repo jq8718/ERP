@@ -10,10 +10,11 @@ from django.views import View
 from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView, UpdateView
 
-from accounts.permissions import PermissionCode, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
 from files.view_helpers import build_attachment_panel, export_file_response
 from masterdata.models import Material
+from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, require_post_reason, require_second_verify
 
@@ -35,6 +36,8 @@ class WarehouseLocationListView(ErpListView):
     page_title = "库位"
     create_url_name = "inventory:warehouse_location_create"
     create_permission_required = PermissionCode.INVENTORY_PROCESS
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:warehouse_location_detail"
     columns = (
         ("库位编码", "location_code"),
@@ -64,6 +67,11 @@ class WarehouseLocationCreateView(LoginRequiredMixin, CreateView):
         require_erp_permission(request.user, PermissionCode.INVENTORY_PROCESS, "缺少库存单据处理权限")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = "新建库位"
@@ -86,6 +94,11 @@ class WarehouseLocationUpdateView(LoginRequiredMixin, UpdateView):
         require_erp_permission(request.user, PermissionCode.INVENTORY_PROCESS, "缺少库存单据处理权限")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"编辑库位 {self.object.location_code}"
@@ -105,6 +118,11 @@ class WarehouseLocationDetailView(LoginRequiredMixin, DetailView):
     model = WarehouseLocation
     template_name = "inventory/warehouse_location_detail.html"
     context_object_name = "location"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, WarehouseLocationListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -161,6 +179,8 @@ class WarehouseLocationImportView(LoginRequiredMixin, TemplateView):
 class InventoryListView(ErpListView):
     model = Inventory
     page_title = "库存汇总"
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:inventory_detail"
     columns = (
         ("物料", "material.material_code"),
@@ -185,6 +205,11 @@ class InventoryDetailView(LoginRequiredMixin, DetailView):
     model = Inventory
     template_name = "inventory/inventory_detail.html"
     context_object_name = "inventory"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, InventoryListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().select_related("material", "location")
@@ -215,6 +240,8 @@ class InventoryDetailView(LoginRequiredMixin, DetailView):
 class InventoryBatchListView(ErpListView):
     model = InventoryBatch
     page_title = "库存批次"
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:inventory_batch_detail"
     columns = (
         ("批次号", "batch_no"),
@@ -243,6 +270,11 @@ class InventoryBatchDetailView(LoginRequiredMixin, DetailView):
     template_name = "inventory/inventory_batch_detail.html"
     context_object_name = "batch"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, InventoryBatchListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().select_related("material", "location")
 
@@ -260,6 +292,8 @@ class InventoryBatchDetailView(LoginRequiredMixin, DetailView):
 class InventoryTransactionListView(ErpListView):
     model = InventoryTransaction
     page_title = "库存流水"
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:inventory_transaction_detail"
     columns = (
         ("流水号", "transaction_no"),
@@ -296,6 +330,11 @@ class InventoryTransactionDetailView(LoginRequiredMixin, DetailView):
     template_name = "inventory/inventory_transaction_detail.html"
     context_object_name = "transaction"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, InventoryTransactionListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().select_related("material", "batch", "location", "created_by")
 
@@ -315,6 +354,12 @@ class InventoryCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        required_permissions = getattr(self.list_view_class, "view_permission_required", ())
+        if request.user.is_authenticated and required_permissions:
+            require_any_erp_permission(request.user, required_permissions, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -482,6 +527,8 @@ class LocationTransferListView(ErpListView):
     page_title = "库位移库"
     create_url_name = "inventory:location_transfer_create"
     create_permission_required = PermissionCode.INVENTORY_PROCESS
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:location_transfer_detail"
     columns = (
         ("移库单号", "transfer_no"),
@@ -530,6 +577,11 @@ class LocationTransferDetailView(LoginRequiredMixin, DetailView):
     template_name = "inventory/location_transfer_detail.html"
     context_object_name = "transfer"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, LocationTransferListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().select_related("material", "batch", "from_location", "to_location")
 
@@ -550,6 +602,11 @@ class LocationTransferPrintView(LoginRequiredMixin, DetailView):
     model = LocationTransfer
     template_name = "inventory/location_transfer_print.html"
     context_object_name = "transfer"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, LocationTransferListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().select_related("material", "batch", "from_location", "to_location")
@@ -587,6 +644,8 @@ class StockCountListView(ErpListView):
     page_title = "盘点"
     create_url_name = "inventory:stock_count_create"
     create_permission_required = PermissionCode.INVENTORY_PROCESS
+    view_permission_required = (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS)
+    permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:stock_count_detail"
     columns = (
         ("盘点单号", "stock_count_no"),
@@ -640,6 +699,11 @@ class StockCountDetailView(LoginRequiredMixin, DetailView):
     template_name = "inventory/stock_count_detail.html"
     context_object_name = "stock_count"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, StockCountListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -680,6 +744,11 @@ class StockCountPrintView(LoginRequiredMixin, DetailView):
     model = StockCount
     template_name = "inventory/stock_count_print.html"
     context_object_name = "stock_count"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, StockCountListView.view_permission_required, "缺少库存数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (

@@ -463,10 +463,7 @@ class FinanceServiceTests(TestCase):
 
         response = self.client.get(f"/finance/customer-receipts/{receipt.id}/")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "******")
-        self.assertNotContains(response, "确认红冲")
-        self.assertNotContains(response, "核销确认")
+        self.assertEqual(response.status_code, 403)
 
     def test_customer_receipt_list_masks_amount_without_permission(self):
         self.client.force_login(self.user)
@@ -481,10 +478,7 @@ class FinanceServiceTests(TestCase):
 
         response = self.client.get("/finance/customer-receipts/")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "******")
-        self.assertNotContains(response, "123.45")
-        self.assertNotContains(response, "/finance/customer-receipts/new/")
+        self.assertEqual(response.status_code, 403)
 
     def test_finance_create_buttons_require_amount_and_process_permissions(self):
         self.client.force_login(self.user)
@@ -493,13 +487,13 @@ class FinanceServiceTests(TestCase):
         payment_response = self.client.get("/finance/supplier-payments/")
         reconciliation_response = self.client.get("/finance/reconciliations/")
 
-        self.assertContains(receipt_response, "/finance/customer-receipts/export/")
-        self.assertNotContains(receipt_response, "/finance/customer-receipts/new/")
-        self.assertNotContains(payment_response, "/finance/supplier-payments/new/")
-        self.assertNotContains(reconciliation_response, "/finance/reconciliations/new/")
+        self.assertEqual(receipt_response.status_code, 403)
+        self.assertEqual(payment_response.status_code, 403)
+        self.assertEqual(reconciliation_response.status_code, 403)
 
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         receipt_response = self.client.get("/finance/customer-receipts/")
+        self.assertContains(receipt_response, "/finance/customer-receipts/export/")
         self.assertNotContains(receipt_response, "/finance/customer-receipts/new/")
 
         self._grant_permission(PermissionCode.FINANCE_PAYMENT_PROCESS)
@@ -514,6 +508,7 @@ class FinanceServiceTests(TestCase):
 
     def test_customer_receipt_export_masks_amount_and_filter_matches_list(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         CustomerReceipt.objects.create(
             receipt_no="RC-FILTER-KEEP",
             customer=self.customer,
@@ -541,8 +536,7 @@ class FinanceServiceTests(TestCase):
         self.assertIn("收款单号,客户,收款日期,金额,未分配,状态", content)
         self.assertIn("RC-FILTER-KEEP", content)
         self.assertNotIn("RC-FILTER-HIDE", content)
-        self.assertIn("******", content)
-        self.assertNotIn("123.45", content)
+        self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="customer_receipts")
         self.assertEqual(export_log.row_count, 1)
         self.assertEqual(export_log.filter_json["query"]["q"], "KEEP")
@@ -575,7 +569,7 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("receipt_no,customer_no,receipt_date,receipt_amount,receipt_method,remark", content)
+        self.assertIn("收款单号,客户编号,单据日期,收款金额,收款方式,备注", content)
         self.assertIn("RC-INIT-001", content)
 
     def test_customer_receipt_import_creates_pending_receipts_without_allocation(self):
@@ -584,7 +578,7 @@ class FinanceServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_receipts.csv",
             (
-                "receipt_no,customer_no,receipt_date,receipt_amount,receipt_method,remark\n"
+                "收款单号,客户编号,单据日期,收款金额,收款方式,备注\n"
                 "RC-IMP-001,C001,2026-06-10,120.50,transfer,导入收款\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -620,7 +614,7 @@ class FinanceServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_receipts.csv",
             (
-                "receipt_no,customer_no,receipt_date,receipt_amount,receipt_method,remark\n"
+                "收款单号,客户编号,单据日期,收款金额,收款方式,备注\n"
                 "RC-DUP,C-MISSING,bad-date,-1,bad-method,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -647,10 +641,15 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(template_response.status_code, 403)
         self.assertEqual(import_response.status_code, 403)
+        self.assertEqual(list_response.status_code, 403)
+
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        list_response = self.client.get("/finance/customer-receipts/")
         self.assertNotContains(list_response, "/finance/customer-receipts/import/")
 
     def test_customer_receipt_print_masks_amount_and_records_log(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         order = self._sales_order()
         receipt = CustomerReceipt.objects.create(
             receipt_no="RC-PRINT",
@@ -678,8 +677,7 @@ class FinanceServiceTests(TestCase):
         self.assertContains(response, "客户收款凭证")
         self.assertContains(response, "RC-PRINT")
         self.assertContains(response, order.sales_order_no)
-        self.assertContains(response, "******")
-        self.assertNotContains(response, "100.00")
+        self.assertContains(response, "100.00")
         print_log = PrintLog.objects.get(source_doc_type="customer_receipt", source_doc_id=receipt.id)
         self.assertEqual(print_log.template_type, "customer_receipt")
         self.assertEqual(print_log.source_doc_no, receipt.receipt_no)
@@ -687,6 +685,7 @@ class FinanceServiceTests(TestCase):
 
     def test_reconciliation_export_masks_amount_and_logs(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         Reconciliation.objects.create(
             reconciliation_no="REC-EXPORT",
             party_type=Reconciliation.PartyType.CUSTOMER,
@@ -706,8 +705,7 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("对账单号,对象类型,客户,供应商,开始日期,结束日期,金额,状态", content)
         self.assertIn("REC-EXPORT", content)
-        self.assertIn("******", content)
-        self.assertNotIn("123.45", content)
+        self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="reconciliations")
         self.assertEqual(export_log.row_count, 1)
 
@@ -1149,6 +1147,7 @@ class FinanceServiceTests(TestCase):
 
     def test_customer_credit_balance_print_masks_amount_and_logs(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         balance = CustomerCreditBalance.objects.create(
             customer=self.customer,
             source_doc_type="manual",
@@ -1176,9 +1175,8 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "客户待处理余额单")
         self.assertContains(response, balance.source_doc_no)
-        self.assertContains(response, "******")
-        self.assertNotContains(response, "123.45")
-        self.assertNotContains(response, "23.45")
+        self.assertContains(response, "123.45")
+        self.assertContains(response, "23.45")
         print_log = PrintLog.objects.get(source_doc_type="customer_credit_balance", source_doc_id=balance.id)
         self.assertEqual(print_log.template_type, "customer_credit_balance")
         self.assertEqual(print_log.source_doc_no, balance.source_doc_no)
@@ -1215,6 +1213,7 @@ class FinanceServiceTests(TestCase):
 
     def test_customer_credit_balance_export_masks_amount_and_filter_matches_list(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         CustomerCreditBalance.objects.create(
             customer=self.customer,
             source_doc_type="manual",
@@ -1244,8 +1243,7 @@ class FinanceServiceTests(TestCase):
         self.assertIn("客户,来源单号,余额,状态,创建时间", content)
         self.assertIn("CB-FILTER-KEEP", content)
         self.assertNotIn("CB-FILTER-HIDE", content)
-        self.assertIn("******", content)
-        self.assertNotIn("123.45", content)
+        self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="customer_credit_balances")
         self.assertEqual(export_log.row_count, 1)
 
@@ -1518,7 +1516,7 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("payment_no,supplier_no,payment_date,payment_amount,payment_method,remark", content)
+        self.assertIn("付款单号,供应商编号,付款日期,付款金额,付款方式,备注", content)
         self.assertIn("PY-INIT-001", content)
 
     def test_supplier_payment_import_creates_pending_payment_without_allocation(self):
@@ -1527,7 +1525,7 @@ class FinanceServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_payments.csv",
             (
-                "payment_no,supplier_no,payment_date,payment_amount,payment_method,remark\n"
+                "付款单号,供应商编号,付款日期,付款金额,付款方式,备注\n"
                 "PY-IMP-001,S001,2026-06-10,66.25,cash,导入付款\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -1563,7 +1561,7 @@ class FinanceServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_payments.csv",
             (
-                "payment_no,supplier_no,payment_date,payment_amount,payment_method,remark\n"
+                "付款单号,供应商编号,付款日期,付款金额,付款方式,备注\n"
                 "PY-DUP,S-MISSING,bad-date,-1,bad-method,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -1590,6 +1588,10 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(template_response.status_code, 403)
         self.assertEqual(import_response.status_code, 403)
+        self.assertEqual(list_response.status_code, 403)
+
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        list_response = self.client.get("/finance/supplier-payments/")
         self.assertNotContains(list_response, "/finance/supplier-payments/import/")
 
     def test_supplier_payment_create_requires_amount_and_process_permissions(self):
@@ -1741,6 +1743,7 @@ class FinanceServiceTests(TestCase):
 
     def test_supplier_payment_export_masks_amount_and_filter_matches_list(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         SupplierPayment.objects.create(
             payment_no="PY-FILTER-KEEP",
             supplier=self.supplier,
@@ -1768,14 +1771,14 @@ class FinanceServiceTests(TestCase):
         self.assertIn("付款单号,供应商,付款日期,金额,未分配,状态", content)
         self.assertIn("PY-FILTER-KEEP", content)
         self.assertNotIn("PY-FILTER-HIDE", content)
-        self.assertIn("******", content)
-        self.assertNotIn("123.45", content)
+        self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="supplier_payments")
         self.assertEqual(export_log.row_count, 1)
         self.assertEqual(export_log.filter_json["query"]["status"], "confirmed")
 
     def test_supplier_payment_print_masks_amount_and_records_log(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         receipt = self._purchase_receipt()
         payment = SupplierPayment.objects.create(
             payment_no="PY-PRINT",
@@ -1803,8 +1806,7 @@ class FinanceServiceTests(TestCase):
         self.assertContains(response, "供应商付款凭证")
         self.assertContains(response, "PY-PRINT")
         self.assertContains(response, receipt.purchase_receipt_no)
-        self.assertContains(response, "******")
-        self.assertNotContains(response, "100.00")
+        self.assertContains(response, "100.00")
         print_log = PrintLog.objects.get(source_doc_type="supplier_payment", source_doc_id=payment.id)
         self.assertEqual(print_log.template_type, "supplier_payment")
         self.assertEqual(print_log.source_doc_no, payment.payment_no)
@@ -2013,6 +2015,7 @@ class FinanceServiceTests(TestCase):
 
     def test_supplier_credit_balance_export_masks_amount_and_filter_matches_list(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         SupplierCreditBalance.objects.create(
             supplier=self.supplier,
             source_doc_type="manual",
@@ -2042,8 +2045,7 @@ class FinanceServiceTests(TestCase):
         self.assertIn("供应商,来源单号,余额,状态,创建时间", content)
         self.assertIn("SB-FILTER-KEEP", content)
         self.assertNotIn("SB-FILTER-HIDE", content)
-        self.assertIn("******", content)
-        self.assertNotIn("123.45", content)
+        self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="supplier_credit_balances")
         self.assertEqual(export_log.row_count, 1)
 

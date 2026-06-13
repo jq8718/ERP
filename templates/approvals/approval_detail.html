@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ approval.approval_no }}</h1>
@@ -18,7 +19,7 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源类型</div>
-    <div class="detail-value">{{ approval.source_doc_type }}</div>
+    <div class="detail-value">{{ approval.source_doc_type|code_name }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">状态</div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ balance.source_doc_no|default:balance.pk }}</h1>
@@ -15,7 +16,7 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源单据</div>
-    <div class="detail-value">{{ balance.source_doc_type }} {{ balance.source_doc_no }}</div>
+    <div class="detail-value">{{ balance.source_doc_type|code_name }} {{ balance.source_doc_no }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">余额金额</div>

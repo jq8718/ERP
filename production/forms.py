@@ -4,6 +4,7 @@ from django.utils import timezone
 from bom.models import Bom
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material
+from system.display import set_form_labels
 from system.services import next_document_no
 
 from .models import (
@@ -27,6 +28,7 @@ class ProductionOrderForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["finished_material"].queryset = Material.objects.filter(
             status=Material.MaterialStatus.ACTIVE,
             material_type=Material.MaterialType.FINISHED,
@@ -79,6 +81,10 @@ class ProductionMaterialRequisitionForm(forms.ModelForm):
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_form_labels(self)
+
 
 class ProductionMaterialRequisitionItemForm(forms.ModelForm):
     class Meta:
@@ -87,6 +93,7 @@ class ProductionMaterialRequisitionItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["batch"].queryset = (
             InventoryBatch.objects.select_related("material", "location")
             .filter(
@@ -139,6 +146,10 @@ class ProductionReceiptForm(forms.ModelForm):
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_form_labels(self)
+
 
 class ProductionReceiptItemForm(forms.ModelForm):
     class Meta:
@@ -147,6 +158,7 @@ class ProductionReceiptItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["location"].queryset = WarehouseLocation.objects.filter(
             status=WarehouseLocation.LocationStatus.ACTIVE
         ).order_by("location_code")

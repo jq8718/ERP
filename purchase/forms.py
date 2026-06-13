@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material, MaterialSupplierPrice, Supplier
+from system.display import set_form_labels
 from system.services import next_document_no
 
 from .models import (
@@ -32,6 +33,7 @@ class PurchaseRequestForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["needed_date"].initial = self.fields["needed_date"].initial or timezone.localdate()
 
     def save(self, commit=True, user=None):
@@ -58,6 +60,7 @@ class PurchaseRequestItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
         self.fields["suggested_supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
         self.fields["suggested_supplier"].required = False
@@ -145,6 +148,7 @@ class PurchaseOrderForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
         self.fields["order_date"].initial = self.fields["order_date"].initial or timezone.localdate()
 
@@ -172,6 +176,7 @@ class PurchaseOrderItemForm(forms.ModelForm):
         self.supplier = kwargs.pop("supplier", None)
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
         self.fields["unit_price"].required = False
 
@@ -277,6 +282,10 @@ class PurchaseReceiptForm(forms.ModelForm):
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_form_labels(self)
+
 
 class PurchaseReceiptItemForm(forms.ModelForm):
     class Meta:
@@ -285,6 +294,7 @@ class PurchaseReceiptItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["location"].queryset = WarehouseLocation.objects.filter(
             status=WarehouseLocation.LocationStatus.ACTIVE
         ).order_by("location_code")
@@ -347,6 +357,7 @@ class SupplierReturnForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
         receipt_filter = Q(status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED])
         if self.instance and self.instance.pk and self.instance.purchase_receipt_id:
@@ -393,6 +404,7 @@ class SupplierReturnItemForm(forms.ModelForm):
         self.require_ready = kwargs.pop("require_ready", False)
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         receipt_item_filter = Q(
             accepted_qty__gt=0,
             purchase_receipt__status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED],

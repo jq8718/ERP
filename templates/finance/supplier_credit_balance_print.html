@@ -1,4 +1,5 @@
 <!doctype html>
+{% load erp_extras %}
 <html lang="zh-Hans">
 <head>
   <meta charset="utf-8">
@@ -31,7 +32,7 @@
 
   <section class="meta">
     <div class="cell"><div class="label">供应商</div><div class="value">{{ balance.supplier.supplier_name }}</div></div>
-    <div class="cell"><div class="label">来源单据</div><div class="value">{{ balance.source_doc_type }} {{ balance.source_doc_no }}</div></div>
+    <div class="cell"><div class="label">来源单据</div><div class="value">{{ balance.source_doc_type|code_name }} {{ balance.source_doc_no }}</div></div>
     <div class="cell"><div class="label">余额金额</div><div class="value">{% if can_view_amount %}{{ balance.balance_amount }}{% else %}******{% endif %}</div></div>
     <div class="cell"><div class="label">已使用</div><div class="value">{% if can_view_amount %}{{ balance.used_amount }}{% else %}******{% endif %}</div></div>
     <div class="cell"><div class="label">剩余金额</div><div class="value">{% if can_view_amount %}{{ balance.remaining_amount }}{% else %}******{% endif %}</div></div>

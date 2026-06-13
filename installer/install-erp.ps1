@@ -8,10 +8,11 @@ param(
     [string]$PostgresUser = "erp_app",
     [string]$PostgresHost = "127.0.0.1",
     [string]$PostgresPort = "5432",
-    [string]$RiskAcceptedBy = "系统管理员",
+    [string]$RiskAcceptedBy = "System Administrator",
     [string]$AdminUsername = "admin",
     [string]$AdminEmail = "admin@example.com",
-    [string]$AdminDisplayName = "系统管理员",
+    [string]$AdminDisplayName = "System Administrator",
+    [switch]$RunReleaseGate,
     [switch]$SkipTests
 )
 
@@ -26,8 +27,100 @@ function New-Directory {
 
 function New-RandomSecret {
     $bytes = New-Object byte[] 48
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    return [Convert]::ToBase64String($bytes)
+    $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+    try {
+        $rng.GetBytes($bytes)
+        return [Convert]::ToBase64String($bytes)
+    } finally {
+        $rng.Dispose()
+    }
+}
+
+function Write-Utf8NoBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
+function Get-EnvFileValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.TrimStart()
+        if ($trimmed.StartsWith("#") -or -not $line.Contains("=")) {
+            continue
+        }
+        $index = $line.IndexOf("=")
+        $key = $line.Substring(0, $index).Trim()
+        if ($key -eq $Name) {
+            return $line.Substring($index + 1)
+        }
+    }
+    return ""
+}
+
+function Test-MissingEnvValue {
+    param([string]$Value)
+    return [string]::IsNullOrWhiteSpace($Value) -or $Value.Trim().StartsWith("{{")
+}
+
+function Set-EnvFileValues {
+    param(
+        [string]$Path,
+        [hashtable]$Values
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in Get-Content -LiteralPath $Path) {
+            $lines.Add($line)
+        }
+    }
+
+    $seen = @{}
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        $trimmed = $line.TrimStart()
+        if ($trimmed.StartsWith("#") -or -not $line.Contains("=")) {
+            continue
+        }
+        $index = $line.IndexOf("=")
+        $key = $line.Substring(0, $index).Trim()
+        if ($Values.ContainsKey($key)) {
+            $lines[$i] = "$key=$($Values[$key])"
+            $seen[$key] = $true
+        }
+    }
+
+    foreach ($key in $Values.Keys) {
+        if (-not $seen.ContainsKey($key)) {
+            $lines.Add("$key=$($Values[$key])")
+        }
+    }
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($Path, [string[]]$lines, $encoding)
+}
+
+function Invoke-Checked {
+    param(
+        [string]$Step,
+        [scriptblock]$Command
+    )
+    Write-Host "[RUN] $Step"
+    & $Command
+    $exitCode = $LASTEXITCODE
+    if ($null -ne $exitCode -and $exitCode -ne 0) {
+        throw "$Step failed with exit code $exitCode"
+    }
 }
 
 function Read-RequiredSecret {
@@ -42,7 +135,7 @@ function Read-RequiredSecret {
 }
 
 if (-not $ServerHost) {
-    $ServerHost = Read-Host "请输入服务器固定 IP 或内网主机名，例如 192.168.1.10"
+    $ServerHost = Read-Host "Enter server static IP or intranet host name, for example 192.168.1.10"
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -64,8 +157,8 @@ New-Directory -Path $LogDir
 
 $envPath = Join-Path $InstallDir ".env"
 if (-not (Test-Path -LiteralPath $envPath)) {
-    $postgresPassword = Read-RequiredSecret "请输入 PostgreSQL 应用账号 $PostgresUser 的密码"
-    $adminPassword = Read-RequiredSecret "请输入 ERP 初始管理员 $AdminUsername 的密码"
+    $postgresPassword = Read-RequiredSecret "Enter PostgreSQL application user password for $PostgresUser"
+    $adminPassword = Read-RequiredSecret "Enter ERP initial administrator password for $AdminUsername"
     $templatePath = Join-Path $InstallDir "installer\templates\intranet.env.template"
     if (-not (Test-Path -LiteralPath $templatePath)) {
         $templatePath = Join-Path $PSScriptRoot "templates\intranet.env.template"
@@ -89,28 +182,111 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     foreach ($key in $replacements.Keys) {
         $envContent = $envContent.Replace($key, $replacements[$key])
     }
-    Set-Content -LiteralPath $envPath -Value $envContent -Encoding UTF8
+    Write-Utf8NoBom -Path $envPath -Content $envContent
     Write-Host "Created .env: $envPath"
 } else {
-    Write-Host ".env already exists; keeping existing file."
+    Write-Host ".env already exists; repairing deployment keys and keeping secrets."
+
+    $postgresPassword = Get-EnvFileValue -Path $envPath -Name "POSTGRES_PASSWORD"
+    if (Test-MissingEnvValue -Value $postgresPassword) {
+        $postgresPassword = Read-RequiredSecret "Enter PostgreSQL application user password for $PostgresUser"
+    }
+
+    $secretKey = Get-EnvFileValue -Path $envPath -Name "DJANGO_SECRET_KEY"
+    if (Test-MissingEnvValue -Value $secretKey) {
+        $secretKey = New-RandomSecret
+    }
+
+    $updates = @{
+        "DJANGO_ENV" = "production"
+        "DJANGO_SECRET_KEY" = $secretKey
+        "DJANGO_DEBUG" = "false"
+        "DJANGO_ALLOWED_HOSTS" = $ServerHost
+        "DJANGO_SESSION_COOKIE_SECURE" = "false"
+        "DJANGO_CSRF_COOKIE_SECURE" = "false"
+        "DJANGO_CSRF_TRUSTED_ORIGINS" = ""
+        "DJANGO_SECURE_SSL_REDIRECT" = "false"
+        "DJANGO_SECURE_HSTS_SECONDS" = "0"
+        "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS" = "false"
+        "DJANGO_SECURE_HSTS_PRELOAD" = "false"
+        "DJANGO_LOGIN_URL" = "/login/"
+        "DJANGO_LOGIN_REDIRECT_URL" = "/"
+        "DJANGO_SESSION_COOKIE_AGE" = "28800"
+        "DJANGO_LOG_LEVEL" = "INFO"
+        "DB_ENGINE" = "postgres"
+        "POSTGRES_DB" = $PostgresDb
+        "POSTGRES_USER" = $PostgresUser
+        "POSTGRES_PASSWORD" = $postgresPassword
+        "POSTGRES_HOST" = $PostgresHost
+        "POSTGRES_PORT" = $PostgresPort
+        "DJANGO_STATIC_ROOT" = (Join-Path $InstallDir "staticfiles")
+        "ERP_ATTACHMENT_DIR" = (Join-Path $DataDir "attachments")
+        "ERP_BACKUP_DIR" = $BackupDir
+        "DJANGO_LOG_DIR" = $LogDir
+        "ERP_MAX_CSV_IMPORT_SIZE" = "5242880"
+        "ERP_MAX_CSV_IMPORT_ROWS" = "5000"
+        "ERP_ATTACHMENT_SCAN_COMMAND" = ""
+        "ERP_ATTACHMENT_SCAN_TIMEOUT" = "30"
+        "ERP_ATTACHMENT_SCAN_RISK_ACCEPTED_BY" = $RiskAcceptedBy
+        "ERP_INTRANET_HTTP_RISK_ACCEPTED_BY" = $RiskAcceptedBy
+        "ERP_RELEASE_GATE_REPORT_FILE" = "docs/latest-release-gate-report.md"
+        "ERP_RELEASE_GATE_MAX_AGE_HOURS" = "24"
+        "ERP_PRELAUNCH_BACKUP_MAX_AGE_HOURS" = "24"
+        "ERP_PRELAUNCH_BACKUP_VERIFY_MAX_AGE_HOURS" = "24"
+        "ERP_PRELAUNCH_RESTORE_DRILL_MAX_AGE_HOURS" = "168"
+        "ERP_PRELAUNCH_EVENT_PROCESS_MAX_AGE_MINUTES" = "30"
+        "ERP_PENDING_EVENT_MAX_RETRIES" = "3"
+        "ERP_PENDING_EVENT_RETRY_BASE_MINUTES" = "5"
+        "ERP_PENDING_EVENT_RUNNING_TIMEOUT_MINUTES" = "30"
+        "ERP_BACKGROUND_JOB_RUNNING_TIMEOUT_MINUTES" = "120"
+    }
+    Set-EnvFileValues -Path $envPath -Values $updates
+    Write-Host "Repaired .env deployment keys: $envPath"
 }
 
 Push-Location $InstallDir
 try {
     if (-not (Test-Path -LiteralPath ".\.venv\Scripts\python.exe")) {
-        py -3.12 -m venv .venv
+        Invoke-Checked "Create Python virtual environment" { py -3.12 -m venv .venv }
     }
-    .\.venv\Scripts\python.exe -m pip install --upgrade pip
-    .\.venv\Scripts\pip.exe install -r requirements.txt
+    Invoke-Checked "Upgrade pip" { .\.venv\Scripts\python.exe -m pip install --upgrade pip }
+    $wheelDir = Join-Path $InstallDir "installer\wheels"
+    $wheelFiles = @()
+    if (Test-Path -LiteralPath $wheelDir) {
+        $wheelFiles = @(Get-ChildItem -LiteralPath $wheelDir -File | Where-Object {
+            $_.Name -like "*.whl" -or $_.Name -like "*.tar.gz" -or $_.Name -like "*.zip"
+        })
+    }
+    if ($wheelFiles.Count -gt 0) {
+        Write-Host "Installing Python dependencies from offline wheels: $wheelDir"
+        Invoke-Checked "Install Python dependencies from offline wheels" {
+            .\.venv\Scripts\pip.exe install --no-index --find-links $wheelDir -r requirements.txt
+        }
+    } else {
+        Write-Host "Offline wheels not found. Installing Python dependencies from configured pip index."
+        Invoke-Checked "Install Python dependencies from pip index" {
+            .\.venv\Scripts\pip.exe install -r requirements.txt
+        }
+    }
 
-    .\.venv\Scripts\python.exe manage.py migrate
-    .\.venv\Scripts\python.exe manage.py collectstatic --noinput
-    .\.venv\Scripts\python.exe manage.py bootstrap_admin --username $AdminUsername --email $AdminEmail --display-name $AdminDisplayName --password-env ERP_BOOTSTRAP_ADMIN_PASSWORD --noinput
-    .\.venv\Scripts\python.exe manage.py bootstrap_admin --username $AdminUsername --check-only
-    .\.venv\Scripts\python.exe manage.py production_preflight --strict --skip-release-gate-report
+    Invoke-Checked "Apply database migrations" { .\.venv\Scripts\python.exe manage.py migrate }
+    Invoke-Checked "Collect static files" { .\.venv\Scripts\python.exe manage.py collectstatic --noinput }
+    Invoke-Checked "Bootstrap ERP administrator" {
+        .\.venv\Scripts\python.exe manage.py bootstrap_admin --username $AdminUsername --email $AdminEmail --display-name $AdminDisplayName --password-env ERP_BOOTSTRAP_ADMIN_PASSWORD --noinput
+    }
+    Invoke-Checked "Check ERP administrator" {
+        .\.venv\Scripts\python.exe manage.py bootstrap_admin --username $AdminUsername --check-only
+    }
+    Invoke-Checked "Run production preflight" {
+        .\.venv\Scripts\python.exe manage.py production_preflight --strict --skip-release-gate-report
+    }
 
-    if (-not $SkipTests) {
-        .\.venv\Scripts\python.exe manage.py release_gate --operator $AdminUsername --include-tests --report-file docs\latest-release-gate-report.md
+    if ($RunReleaseGate -and -not $SkipTests) {
+        Invoke-Checked "Run release gate" {
+            .\.venv\Scripts\python.exe manage.py release_gate --operator $AdminUsername --include-tests --report-file docs\latest-release-gate-report.md
+        }
+    } else {
+        Write-Host "Release gate skipped during server installation. Run it on the release/development machine before packaging."
     }
 } finally {
     Pop-Location

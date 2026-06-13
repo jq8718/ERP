@@ -128,7 +128,8 @@ class AccountUserDetailView(ErpPermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         user = self.object
         permissions = Permission.objects.filter(roles__users=user, roles__status=Role.RoleStatus.ACTIVE).distinct().order_by(
-            "permission_code"
+            "permission_type",
+            "permission_name",
         )
         context.update(
             {
@@ -367,12 +368,11 @@ class PermissionListView(ErpPermissionRequiredMixin, ErpListView):
     permission_required = PermissionCode.ADMIN_PERMISSION_MANAGE
     permission_denied_message = "缺少查看权限清单权限"
     columns = (
-        ("权限码", "permission_code"),
-        ("名称", "permission_name"),
+        ("权限名称", "permission_name"),
         ("类型", "get_permission_type_display"),
         ("备注", "remark"),
     )
-    ordering = ["permission_code"]
+    ordering = ["permission_type", "permission_name"]
     search_fields = ("permission_code", "permission_name", "remark")
     status_filter_field = "permission_type"
 

@@ -9,10 +9,11 @@ from django.views import View
 from django.views.generic import DetailView
 from django.views.generic.edit import CreateView, UpdateView
 
-from accounts.permissions import PermissionCode, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import export_queryset_to_csv
 from files.view_helpers import export_file_response
 from masterdata.models import Material
+from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
@@ -32,6 +33,8 @@ class BomListView(ErpListView):
     page_title = "BOM"
     create_url_name = "bom:bom_create"
     create_permission_required = PermissionCode.BOM_PROCESS
+    view_permission_required = (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS)
+    permission_denied_message = "缺少 BOM 查看权限"
     detail_url_name = "bom:bom_detail"
     columns = (
         ("BOM 编号", "bom_no"),
@@ -50,6 +53,11 @@ class BomListView(ErpListView):
 
 
 class BomExportView(LoginRequiredMixin, View):
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少 BOM 查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         list_view = BomListView()
         list_view.request = self.request
@@ -89,6 +97,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
         return form
 
@@ -142,6 +151,7 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
         return form
 
@@ -177,6 +187,11 @@ class BomDetailView(LoginRequiredMixin, DetailView):
     model = Bom
     template_name = "bom/bom_detail.html"
     context_object_name = "bom"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少 BOM 查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().select_related("finished_material", "created_by", "updated_by", "approved_by").prefetch_related("items__component_material")

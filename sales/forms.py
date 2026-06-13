@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Customer, CustomerAddress, CustomerProduct, Material
+from system.display import set_form_labels
 from system.services import next_document_no
 
 from .models import (
@@ -37,6 +38,7 @@ class SalesOrderForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["order_date"].initial = self.fields["order_date"].initial or timezone.localdate()
         self.fields["customer_address"].queryset = CustomerAddress.objects.select_related("customer").filter(
             status=CustomerAddress.AddressStatus.ACTIVE
@@ -66,6 +68,7 @@ class SalesOrderItemForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["customer_product"].queryset = (
             CustomerProduct.objects.select_related("customer", "finished_material")
             .filter(status=CustomerProduct.ProductStatus.ACTIVE, finished_material__isnull=False)
@@ -195,6 +198,7 @@ class CustomerReturnForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["sales_order"].queryset = (
             SalesOrder.objects.select_related("customer")
@@ -244,6 +248,7 @@ class CustomerReturnItemForm(forms.ModelForm):
         self.require_ready = kwargs.pop("require_ready", False)
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         sales_item_queryset = (
             SalesOrderItem.objects.select_related("sales_order", "finished_material", "customer_product")
             .filter(
@@ -428,6 +433,10 @@ class SalesShipmentForm(forms.ModelForm):
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_form_labels(self)
+
 
 class SalesShipmentItemForm(forms.ModelForm):
     class Meta:
@@ -436,6 +445,7 @@ class SalesShipmentItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["batch"].queryset = (
             InventoryBatch.objects.select_related("material", "location")
             .filter(
@@ -522,6 +532,7 @@ class SampleLoanForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["loan_date"].initial = self.fields["loan_date"].initial or timezone.localdate()
 
@@ -554,6 +565,7 @@ class SampleLoanItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["material"].queryset = Material.objects.filter(
             status=Material.MaterialStatus.ACTIVE,
             material_type=Material.MaterialType.FINISHED,
@@ -652,6 +664,7 @@ class SampleLoanReturnForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.sample_loan = kwargs.pop("sample_loan", None)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["return_date"].initial = self.fields["return_date"].initial or timezone.localdate()
 
     def save(self, commit=True):
@@ -679,6 +692,7 @@ class SampleLoanReturnItemForm(forms.ModelForm):
         self.sample_loan = kwargs.pop("sample_loan", None)
         self.require_ready = kwargs.pop("require_ready", False)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         item_queryset = SampleLoanItem.objects.select_related("sample_loan", "material").filter(
             loan_qty__gt=0,
             sample_loan__status__in=[

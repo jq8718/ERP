@@ -12,7 +12,7 @@ from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
 
-from accounts.permissions import ErpPermissionRequiredMixin, PermissionCode, user_has_permission
+from accounts.permissions import ErpPermissionRequiredMixin, PermissionCode, user_has_any_permission, user_has_permission
 from inventory.models import InventoryBatch
 from notifications.models import SystemMessage
 from notifications.services import refresh_due_snoozed_messages
@@ -47,6 +47,25 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         )
         sales_orders = _dashboard_sales_orders_for_user(SalesOrder.objects.all(), user)
         shortages = _dashboard_shortages_for_user(ShortageAlert.objects.all(), user)
+        can_view_purchase_dashboard = user_has_any_permission(user, (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS))
+        can_view_inventory_dashboard = user_has_any_permission(user, (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS))
+        pending_purchase_requests = 0
+        pending_purchase_receipts = 0
+        inventory_qty = 0
+        if can_view_purchase_dashboard:
+            pending_purchase_requests = PurchaseRequest.objects.filter(
+                status=PurchaseRequest.Status.PENDING_APPROVAL
+            ).count()
+            pending_purchase_receipts = PurchaseReceipt.objects.filter(
+                status=PurchaseReceipt.Status.PENDING_RECEIVE
+            ).count()
+        if can_view_inventory_dashboard:
+            inventory_qty = (
+                InventoryBatch.objects.filter(batch_status=InventoryBatch.BatchStatus.IN_STOCK).aggregate(
+                    total=Sum("remaining_qty")
+                )["total"]
+                or 0
+            )
         context.update(
             {
                 "page_title": "工作台",
@@ -59,16 +78,11 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         ShortageAlert.Status.PARTIAL_RECEIVED,
                     ]
                 ).count(),
-                "pending_purchase_requests": PurchaseRequest.objects.filter(
-                    status=PurchaseRequest.Status.PENDING_APPROVAL
-                ).count(),
-                "pending_purchase_receipts": PurchaseReceipt.objects.filter(
-                    status=PurchaseReceipt.Status.PENDING_RECEIVE
-                ).count(),
-                "inventory_qty": InventoryBatch.objects.filter(
-                    batch_status=InventoryBatch.BatchStatus.IN_STOCK
-                ).aggregate(total=Sum("remaining_qty"))["total"]
-                or 0,
+                "can_view_purchase_dashboard": can_view_purchase_dashboard,
+                "can_view_inventory_dashboard": can_view_inventory_dashboard,
+                "pending_purchase_requests": pending_purchase_requests,
+                "pending_purchase_receipts": pending_purchase_receipts,
+                "inventory_qty": inventory_qty,
                 "recent_messages": active_messages.order_by("-created_at")[:8],
                 "recent_sales_orders": sales_orders.select_related("customer").order_by("-created_at")[:8],
                 "shortages": shortages.select_related("sales_order", "material").order_by("-created_at")[:8],

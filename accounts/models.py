@@ -67,7 +67,7 @@ class Permission(models.Model):
         db_table = "permissions"
 
     def __str__(self):
-        return self.permission_code
+        return self.permission_name or self.permission_code
 
 
 class UserSession(models.Model):

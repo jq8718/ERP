@@ -25,13 +25,15 @@ class BomViewTests(TestCase):
             material_type=Material.MaterialType.RAW,
             base_unit="pcs",
         )
+        self._grant_permission(PermissionCode.BOM_VIEW)
 
     def _grant_permission(self, permission_code: str):
+        permission_type = Permission.PermissionType.MODULE if permission_code == PermissionCode.BOM_VIEW else Permission.PermissionType.ACTION
         permission, _ = Permission.objects.get_or_create(
             permission_code=permission_code,
             defaults={
                 "permission_name": permission_code,
-                "permission_type": Permission.PermissionType.ACTION,
+                "permission_type": permission_type,
             },
         )
         role = Role.objects.create(role_code=f"bom-role-{permission_code}-{self.user.id}", role_name=permission_code)

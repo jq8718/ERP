@@ -13,11 +13,30 @@ from system.models import AuditLog
 class MasterdataViewTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="masterdata-user", password="x")
+        for permission_code in [
+            PermissionCode.SALES_VIEW,
+            PermissionCode.PURCHASE_VIEW,
+            PermissionCode.INVENTORY_VIEW,
+            PermissionCode.BOM_VIEW,
+        ]:
+            self._grant_permission(permission_code)
 
     def _grant_permission(self, permission_code: str):
+        permission_types = {
+            PermissionCode.SALES_VIEW: Permission.PermissionType.MODULE,
+            PermissionCode.PURCHASE_VIEW: Permission.PermissionType.MODULE,
+            PermissionCode.INVENTORY_VIEW: Permission.PermissionType.MODULE,
+            PermissionCode.BOM_VIEW: Permission.PermissionType.MODULE,
+            PermissionCode.SALES_VIEW_ALL: Permission.PermissionType.DATA_SCOPE,
+            PermissionCode.FINANCE_VIEW_AMOUNT: Permission.PermissionType.FIELD,
+            PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO: Permission.PermissionType.FIELD,
+        }
         permission, _ = Permission.objects.get_or_create(
             permission_code=permission_code,
-            defaults={"permission_name": permission_code, "permission_type": Permission.PermissionType.DATA_SCOPE},
+            defaults={
+                "permission_name": permission_code,
+                "permission_type": permission_types.get(permission_code, Permission.PermissionType.ACTION),
+            },
         )
         role = Role.objects.create(role_code=f"master-role-{permission_code}-{self.user.id}", role_name=permission_code)
         role.permissions.add(permission)
@@ -240,7 +259,7 @@ class MasterdataViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("material_code,material_name,material_type,base_unit", content)
+        self.assertIn("物料编码,物料名称,物料类型,基本单位", content)
         self.assertIn("RM001", content)
 
     def test_material_import_creates_materials_and_import_job(self):
@@ -249,7 +268,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "materials.csv",
             (
-                "material_code,material_name,material_type,base_unit,spec,qty_precision,min_stock_qty,latest_purchase_price,status,remark\n"
+                "物料编码,物料名称,物料类型,基本单位,规格,数量精度,最低库存,最近采购价,状态,备注\n"
                 "RM-IMP,导入原料,raw,kg,规格,3,10.5,12.345678,active,备注\n"
                 "FG-IMP,导入成品,finished,pcs,,0,0,,active,\n"
             ).encode("utf-8-sig"),
@@ -278,7 +297,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "materials.csv",
             (
-                "material_code,material_name,material_type,base_unit,spec,qty_precision,min_stock_qty,latest_purchase_price,status,remark\n"
+                "物料编码,物料名称,物料类型,基本单位,规格,数量精度,最低库存,最近采购价,状态,备注\n"
                 "RM-DUP,重复原料,bad_type,kg,,x,abc,,active,\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -301,7 +320,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "materials.csv",
             (
-                "material_code,material_name,material_type,base_unit,spec,qty_precision,min_stock_qty,latest_purchase_price,status,remark\n"
+                "物料编码,物料名称,物料类型,基本单位,规格,数量精度,最低库存,最近采购价,状态,备注\n"
                 "RM-ROW-1,第一行,raw,kg,,3,0,,active,\n"
                 "RM-ROW-2,第二行,raw,kg,,3,0,,active,\n"
             ).encode("utf-8"),
@@ -323,7 +342,7 @@ class MasterdataViewTests(TestCase):
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "materials.csv",
-            b"material_code,material_name,material_type,base_unit\nRM-BIG,big,raw,pcs\n",
+            "物料编码,物料名称,物料类型,基本单位\nRM-BIG,big,raw,pcs\n".encode("utf-8-sig"),
             content_type="text/csv",
         )
 
@@ -402,7 +421,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("customer_no,customer_name,short_name,sales_owner_username", content)
+        self.assertIn("客户编号,客户名称,简称,销售负责人账号", content)
         self.assertIn("C001", content)
 
     def test_customer_import_creates_customers_and_import_job(self):
@@ -412,7 +431,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customers.csv",
             (
-                "customer_no,customer_name,short_name,sales_owner_username,settlement_method,contact_phone,status,remark\n"
+                "客户编号,客户名称,简称,销售负责人账号,结算方式,联系电话,状态,备注\n"
                 "C-IMP,导入客户,导入,sales-owner,月结,13800000000,active,备注\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -434,7 +453,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customers.csv",
             (
-                "customer_no,customer_name,short_name,sales_owner_username,settlement_method,contact_phone,status,remark\n"
+                "客户编号,客户名称,简称,销售负责人账号,结算方式,联系电话,状态,备注\n"
                 "C-BAD,导入客户,导入,missing-user,月结,13800000000,active,备注\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -548,7 +567,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("customer_no,customer_product_no,customer_product_name,finished_material_code", content)
+        self.assertIn("客户编号,客户产品编号,客户产品名称,关联成品编码", content)
         self.assertIn("CP001", content)
 
     def test_customer_product_import_creates_products_and_import_job(self):
@@ -564,7 +583,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_products.csv",
             (
-                "customer_no,customer_product_no,customer_product_name,finished_material_code,default_sale_price,status\n"
+                "客户编号,客户产品编号,客户产品名称,关联成品编码,默认销售价,状态\n"
                 "C-CP-IMP,CP-IMP,导入客户产品,FG-CP-IMP,88.88,active\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -585,7 +604,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_products.csv",
             (
-                "customer_no,customer_product_no,customer_product_name,finished_material_code,default_sale_price,status\n"
+                "客户编号,客户产品编号,客户产品名称,关联成品编码,默认销售价,状态\n"
                 "C-MISSING,CP-BAD,错误客户产品,FG-MISSING,abc,bad_status\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -684,7 +703,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("supplier_no,supplier_name,contact_name,contact_phone", content)
+        self.assertIn("供应商编号,供应商名称,联系人,联系电话", content)
         self.assertIn("S001", content)
 
     def test_supplier_import_creates_suppliers_and_import_job(self):
@@ -693,7 +712,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "suppliers.csv",
             (
-                "supplier_no,supplier_name,contact_name,contact_phone,supplier_type,payment_method,status,remark\n"
+                "供应商编号,供应商名称,联系人,联系电话,供应商类型,付款方式,状态,备注\n"
                 "S-IMP,导入供应商,李四,13900000000,原料,月结,active,备注\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -715,7 +734,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "suppliers.csv",
             (
-                "supplier_no,supplier_name,contact_name,contact_phone,supplier_type,payment_method,status,remark\n"
+                "供应商编号,供应商名称,联系人,联系电话,供应商类型,付款方式,状态,备注\n"
                 "S-DUP,重复供应商,李四,13900000000,原料,月结,bad_status,备注\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -748,7 +767,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("material_code,source_unit,target_unit,ratio,status", content)
+        self.assertIn("物料编码,源单位,目标单位,换算比例,状态", content)
         self.assertIn("RM001", content)
 
     def test_material_unit_conversion_import_creates_conversions_and_import_job(self):
@@ -762,7 +781,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "unit_conversions.csv",
             (
-                "material_code,source_unit,target_unit,ratio,status\n"
+                "物料编码,源单位,目标单位,换算比例,状态\n"
                 "RM-CONV-IMP,g,kg,0.00100000,active\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -792,7 +811,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "unit_conversions.csv",
             (
-                "material_code,source_unit,target_unit,ratio,status\n"
+                "物料编码,源单位,目标单位,换算比例,状态\n"
                 "RM-CONV-DUP,g,kg,0,bad_status\n"
                 "RM-MISSING,kg,kg,abc,active\n"
             ).encode("utf-8"),
@@ -828,7 +847,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("customer_no,address_type,receiver_name,receiver_phone,address,is_default,status", content)
+        self.assertIn("客户编号,地址类型,收件人,收件电话,地址,是否默认,状态", content)
         self.assertIn("C001", content)
 
     def test_customer_address_import_creates_addresses_and_import_job(self):
@@ -844,7 +863,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_addresses.csv",
             (
-                "customer_no,address_type,receiver_name,receiver_phone,address,is_default,status\n"
+                "客户编号,地址类型,收件人,收件电话,地址,是否默认,状态\n"
                 "C-ADDR-IMP,shipping,王五,13800000000,深圳市测试路 2 号,true,active\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -868,7 +887,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "customer_addresses.csv",
             (
-                "customer_no,address_type,receiver_name,receiver_phone,address,is_default,status\n"
+                "客户编号,地址类型,收件人,收件电话,地址,是否默认,状态\n"
                 "C-MISSING,bad_type,,13800000000,,maybe,bad_status\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -902,7 +921,7 @@ class MasterdataViewTests(TestCase):
         content = response.content.decode("utf-8")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("material_code,supplier_no,purchase_price,currency,effective_from,effective_to,is_default,status", content)
+        self.assertIn("物料编码,供应商编号,采购价,币种,生效日期,失效日期,是否默认,状态", content)
         self.assertIn("S001", content)
 
     def test_material_supplier_price_import_creates_prices_and_import_job(self):
@@ -925,7 +944,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_prices.csv",
             (
-                "material_code,supplier_no,purchase_price,currency,effective_from,effective_to,is_default,status\n"
+                "物料编码,供应商编号,采购价,币种,生效日期,失效日期,是否默认,状态\n"
                 "RM-PRICE-IMP,S-PRICE-NEW,12.345600,CNY,2026-06-09,,true,active\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -950,7 +969,7 @@ class MasterdataViewTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_prices.csv",
             (
-                "material_code,supplier_no,purchase_price,currency,effective_from,effective_to,is_default,status\n"
+                "物料编码,供应商编号,采购价,币种,生效日期,失效日期,是否默认,状态\n"
                 "RM-MISSING,S-MISSING,-1,CNY,2026-06-10,2026-06-09,maybe,bad_status\n"
             ).encode("utf-8"),
             content_type="text/csv",

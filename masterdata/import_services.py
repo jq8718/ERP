@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from files.models import ImportJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from system.services import ServiceResult, next_document_no
 
 from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, Supplier
@@ -30,7 +30,7 @@ MATERIAL_IMPORT_COLUMNS = (
 
 
 MATERIAL_IMPORT_TEMPLATE_ROWS = (
-    MATERIAL_IMPORT_COLUMNS,
+    csv_import_header_row(MATERIAL_IMPORT_COLUMNS),
     ("RM001", "示例原料", "raw", "kg", "通用规格", "3", "0", "12.345600", "active", "示例行，导入前可删除"),
     ("FG001", "示例成品", "finished", "pcs", "成品规格", "0", "0", "", "active", ""),
 )
@@ -47,7 +47,7 @@ CUSTOMER_IMPORT_COLUMNS = (
 )
 
 CUSTOMER_IMPORT_TEMPLATE_ROWS = (
-    CUSTOMER_IMPORT_COLUMNS,
+    csv_import_header_row(CUSTOMER_IMPORT_COLUMNS),
     ("C001", "示例客户", "示例", "", "月结", "13800000000", "active", "示例行，导入前可删除"),
 )
 
@@ -63,7 +63,7 @@ SUPPLIER_IMPORT_COLUMNS = (
 )
 
 SUPPLIER_IMPORT_TEMPLATE_ROWS = (
-    SUPPLIER_IMPORT_COLUMNS,
+    csv_import_header_row(SUPPLIER_IMPORT_COLUMNS),
     ("S001", "示例供应商", "李四", "13900000000", "原料", "月结", "active", "示例行，导入前可删除"),
 )
 
@@ -77,7 +77,7 @@ CUSTOMER_PRODUCT_IMPORT_COLUMNS = (
 )
 
 CUSTOMER_PRODUCT_IMPORT_TEMPLATE_ROWS = (
-    CUSTOMER_PRODUCT_IMPORT_COLUMNS,
+    csv_import_header_row(CUSTOMER_PRODUCT_IMPORT_COLUMNS),
     ("C001", "CP001", "示例客户产品", "FG001", "88.0000", "active"),
 )
 
@@ -90,7 +90,7 @@ MATERIAL_UNIT_CONVERSION_IMPORT_COLUMNS = (
 )
 
 MATERIAL_UNIT_CONVERSION_IMPORT_TEMPLATE_ROWS = (
-    MATERIAL_UNIT_CONVERSION_IMPORT_COLUMNS,
+    csv_import_header_row(MATERIAL_UNIT_CONVERSION_IMPORT_COLUMNS),
     ("RM001", "g", "kg", "0.00100000", "active"),
 )
 
@@ -105,7 +105,7 @@ CUSTOMER_ADDRESS_IMPORT_COLUMNS = (
 )
 
 CUSTOMER_ADDRESS_IMPORT_TEMPLATE_ROWS = (
-    CUSTOMER_ADDRESS_IMPORT_COLUMNS,
+    csv_import_header_row(CUSTOMER_ADDRESS_IMPORT_COLUMNS),
     ("C001", "shipping", "王五", "13800000000", "深圳市示例路 1 号", "true", "active"),
 )
 
@@ -121,7 +121,7 @@ MATERIAL_SUPPLIER_PRICE_IMPORT_COLUMNS = (
 )
 
 MATERIAL_SUPPLIER_PRICE_IMPORT_TEMPLATE_ROWS = (
-    MATERIAL_SUPPLIER_PRICE_IMPORT_COLUMNS,
+    csv_import_header_row(MATERIAL_SUPPLIER_PRICE_IMPORT_COLUMNS),
     ("RM001", "S001", "12.345600", "CNY", "2026-06-09", "", "true", "active"),
 )
 

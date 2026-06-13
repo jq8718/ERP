@@ -5,6 +5,9 @@ from django.db.models import Q
 from urllib.parse import urlencode
 from django.views.generic import ListView
 
+from system.display import code_label
+from accounts.permissions import require_any_erp_permission
+
 from .models import SavedFilter
 
 
@@ -16,6 +19,8 @@ class ErpListView(LoginRequiredMixin, ListView):
     create_url_name = ""
     create_permission_required = ""
     detail_url_name = ""
+    view_permission_required = ""
+    permission_denied_message = "无权限访问此页面"
     page_actions: tuple[tuple[str, str, str], ...] = ()
     page_action_permissions = {}
     sensitive_columns: tuple[str, ...] = ()
@@ -25,6 +30,11 @@ class ErpListView(LoginRequiredMixin, ListView):
     filter_fields: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = ()
     sortable_fields: dict[str, str] = {}
     saved_filter_module = ""
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and self.view_permission_required:
+            require_any_erp_permission(request.user, self.view_permission_required, self.permission_denied_message)
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         if request.user.is_authenticated and not request.GET:
@@ -220,6 +230,18 @@ def row_value(obj, attr_path: str):
             return ""
         if callable(value):
             value = value()
+    if attr_path.split(".")[-1] in {
+        "action",
+        "backup_type",
+        "event_type",
+        "job_type",
+        "trigger_type",
+        "module",
+        "source_doc_type",
+        "template_type",
+        "scope_type",
+    }:
+        return code_label(value)
     return value
 
 

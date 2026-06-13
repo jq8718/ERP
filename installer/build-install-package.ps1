@@ -10,8 +10,8 @@ if (-not (Test-Path -LiteralPath $OutputDir)) {
 }
 
 robocopy $repoRoot $OutputDir /MIR `
-    /XD .git .venv .tmp backups logs logs-test media staticfiles dist work __pycache__ tests_safety "ERP安装包" `
-    /XF .env db.sqlite3 *.pyc "~*.DDF" "ERP模块建设计划.md" | Out-Host
+    /XD .git .venv .tmp backups logs logs-test media staticfiles dist work __pycache__ tests_safety packages "ERP安装包" `
+    /XF .env db.sqlite3 *.pyc "~*.DDF" "ERP模块建设计划.md" "ERP安装包.zip" | Out-Host
 
 if ($LASTEXITCODE -ge 8) {
     throw "robocopy failed with exit code $LASTEXITCODE"
@@ -20,6 +20,7 @@ if ($LASTEXITCODE -ge 8) {
 $cleanupDirs = @(
     "installer\dist",
     "installer\work",
+    "installer\packages",
     ".git",
     ".venv",
     ".tmp",
@@ -44,7 +45,8 @@ foreach ($relative in $cleanupDirs) {
 }
 
 $cleanupFiles = @(
-    "ERP模块建设计划.md"
+    "ERP模块建设计划.md",
+    "ERP安装包.zip"
 )
 
 foreach ($relative in $cleanupFiles) {
@@ -58,15 +60,58 @@ foreach ($relative in $cleanupFiles) {
     }
 }
 
+$installerLogsDir = Join-Path $OutputDir "installer\logs"
+if (-not (Test-Path -LiteralPath $installerLogsDir)) {
+    New-Item -ItemType Directory -Path $installerLogsDir | Out-Null
+}
+Set-Content -LiteralPath (Join-Path $installerLogsDir "README.txt") -Encoding UTF8 -Value @"
+ERP installer logs will be written to this folder.
+
+If ERP-Setup.exe or ERP-Uninstall.exe fails, send the newest .log file in this folder to the developer.
+"@
+
+$toolsDir = Join-Path $OutputDir "installer\tools"
+if (-not (Test-Path -LiteralPath $toolsDir)) {
+    New-Item -ItemType Directory -Path $toolsDir | Out-Null
+}
+
+$nssmSourceCandidates = @(
+    (Join-Path $repoRoot "installer\packages\nssm-2.24\win64\nssm.exe"),
+    (Join-Path $repoRoot "installer\packages\nssm.exe")
+)
+$nssmZip = Join-Path $repoRoot "installer\packages\nssm-2.24.zip"
+$nssmSource = $nssmSourceCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $nssmSource -and (Test-Path -LiteralPath $nssmZip)) {
+    $nssmExtractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("erp-nssm-" + [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $nssmExtractRoot | Out-Null
+    try {
+        Expand-Archive -LiteralPath $nssmZip -DestinationPath $nssmExtractRoot -Force
+        $nssmSource = Join-Path $nssmExtractRoot "nssm-2.24\win64\nssm.exe"
+        if (-not (Test-Path -LiteralPath $nssmSource)) {
+            throw "nssm.exe not found after extracting $nssmZip"
+        }
+        Copy-Item -LiteralPath $nssmSource -Destination (Join-Path $toolsDir "nssm.exe") -Force
+    } finally {
+        if (Test-Path -LiteralPath $nssmExtractRoot) {
+            Remove-Item -LiteralPath $nssmExtractRoot -Recurse -Force
+        }
+    }
+} elseif ($nssmSource) {
+    Copy-Item -LiteralPath $nssmSource -Destination (Join-Path $toolsDir "nssm.exe") -Force
+}
+
 $required = @(
     "ERP-Setup.exe",
+    "ERP-Setup-Console.cmd",
     "ERP-Uninstall.exe",
+    "ERP-Uninstall-Console.cmd",
     "manage.py",
     "requirements.txt",
-    "installer\packages\python-3.12.10-amd64.exe",
-    "installer\packages\postgresql-17.10-1-windows-x64.exe",
-    "installer\packages\nssm-2.24.zip",
+    "installer\wheels\django-6.0.6-py3-none-any.whl",
+    "installer\wheels\psycopg_binary-3.3.4-cp312-cp312-win_amd64.whl",
     "installer\templates\intranet.env.template",
+    "installer\logs\README.txt",
+    "installer\tools\nssm.exe",
     "docs\Windows10内网ERP一键安装手册.md"
 )
 

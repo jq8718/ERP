@@ -93,13 +93,15 @@ class ProductionServiceTests(TestCase):
             locked_bom_version=self.bom.bom_version,
             status=ProductionOrder.Status.PENDING,
         )
+        self._grant_permission(PermissionCode.PRODUCTION_VIEW)
 
     def _grant_permission(self, permission_code: str):
+        permission_type = Permission.PermissionType.MODULE if permission_code == PermissionCode.PRODUCTION_VIEW else Permission.PermissionType.ACTION
         permission, _ = Permission.objects.get_or_create(
             permission_code=permission_code,
             defaults={
                 "permission_name": permission_code,
-                "permission_type": Permission.PermissionType.ACTION,
+                "permission_type": permission_type,
             },
         )
         role = Role.objects.create(role_code=f"production-role-{permission_code}-{self.user.id}", role_name=permission_code)
@@ -321,7 +323,7 @@ class ProductionServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("production_order_no,sales_order_no,sales_order_line_no,material_code", content)
+        self.assertIn("生产指令号,销售订单号,销售订单行号,物料编码", content)
         self.assertIn("MO-INIT-001", content)
 
     def test_production_order_import_creates_pending_order_with_locked_sales_bom(self):
@@ -331,7 +333,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "production_orders.csv",
             (
-                "production_order_no,sales_order_no,sales_order_line_no,material_code,production_qty,bom_no,bom_version,planned_start_date,planned_finish_date,remark\n"
+                "生产指令号,销售订单号,销售订单行号,物料编码,生产数量,BOM 编号,BOM 版本,计划开始日期,计划完成日期,备注\n"
                 "MO-IMP-001,SO001,1,FG001,6,,,2026-06-10,2026-06-15,导入生产\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -360,7 +362,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "production_orders.csv",
             (
-                "production_order_no,sales_order_no,sales_order_line_no,material_code,production_qty,bom_no,bom_version,planned_start_date,planned_finish_date,remark\n"
+                "生产指令号,销售订单号,销售订单行号,物料编码,生产数量,BOM 编号,BOM 版本,计划开始日期,计划完成日期,备注\n"
                 "MO-IMP-MANUAL,,,FG001,3,,,2026-06-10,,手工导入\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -382,7 +384,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "production_orders.csv",
             (
-                "production_order_no,sales_order_no,sales_order_line_no,material_code,production_qty,bom_no,bom_version,planned_start_date,planned_finish_date,remark\n"
+                "生产指令号,销售订单号,销售订单行号,物料编码,生产数量,BOM 编号,BOM 版本,计划开始日期,计划完成日期,备注\n"
                 "MO-BAD,SO001,1,FG001,99,,,bad-date,2026-06-01,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -416,7 +418,7 @@ class ProductionServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("requisition_no,production_order_no,requisition_date", content)
+        self.assertIn("领料单号,生产指令号,领料日期", content)
         self.assertIn("MR-INIT-001", content)
 
     def test_material_requisition_import_creates_pending_requisition_without_deducting_inventory(self):
@@ -426,7 +428,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "material_requisitions.csv",
             (
-                "requisition_no,production_order_no,requisition_date,material_code,required_qty,issued_qty,batch_no,location_code,adjust_reason,remark\n"
+                "领料单号,生产指令号,领料日期,物料编码,应发数量,实发数量,批次号,库位编码,调整原因,备注\n"
                 f"MR-IMP-001,MO001,2026-06-10,RM001,20,15,{batch.batch_no},{self.location.location_code},先领 15,导入领料\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -460,7 +462,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "material_requisitions.csv",
             (
-                "requisition_no,production_order_no,requisition_date,material_code,required_qty,issued_qty,batch_no,location_code,adjust_reason,remark\n"
+                "领料单号,生产指令号,领料日期,物料编码,应发数量,实发数量,批次号,库位编码,调整原因,备注\n"
                 "MR-BAD,MO001,bad-date,FG001,-1,5,B-MISSING,L-MISSING,错误,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -497,7 +499,7 @@ class ProductionServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("production_receipt_no,production_order_no,receipt_date", content)
+        self.assertIn("生产入库单号,生产指令号,单据日期", content)
         self.assertIn("PI-INIT-001", content)
 
     def test_production_receipt_import_creates_pending_receipt_without_inventory(self):
@@ -506,7 +508,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "production_receipts.csv",
             (
-                "production_receipt_no,production_order_no,receipt_date,receipt_qty,location_code,batch_no,quality_status,remark\n"
+                "生产入库单号,生产指令号,单据日期,入库数量,库位编码,批次号,质量状态,备注\n"
                 f"PI-IMP-001,MO001,2026-06-10,6,{self.location.location_code},FG-IMP-001,pending,导入入库\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -544,7 +546,7 @@ class ProductionServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "production_receipts.csv",
             (
-                "production_receipt_no,production_order_no,receipt_date,receipt_qty,location_code,batch_no,quality_status,remark\n"
+                "生产入库单号,生产指令号,单据日期,入库数量,库位编码,批次号,质量状态,备注\n"
                 "PI-BAD,MO001,bad-date,3,L-MISSING,,bad-status,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",

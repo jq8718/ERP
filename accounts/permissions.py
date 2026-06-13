@@ -10,11 +10,16 @@ from .models import Permission, Role, User
 
 class PermissionCode:
     ADMIN_PERMISSION_MANAGE = "admin.permission_manage"
+    SALES_VIEW = "sales.view"
     SALES_VIEW_ALL = "sales.view_all"
     SALES_PROCESS = "sales.process"
+    BOM_VIEW = "bom.view"
     BOM_PROCESS = "bom.process"
+    PURCHASE_VIEW = "purchase.view"
     PURCHASE_PROCESS = "purchase.process"
+    INVENTORY_VIEW = "inventory.view"
     INVENTORY_PROCESS = "inventory.process"
+    PRODUCTION_VIEW = "production.view"
     PRODUCTION_PROCESS = "production.process"
     FINANCE_VIEW_AMOUNT = "finance.view_amount"
     FINANCE_PAYMENT_PROCESS = "finance.payment_process"
@@ -25,11 +30,16 @@ class PermissionCode:
 
 DEFAULT_PERMISSIONS = [
     (PermissionCode.ADMIN_PERMISSION_MANAGE, "权限与审批规则管理", Permission.PermissionType.ACTION),
+    (PermissionCode.SALES_VIEW, "查看本人销售数据", Permission.PermissionType.MODULE),
     (PermissionCode.SALES_VIEW_ALL, "查看全部销售数据", Permission.PermissionType.DATA_SCOPE),
     (PermissionCode.SALES_PROCESS, "处理销售单据", Permission.PermissionType.ACTION),
+    (PermissionCode.BOM_VIEW, "查看 BOM", Permission.PermissionType.MODULE),
     (PermissionCode.BOM_PROCESS, "维护和启停 BOM", Permission.PermissionType.ACTION),
+    (PermissionCode.PURCHASE_VIEW, "查看采购数据", Permission.PermissionType.MODULE),
     (PermissionCode.PURCHASE_PROCESS, "处理采购单据", Permission.PermissionType.ACTION),
+    (PermissionCode.INVENTORY_VIEW, "查看库存数据", Permission.PermissionType.MODULE),
     (PermissionCode.INVENTORY_PROCESS, "处理库存单据", Permission.PermissionType.ACTION),
+    (PermissionCode.PRODUCTION_VIEW, "查看生产数据", Permission.PermissionType.MODULE),
     (PermissionCode.PRODUCTION_PROCESS, "处理生产单据", Permission.PermissionType.ACTION),
     (PermissionCode.FINANCE_VIEW_AMOUNT, "查看财务金额", Permission.PermissionType.FIELD),
     (PermissionCode.FINANCE_PAYMENT_PROCESS, "处理收付款和余额", Permission.PermissionType.ACTION),
@@ -61,6 +71,12 @@ def user_has_permission(user: User, permission_code: str) -> bool:
     ).exists()
 
 
+def user_has_any_permission(user: User, permission_codes) -> bool:
+    if isinstance(permission_codes, str):
+        permission_codes = (permission_codes,)
+    return any(user_has_permission(user, permission_code) for permission_code in permission_codes)
+
+
 def can_view_amount(user: User) -> bool:
     return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
 
@@ -74,12 +90,17 @@ def require_erp_permission(user: User, permission_code: str, message: str = "无
         raise PermissionDenied(message)
 
 
+def require_any_erp_permission(user: User, permission_codes, message: str = "无权限访问此页面") -> None:
+    if not user_has_any_permission(user, permission_codes):
+        raise PermissionDenied(message)
+
+
 class ErpPermissionRequiredMixin(UserPassesTestMixin):
     permission_required = ""
     permission_denied_message = "无权限执行此操作"
 
     def test_func(self):
-        return user_has_permission(self.request.user, self.permission_required)
+        return user_has_any_permission(self.request.user, self.permission_required)
 
     def handle_no_permission(self):
         if not self.request.user.is_authenticated:

@@ -10,7 +10,7 @@ from django.db.models import Q, Sum as models_sum
 from django.utils import timezone
 
 from files.models import ImportJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Customer, CustomerAddress, CustomerProduct, Material
 from system.services import ServiceResult, next_document_no
@@ -40,7 +40,7 @@ SALES_ORDER_IMPORT_COLUMNS = (
 )
 
 SALES_ORDER_IMPORT_TEMPLATE_ROWS = (
-    SALES_ORDER_IMPORT_COLUMNS,
+    csv_import_header_row(SALES_ORDER_IMPORT_COLUMNS),
     ("SO-INIT-001", "C001", "", "2026-06-10", "2026-06-20", "CP001", "10", "88.0000", "示例行，导入前可删除"),
     ("SO-INIT-001", "C001", "", "2026-06-10", "2026-06-20", "CP002", "5", "66.0000", ""),
 )
@@ -59,7 +59,7 @@ SAMPLE_LOAN_IMPORT_COLUMNS = (
 )
 
 SAMPLE_LOAN_IMPORT_TEMPLATE_ROWS = (
-    SAMPLE_LOAN_IMPORT_COLUMNS,
+    csv_import_header_row(SAMPLE_LOAN_IMPORT_COLUMNS),
     ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG001", "2", "BATCH001", "A01", "2026-06-20", "示例行，导入前可删除"),
     ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG002", "1", "", "", "2026-06-22", ""),
 )
@@ -80,7 +80,7 @@ CUSTOMER_RETURN_IMPORT_COLUMNS = (
 )
 
 CUSTOMER_RETURN_IMPORT_TEMPLATE_ROWS = (
-    CUSTOMER_RETURN_IMPORT_COLUMNS,
+    csv_import_header_row(CUSTOMER_RETURN_IMPORT_COLUMNS),
     ("RT-INIT-001", "C001", "SO001", "2026-06-10", "1", "FG001", "1", "88.0000", "A01", "available", "客户退回", "示例行，导入前可删除"),
     ("RT-INIT-001", "C001", "SO001", "2026-06-10", "2", "FG002", "1", "66.0000", "A01", "available", "", ""),
 )
@@ -98,7 +98,7 @@ SALES_SHIPMENT_IMPORT_COLUMNS = (
 )
 
 SALES_SHIPMENT_IMPORT_TEMPLATE_ROWS = (
-    SALES_SHIPMENT_IMPORT_COLUMNS,
+    csv_import_header_row(SALES_SHIPMENT_IMPORT_COLUMNS),
     ("SS-INIT-001", "SO001", "2026-06-10", "1", "FG001", "5", "BATCH001", "A01", "示例行，导入前可删除"),
     ("SS-INIT-001", "SO001", "2026-06-10", "2", "FG002", "3", "BATCH002", "A01", ""),
 )

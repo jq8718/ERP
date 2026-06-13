@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ stock_count.stock_count_no }}</h1>
@@ -19,7 +20,7 @@
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">范围类型</div>
-    <div class="detail-value">{{ stock_count.scope_type }}</div>
+    <div class="detail-value">{{ stock_count.scope_type|code_name }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">范围值</div>

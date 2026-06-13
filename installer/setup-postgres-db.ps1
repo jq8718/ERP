@@ -38,8 +38,8 @@ function Read-RequiredSecret {
 }
 
 $psql = Find-Psql
-$postgresPassword = Read-RequiredSecret "请输入 PostgreSQL 超级用户 $PostgresSuperUser 的密码"
-$appPassword = Read-RequiredSecret "请输入要设置给应用账号 $AppUser 的密码"
+$postgresPassword = Read-RequiredSecret "Enter PostgreSQL superuser password for $PostgresSuperUser"
+$appPassword = Read-RequiredSecret "Enter password to set for application user $AppUser"
 
 $env:PGPASSWORD = $postgresPassword
 try {
@@ -66,10 +66,17 @@ ALTER ROLE "$escapedUser" CREATEDB;
 "@
 
     $tempSql = New-TemporaryFile
-    Set-Content -LiteralPath $tempSql -Value $sql -Encoding UTF8
-    & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperUser -d postgres -v ON_ERROR_STOP=1 -f $tempSql
-    Remove-Item -LiteralPath $tempSql -Force
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempSql.FullName, $sql, $utf8NoBom)
+
+    & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperUser -d postgres -v ON_ERROR_STOP=1 -f $tempSql.FullName
+    if ($LASTEXITCODE -ne 0) {
+        throw "psql failed with exit code $LASTEXITCODE. PostgreSQL database was not initialized."
+    }
 } finally {
+    if ($tempSql -and (Test-Path -LiteralPath $tempSql.FullName)) {
+        Remove-Item -LiteralPath $tempSql.FullName -Force
+    }
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
 }
 

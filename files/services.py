@@ -22,6 +22,119 @@ MAX_CSV_IMPORT_SIZE = 5 * 1024 * 1024
 MAX_CSV_IMPORT_ROWS = 5000
 
 
+CSV_IMPORT_COLUMN_LABELS = {
+    "accepted_qty": "合格数量",
+    "address": "地址",
+    "address_type": "地址类型",
+    "adjust_reason": "调整原因",
+    "base_unit": "基本单位",
+    "batch_no": "批次号",
+    "bom_no": "BOM 编号",
+    "bom_version": "BOM 版本",
+    "contact_name": "联系人",
+    "contact_phone": "联系电话",
+    "cost_price": "成本单价",
+    "currency": "币种",
+    "customer_address_id": "客户地址 ID",
+    "customer_name": "客户名称",
+    "customer_no": "客户编号",
+    "customer_product_name": "客户产品名称",
+    "customer_product_no": "客户产品编号",
+    "default_sale_price": "默认销售价",
+    "delivery_date": "交期",
+    "effective_from": "生效日期",
+    "effective_to": "失效日期",
+    "expected_return_date": "预计归还日期",
+    "finished_material_code": "关联成品编码",
+    "initial_qty": "期初数量",
+    "inventory_type": "库存类型",
+    "is_default": "是否默认",
+    "issued_qty": "实发数量",
+    "latest_purchase_price": "最近采购价",
+    "line_expected_return_date": "明细预计归还日期",
+    "line_needed_date": "明细需求日期",
+    "loan_date": "借样日期",
+    "loan_qty": "借样数量",
+    "location_code": "库位编码",
+    "location_name": "库位名称",
+    "material_code": "物料编码",
+    "material_name": "物料名称",
+    "material_type": "物料类型",
+    "min_stock_qty": "最低库存",
+    "needed_date": "需求日期",
+    "order_date": "订单日期",
+    "order_qty": "订单数量",
+    "payment_amount": "付款金额",
+    "payment_date": "付款日期",
+    "payment_method": "付款方式",
+    "payment_no": "付款单号",
+    "planned_finish_date": "计划完成日期",
+    "planned_start_date": "计划开始日期",
+    "production_order_no": "生产指令号",
+    "production_qty": "生产数量",
+    "production_receipt_no": "生产入库单号",
+    "purchase_order_line_no": "采购订单行号",
+    "purchase_order_no": "采购单号",
+    "purchase_price": "采购价",
+    "purchase_receipt_no": "进货单号",
+    "purchase_request_no": "采购需求单号",
+    "quality_status": "质量状态",
+    "qty_precision": "数量精度",
+    "ratio": "换算比例",
+    "receipt_amount": "收款金额",
+    "receipt_date": "单据日期",
+    "receipt_method": "收款方式",
+    "receipt_no": "收款单号",
+    "receipt_qty": "入库数量",
+    "received_at": "入库时间",
+    "received_qty": "到货数量",
+    "receiver_name": "收件人",
+    "receiver_phone": "收件电话",
+    "rejected_qty": "不合格数量",
+    "remark": "备注",
+    "request_qty": "需求数量",
+    "requisition_date": "领料日期",
+    "requisition_no": "领料单号",
+    "required_qty": "应发数量",
+    "return_date": "退货日期",
+    "return_no": "客户退货单号",
+    "return_qty": "退货数量",
+    "return_reason": "退货原因",
+    "sales_order_line_no": "销售订单行号",
+    "sales_order_no": "销售订单号",
+    "sales_owner_username": "销售负责人账号",
+    "sample_loan_no": "借样单号",
+    "settlement_method": "结算方式",
+    "shipment_date": "出库日期",
+    "shipment_no": "销售出库单号",
+    "shipment_qty": "出库数量",
+    "short_name": "简称",
+    "source_unit": "源单位",
+    "spec": "规格",
+    "status": "状态",
+    "suggested_supplier_no": "建议供应商编号",
+    "supplier_name": "供应商名称",
+    "supplier_no": "供应商编号",
+    "supplier_return_no": "供应商退货单号",
+    "supplier_type": "供应商类型",
+    "target_unit": "目标单位",
+    "unit_price": "单价",
+}
+
+CSV_IMPORT_HEADER_ALIASES = {
+    label: field for field, label in CSV_IMPORT_COLUMN_LABELS.items()
+}
+CSV_IMPORT_HEADER_ALIASES.update(
+    {
+        "采购日期": "order_date",
+        "收款日期": "receipt_date",
+        "进货日期": "receipt_date",
+        "入库日期": "receipt_date",
+        "生产入库日期": "receipt_date",
+    }
+)
+
+
 class CsvImportReadError(Exception):
     def __init__(self, message: str, error_code: str = "FILE_IMPORT_VALIDATION_FAILED"):
         super().__init__(message)
@@ -44,17 +157,52 @@ def read_csv_dict_rows(file_obj) -> list[dict[str, str]]:
     rows = []
     try:
         reader = csv.DictReader(file_obj, strict=True)
+        header_map = _csv_import_header_map(reader.fieldnames)
         for row_index, row in enumerate(reader, start=1):
             if row_index > max_rows:
                 raise CsvImportReadError(f"CSV 数据行数超过 {max_rows} 行限制")
             if None in row:
                 raise CsvImportReadError(f"第 {row_index + 1} 行列数超过表头，请检查逗号和引号")
-            rows.append(row)
+            rows.append(_normalize_csv_row_headers(row, header_map))
     except CsvImportReadError:
         raise
     except csv.Error as exc:
         raise CsvImportReadError(f"CSV 格式错误：{exc}") from exc
     return rows
+
+
+def csv_import_header_row(columns: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(CSV_IMPORT_COLUMN_LABELS.get(column, column) for column in columns)
+
+
+def _csv_import_header_map(fieldnames: list[str] | None) -> dict[str, str]:
+    if not fieldnames:
+        return {}
+    header_map = {}
+    seen_labels = set()
+    seen_fields = set()
+    for raw_header in fieldnames:
+        header = (raw_header or "").strip()
+        if not header:
+            raise CsvImportReadError("第 1 行存在空表头，请使用系统下载的中文导入模板")
+        if header in seen_labels:
+            raise CsvImportReadError(f"第 1 行存在重复表头：{header}")
+        seen_labels.add(header)
+        field_name = CSV_IMPORT_HEADER_ALIASES.get(header)
+        if not field_name:
+            raise CsvImportReadError(f"第 1 行存在不支持的表头：{header}，请使用系统下载的中文导入模板")
+        if field_name in seen_fields:
+            raise CsvImportReadError(f"第 1 行存在重复含义的表头：{header}")
+        seen_fields.add(field_name)
+        header_map[raw_header] = field_name
+    return header_map
+
+
+def _normalize_csv_row_headers(row: dict[str, str], header_map: dict[str, str]) -> dict[str, str]:
+    normalized = {}
+    for raw_header, value in row.items():
+        normalized[header_map[raw_header]] = value
+    return normalized
 
 
 def _format_size_limit(size: int) -> str:

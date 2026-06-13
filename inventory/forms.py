@@ -1,5 +1,6 @@
 from django import forms
 
+from system.display import set_form_labels
 from system.services import next_document_no
 
 from .models import InventoryBatch, LocationTransfer, StockCount, WarehouseLocation
@@ -19,9 +20,10 @@ class StockCountForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["scope_type"].initial = "batch"
         self.fields["scope_value"].required = False
-        self.fields["scope_type"].help_text = "MVP 建议使用 batch，按库存批次生成快照"
+        self.fields["scope_type"].help_text = "建议使用“按批次”，系统会按库存批次生成快照"
         self.fields["location"].queryset = WarehouseLocation.objects.filter(
             status=WarehouseLocation.LocationStatus.ACTIVE
         ).order_by("location_code")
@@ -34,6 +36,7 @@ class LocationTransferForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["batch"].queryset = (
             InventoryBatch.objects.filter(
                 batch_status=InventoryBatch.BatchStatus.IN_STOCK,

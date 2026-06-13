@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ page_title }}</h1>
@@ -17,7 +18,7 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">模块</div>
-    <div class="detail-value">{{ export_log.module }}</div>
+    <div class="detail-value">{{ export_log.module|code_name }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">行数</div>

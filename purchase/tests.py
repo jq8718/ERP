@@ -70,10 +70,12 @@ class PurchaseReceiptServiceTests(TestCase):
             loss_rate=Decimal("0"),
             is_required=True,
         )
+        self._grant_permission(PermissionCode.PURCHASE_VIEW)
 
     def _grant_permission(self, permission_code: str):
         permission_types = {
             PermissionCode.FINANCE_VIEW_AMOUNT: Permission.PermissionType.FIELD,
+            PermissionCode.PURCHASE_VIEW: Permission.PermissionType.MODULE,
             PermissionCode.PURCHASE_PROCESS: Permission.PermissionType.ACTION,
         }
         permission, _ = Permission.objects.get_or_create(
@@ -348,7 +350,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("purchase_request_no,needed_date,material_code,request_qty", content)
+        self.assertIn("采购需求单号,需求日期,物料编码,需求数量", content)
         self.assertIn("PR-INIT-001", content)
 
     def test_purchase_request_import_creates_draft_request_with_multiple_lines(self):
@@ -363,7 +365,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_requests.csv",
             (
-                "purchase_request_no,needed_date,material_code,request_qty,suggested_supplier_no,line_needed_date,remark\n"
+                "采购需求单号,需求日期,物料编码,需求数量,建议供应商编号,明细需求日期,备注\n"
                 "PR-IMP-001,2026-06-20,RM001,100,S001,2026-06-20,导入需求\n"
                 "PR-IMP-001,2026-06-20,RM002,50,,2026-06-22,\n"
             ).encode("utf-8-sig"),
@@ -394,7 +396,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_requests.csv",
             (
-                "purchase_request_no,needed_date,material_code,request_qty,suggested_supplier_no,line_needed_date,remark\n"
+                "采购需求单号,需求日期,物料编码,需求数量,建议供应商编号,明细需求日期,备注\n"
                 "PR-BAD,bad-date,RM001,-1,S-MISSING,,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -429,7 +431,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("purchase_order_no,supplier_no,order_date,material_code,order_qty,unit_price", content)
+        self.assertIn("采购单号,供应商编号,订单日期,物料编码,订单数量,单价", content)
         self.assertIn("PO-INIT-001", content)
 
     def test_purchase_order_import_creates_draft_order_with_csv_prices(self):
@@ -445,7 +447,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_orders.csv",
             (
-                "purchase_order_no,supplier_no,order_date,material_code,order_qty,unit_price,needed_date,remark\n"
+                "采购单号,供应商编号,订单日期,物料编码,订单数量,单价,需求日期,备注\n"
                 "PO-IMP-001,S001,2026-06-20,RM001,10,2.500000,2026-06-25,导入采购\n"
                 "PO-IMP-001,S001,2026-06-20,RM002,4,3.200000,2026-06-28,\n"
             ).encode("utf-8-sig"),
@@ -484,7 +486,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_orders.csv",
             (
-                "purchase_order_no,supplier_no,order_date,material_code,order_qty,unit_price,needed_date,remark\n"
+                "采购单号,供应商编号,订单日期,物料编码,订单数量,单价,需求日期,备注\n"
                 "PO-IMP-NO-AMOUNT,S001,2026-06-20,RM001,10,99.990000,,无金额权限\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -506,7 +508,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_orders.csv",
             (
-                "purchase_order_no,supplier_no,order_date,material_code,order_qty,unit_price,needed_date,remark\n"
+                "采购单号,供应商编号,订单日期,物料编码,订单数量,单价,需求日期,备注\n"
                 "PO-BAD,S-MISSING,bad-date,RM001,-1,-2,bad-needed,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -543,7 +545,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("purchase_receipt_no,purchase_order_no,receipt_date", content)
+        self.assertIn("进货单号,采购单号,单据日期", content)
         self.assertIn("GR-INIT-001", content)
 
     def test_purchase_receipt_import_creates_pending_receipt_without_inventory_change(self):
@@ -568,7 +570,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_receipts.csv",
             (
-                "purchase_receipt_no,purchase_order_no,receipt_date,purchase_order_line_no,material_code,received_qty,accepted_qty,rejected_qty,location_code,remark\n"
+                "进货单号,采购单号,单据日期,采购订单行号,物料编码,到货数量,合格数量,不合格数量,库位编码,备注\n"
                 "GR-IMP-001,PO-GR-IMPORT,2026-06-10,1,RM001,5,4,1,A01,导入进货\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -620,7 +622,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "purchase_receipts.csv",
             (
-                "purchase_receipt_no,purchase_order_no,receipt_date,purchase_order_line_no,material_code,received_qty,accepted_qty,rejected_qty,location_code,remark\n"
+                "进货单号,采购单号,单据日期,采购订单行号,物料编码,到货数量,合格数量,不合格数量,库位编码,备注\n"
                 "GR-BAD,PO-GR-BAD,bad-date,1,RM001,-1,5,1,L-MISSING,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -656,7 +658,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("supplier_return_no,supplier_no,purchase_receipt_no,return_date", content)
+        self.assertIn("供应商退货单号,供应商编号,进货单号,退货日期", content)
         self.assertIn("SR-INIT-001", content)
 
     def test_supplier_return_import_creates_draft_return_with_source_receipt_item(self):
@@ -667,7 +669,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_returns.csv",
             (
-                "supplier_return_no,supplier_no,purchase_receipt_no,return_date,purchase_order_line_no,material_code,return_qty,unit_price,batch_no,location_code,return_reason,remark\n"
+                "供应商退货单号,供应商编号,进货单号,退货日期,采购订单行号,物料编码,退货数量,单价,批次号,库位编码,退货原因,备注\n"
                 "SR-IMP-001,S001,GR001,2026-06-10,1,RM001,3,2.500000,B-RETURN-IMPORT,A01,质量问题,导入供应商退货\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -703,7 +705,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_returns.csv",
             (
-                "supplier_return_no,supplier_no,purchase_receipt_no,return_date,purchase_order_line_no,material_code,return_qty,unit_price,batch_no,location_code,return_reason,remark\n"
+                "供应商退货单号,供应商编号,进货单号,退货日期,采购订单行号,物料编码,退货数量,单价,批次号,库位编码,退货原因,备注\n"
                 "SR-IMP-NO-AMOUNT,S001,GR001,2026-06-10,1,RM001,3,99.990000,B-RETURN-NO-AMOUNT,A01,无金额权限,\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -729,7 +731,7 @@ class PurchaseReceiptServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "supplier_returns.csv",
             (
-                "supplier_return_no,supplier_no,purchase_receipt_no,return_date,purchase_order_line_no,material_code,return_qty,unit_price,batch_no,location_code,return_reason,remark\n"
+                "供应商退货单号,供应商编号,进货单号,退货日期,采购订单行号,物料编码,退货数量,单价,批次号,库位编码,退货原因,备注\n"
                 "SR-BAD,S001,GR001,bad-date,1,RM001,99,-2,B-RETURN-BAD,A01,错误,\n"
             ).encode("utf-8"),
             content_type="text/csv",

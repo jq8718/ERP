@@ -73,6 +73,119 @@ class SystemDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "工作台")
 
+    def test_sidebar_for_sales_process_role_hides_other_business_modules(self):
+        _grant_permission(self.user, PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/sales/orders/"')
+        self.assertContains(response, 'href="/sales/shipments/"')
+        self.assertContains(response, 'href="/masterdata/customers/"')
+        self.assertContains(response, 'href="/masterdata/customer-products/"')
+        self.assertNotContains(response, 'href="/purchase/orders/"')
+        self.assertNotContains(response, 'href="/production/orders/"')
+        self.assertNotContains(response, 'href="/inventory/"')
+        self.assertNotContains(response, 'href="/finance/customer-receipts/"')
+        self.assertNotContains(response, 'href="/roles/"')
+        self.assertNotContains(response, "待审采购需求")
+        self.assertNotContains(response, "待入库进货单")
+        self.assertNotContains(response, "在库批次数量")
+
+    def test_sidebar_for_purchase_view_role_shows_purchase_and_shortage_only(self):
+        _grant_permission(self.user, PermissionCode.PURCHASE_VIEW)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/sales/shortages/"')
+        self.assertContains(response, 'href="/purchase/requests/"')
+        self.assertContains(response, 'href="/purchase/orders/"')
+        self.assertContains(response, 'href="/masterdata/suppliers/"')
+        self.assertNotContains(response, 'href="/sales/orders/"')
+        self.assertNotContains(response, 'href="/inventory/"')
+        self.assertNotContains(response, 'href="/production/orders/"')
+        self.assertNotContains(response, 'href="/finance/customer-receipts/"')
+
+    def test_sidebar_for_boss_readonly_role_shows_modules_without_admin(self):
+        for permission_code in [
+            PermissionCode.SALES_VIEW_ALL,
+            PermissionCode.PURCHASE_VIEW,
+            PermissionCode.INVENTORY_VIEW,
+            PermissionCode.PRODUCTION_VIEW,
+            PermissionCode.BOM_VIEW,
+            PermissionCode.FINANCE_VIEW_AMOUNT,
+        ]:
+            _grant_permission(self.user, permission_code)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/sales/orders/"')
+        self.assertContains(response, 'href="/purchase/orders/"')
+        self.assertContains(response, 'href="/inventory/"')
+        self.assertContains(response, 'href="/production/orders/"')
+        self.assertContains(response, 'href="/finance/customer-receipts/"')
+        self.assertContains(response, 'href="/bom/"')
+        self.assertNotContains(response, 'href="/roles/"')
+
+    def test_module_list_urls_require_matching_view_or_process_permission(self):
+        self.client.force_login(self.user)
+
+        protected_paths = [
+            "/sales/orders/",
+            "/sales/shortages/",
+            "/purchase/orders/",
+            "/inventory/",
+            "/production/orders/",
+            "/bom/",
+            "/finance/customer-receipts/",
+        ]
+        for path in protected_paths:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 403)
+
+        _grant_permission(self.user, PermissionCode.SALES_VIEW)
+        self.assertEqual(self.client.get("/sales/orders/").status_code, 200)
+        self.assertEqual(self.client.get("/sales/shortages/").status_code, 200)
+        self.assertEqual(self.client.get("/purchase/orders/").status_code, 403)
+
+        _grant_permission(self.user, PermissionCode.PURCHASE_VIEW)
+        self.assertEqual(self.client.get("/purchase/orders/").status_code, 200)
+        self.assertEqual(self.client.get("/sales/shortages/").status_code, 200)
+
+    def test_readonly_module_permissions_do_not_show_create_or_import_actions(self):
+        _grant_permission(self.user, PermissionCode.INVENTORY_VIEW)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/inventory/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "导出CSV")
+        self.assertNotContains(response, "期初导入")
+        self.assertNotContains(response, "新建")
+        self.assertEqual(self.client.get("/inventory/locations/new/").status_code, 403)
+
+    def test_sidebar_for_superuser_keeps_all_business_modules(self):
+        superuser = get_user_model().objects.create_superuser(username="dashboard-root", password="x")
+        self.client.force_login(superuser)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/sales/orders/"')
+        self.assertContains(response, 'href="/purchase/orders/"')
+        self.assertContains(response, 'href="/production/orders/"')
+        self.assertContains(response, 'href="/inventory/"')
+        self.assertContains(response, 'href="/finance/customer-receipts/"')
+        self.assertContains(response, 'href="/roles/"')
+        self.assertContains(response, "待审采购需求")
+        self.assertContains(response, "待入库进货单")
+        self.assertContains(response, "在库批次数量")
+
     def test_dashboard_hides_active_snoozed_messages(self):
         SystemMessage.objects.create(
             message_no="MSG-DASH-SNOOZE",
@@ -224,6 +337,15 @@ class SystemDashboardTests(TestCase):
             "/release-records/",
         ]
         _grant_permission(self.user, PermissionCode.ADMIN_PERMISSION_MANAGE)
+        for permission_code in [
+            PermissionCode.SALES_VIEW_ALL,
+            PermissionCode.PURCHASE_VIEW,
+            PermissionCode.INVENTORY_VIEW,
+            PermissionCode.PRODUCTION_VIEW,
+            PermissionCode.BOM_VIEW,
+            PermissionCode.FINANCE_VIEW_AMOUNT,
+        ]:
+            _grant_permission(self.user, permission_code)
         for path in paths:
             with self.subTest(path=path):
                 response = self.client.get(path)
@@ -536,7 +658,7 @@ class SystemDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "审计日志")
-        self.assertContains(response, "sales_order_confirm")
+        self.assertContains(response, "确认销售订单")
         self.assertContains(response, "SO001")
 
 
@@ -1660,7 +1782,7 @@ class ReleaseGateCommandTests(TestCase):
     def test_permission_check_passes_current_database(self):
         result = check_permissions()
 
-        self.assertEqual(result.expected_count, 12)
+        self.assertEqual(result.expected_count, 17)
         self.assertFalse(result.missing_permission_codes)
         self.assertFalse(result.undeclared_permission_codes)
 
@@ -1928,18 +2050,18 @@ class ReleaseGateCommandTests(TestCase):
         self.assertEqual(summary, "模板语法检查通过：102 个模板")
 
     def test_release_gate_summarizes_permission_check(self):
-        output = "权限配置检查通过：12 个默认权限\n"
+        output = "权限配置检查通过：17 个默认权限\n"
 
         summary = _summarize_output("权限配置检查", output, "")
 
-        self.assertEqual(summary, "权限配置检查通过：12 个默认权限")
+        self.assertEqual(summary, "权限配置检查通过：17 个默认权限")
 
     def test_release_gate_summarizes_permission_reference_check(self):
-        output = "权限引用检查通过：2 个静态权限引用，12 个默认权限\n"
+        output = "权限引用检查通过：2 个静态权限引用，17 个默认权限\n"
 
         summary = _summarize_output("权限引用完整性检查", output, "")
 
-        self.assertEqual(summary, "权限引用检查通过：2 个静态权限引用，12 个默认权限")
+        self.assertEqual(summary, "权限引用检查通过：2 个静态权限引用，17 个默认权限")
 
     def test_release_gate_summarizes_route_protection_check(self):
         output = "路由保护检查通过：132 个业务 URL 均有登录或权限保护\n"

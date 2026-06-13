@@ -13,7 +13,12 @@
     {% csrf_token %}
     <div class="form-grid">
       <label class="form-row">来源类型
-        <input type="text" name="source_doc_type" placeholder="sales_order">
+        <select name="source_doc_type">
+          <option value="">请选择</option>
+          {% for value, label in source_doc_type_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label class="form-row">来源 ID
         <input type="text" name="source_doc_id">

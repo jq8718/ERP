@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>系统健康检查</h1>
@@ -88,7 +89,7 @@
       <tbody>
         {% for event in failed_events %}
           <tr>
-            <td>{{ event.event_type }}</td>
+            <td>{{ event.event_type|code_name }}</td>
             <td>{{ event.idempotency_key }}</td>
             <td>{{ event.retry_count }}</td>
             <td>{{ event.updated_at }}</td>
@@ -120,7 +121,7 @@
         {% if latest_job %}
           <tr>
             <td>{{ latest_job.job_no }}</td>
-            <td>{{ latest_job.job_type }}</td>
+            <td>{{ latest_job.job_type|code_name }}</td>
             <td>{{ latest_job.get_status_display }}</td>
             <td>{{ latest_job.started_at|default:"" }}</td>
             <td>{{ latest_job.finished_at|default:"" }}</td>
@@ -151,8 +152,8 @@
         {% for job in failed_jobs %}
           <tr>
             <td>{{ job.job_no }}</td>
-            <td>{{ job.job_type }}</td>
-            <td>{{ job.trigger_type }}</td>
+            <td>{{ job.job_type|code_name }}</td>
+            <td>{{ job.trigger_type|code_name }}</td>
             <td>{{ job.finished_at|default:"" }}</td>
             <td>{{ job.error_message }}</td>
           </tr>

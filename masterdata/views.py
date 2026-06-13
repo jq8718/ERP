@@ -12,9 +12,10 @@ from django.views.generic import TemplateView
 from django.views.generic import DetailView
 from django.views.generic.edit import CreateView, UpdateView
 
-from accounts.permissions import PermissionCode, can_view_amount, can_view_personal_info, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, can_view_amount, can_view_personal_info, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv
 from files.view_helpers import export_file_response
+from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason
 
@@ -40,6 +41,18 @@ from .models import Customer, CustomerAddress, CustomerProduct, Material, Materi
 class MaterialListView(ErpListView):
     model = Material
     page_title = "物料"
+    view_permission_required = (
+        PermissionCode.BOM_VIEW,
+        PermissionCode.BOM_PROCESS,
+        PermissionCode.PURCHASE_VIEW,
+        PermissionCode.PURCHASE_PROCESS,
+        PermissionCode.INVENTORY_VIEW,
+        PermissionCode.INVENTORY_PROCESS,
+        PermissionCode.PRODUCTION_VIEW,
+        PermissionCode.PRODUCTION_PROCESS,
+        PermissionCode.FINANCE_VIEW_AMOUNT,
+    )
+    permission_denied_message = "缺少物料查看权限"
     create_url_name = "masterdata:material_create"
     detail_url_name = "masterdata:material_detail"
     columns = (
@@ -81,6 +94,12 @@ class MasterdataCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        required_permissions = getattr(self.list_view_class, "view_permission_required", ())
+        if request.user.is_authenticated and required_permissions:
+            require_any_erp_permission(request.user, required_permissions, "缺少基础资料查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -248,6 +267,7 @@ class MaterialCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("latest_purchase_price", None)
         return form
@@ -274,6 +294,7 @@ class MaterialUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("latest_purchase_price", None)
         return form
@@ -314,6 +335,11 @@ class MaterialDetailView(LoginRequiredMixin, DetailView):
     template_name = "masterdata/material_detail.html"
     context_object_name = "material"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, MaterialListView.view_permission_required, "缺少物料查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().prefetch_related("unit_conversions", "supplier_prices__supplier")
 
@@ -332,6 +358,11 @@ class MaterialUnitConversionCreateView(LoginRequiredMixin, CreateView):
     def dispatch(self, request, *args, **kwargs):
         self.material = Material.objects.get(pk=kwargs["material_pk"])
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -357,6 +388,11 @@ class MaterialUnitConversionUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_queryset(self):
         return super().get_queryset().select_related("material")
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -402,6 +438,11 @@ class MaterialSupplierPriceCreateView(LoginRequiredMixin, CreateView):
         self.material = Material.objects.get(pk=kwargs["material_pk"])
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"新增供应商价格 {self.material.material_code}"
@@ -433,6 +474,11 @@ class MaterialSupplierPriceUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_queryset(self):
         return super().get_queryset().select_related("material", "supplier")
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -475,6 +521,14 @@ class MaterialSupplierPriceUpdateView(LoginRequiredMixin, UpdateView):
 class CustomerListView(ErpListView):
     model = Customer
     page_title = "客户"
+    view_permission_required = (
+        PermissionCode.SALES_VIEW,
+        PermissionCode.SALES_PROCESS,
+        PermissionCode.SALES_VIEW_ALL,
+        PermissionCode.FINANCE_VIEW_AMOUNT,
+        PermissionCode.FINANCE_PAYMENT_PROCESS,
+    )
+    permission_denied_message = "缺少客户查看权限"
     create_url_name = "masterdata:customer_create"
     detail_url_name = "masterdata:customer_detail"
     columns = (
@@ -564,6 +618,7 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_phone_encrypted", None)
         return form
@@ -593,6 +648,7 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_phone_encrypted", None)
         return form
@@ -633,6 +689,11 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
     template_name = "masterdata/customer_detail.html"
     context_object_name = "customer"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, CustomerListView.view_permission_required, "缺少客户查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_customer_queryset_for_user(super().get_queryset(), self.request.user)
@@ -667,6 +728,7 @@ class CustomerProductCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("default_sale_price", None)
         form.fields["finished_material"].queryset = Material.objects.filter(
@@ -699,6 +761,11 @@ class CustomerProductDetailView(LoginRequiredMixin, DetailView):
     template_name = "masterdata/customer_product_detail.html"
     context_object_name = "product"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, CustomerProductListView.view_permission_required, "缺少客户产品查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return _filter_customer_product_queryset_for_user(
             super().get_queryset(),
@@ -725,6 +792,7 @@ class CustomerProductUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("default_sale_price", None)
         form.fields["finished_material"].queryset = Material.objects.filter(
@@ -776,6 +844,11 @@ class CustomerAddressCreateView(LoginRequiredMixin, CreateView):
         self.customer = _filter_customer_queryset_for_user(Customer.objects.all(), request.user).get(pk=kwargs["customer_pk"])
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"新增客户地址 {self.customer.customer_name}"
@@ -809,6 +882,11 @@ class CustomerAddressUpdateView(LoginRequiredMixin, UpdateView):
         return CustomerAddress.objects.filter(
             customer__in=_filter_customer_queryset_for_user(Customer.objects.all(), self.request.user)
         ).select_related("customer")
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        set_form_labels(form)
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -850,6 +928,13 @@ class CustomerAddressUpdateView(LoginRequiredMixin, UpdateView):
 class CustomerProductListView(ErpListView):
     model = CustomerProduct
     page_title = "客户产品"
+    view_permission_required = (
+        PermissionCode.SALES_VIEW,
+        PermissionCode.SALES_PROCESS,
+        PermissionCode.SALES_VIEW_ALL,
+        PermissionCode.FINANCE_VIEW_AMOUNT,
+    )
+    permission_denied_message = "缺少客户产品查看权限"
     detail_url_name = "masterdata:customer_product_detail"
     columns = (
         ("客户", "customer.customer_name"),
@@ -911,6 +996,13 @@ class CustomerProductImportView(CsvImportView):
 class SupplierListView(ErpListView):
     model = Supplier
     page_title = "供应商"
+    view_permission_required = (
+        PermissionCode.PURCHASE_VIEW,
+        PermissionCode.PURCHASE_PROCESS,
+        PermissionCode.FINANCE_VIEW_AMOUNT,
+        PermissionCode.FINANCE_PAYMENT_PROCESS,
+    )
+    permission_denied_message = "缺少供应商查看权限"
     create_url_name = "masterdata:supplier_create"
     detail_url_name = "masterdata:supplier_detail"
     columns = (
@@ -983,6 +1075,7 @@ class SupplierCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
@@ -1010,6 +1103,7 @@ class SupplierUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
@@ -1050,6 +1144,11 @@ class SupplierDetailView(LoginRequiredMixin, DetailView):
     model = Supplier
     template_name = "masterdata/supplier_detail.html"
     context_object_name = "supplier"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SupplierListView.view_permission_required, "缺少供应商查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().prefetch_related("material_prices__material")

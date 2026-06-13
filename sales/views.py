@@ -13,7 +13,7 @@ from django.views import View
 from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView
 
-from accounts.permissions import PermissionCode, can_view_amount, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, can_view_amount, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch
@@ -70,7 +70,10 @@ from .services import (
 class SalesOrderListView(ErpListView):
     model = SalesOrder
     page_title = "销售订单"
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
     create_url_name = "sales:sales_order_create"
+    create_permission_required = PermissionCode.SALES_PROCESS
     detail_url_name = "sales:sales_order_detail"
     columns = (
         ("订单号", "sales_order_no"),
@@ -116,6 +119,14 @@ class SalesCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
+
+    def dispatch(self, request, *args, **kwargs):
+        required_permissions = getattr(self.list_view_class, "view_permission_required", self.view_permission_required)
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, required_permissions, self.permission_denied_message)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -350,6 +361,11 @@ class SalesOrderDetailView(LoginRequiredMixin, DetailView):
     template_name = "sales/sales_order_detail.html"
     context_object_name = "order"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SalesOrderListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_sales_order_queryset_for_user(super().get_queryset(), self.request.user)
@@ -385,6 +401,11 @@ class SalesOrderPrintView(LoginRequiredMixin, DetailView):
     model = SalesOrder
     template_name = "sales/sales_order_print.html"
     context_object_name = "order"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SalesOrderListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -609,6 +630,14 @@ class ShortageCreatePurchaseRequestView(LoginRequiredMixin, TemplateView):
 class ShortageAlertListView(ErpListView):
     model = ShortageAlert
     page_title = "欠料提醒"
+    view_permission_required = (
+        PermissionCode.SALES_VIEW,
+        PermissionCode.SALES_PROCESS,
+        PermissionCode.SALES_VIEW_ALL,
+        PermissionCode.PURCHASE_VIEW,
+        PermissionCode.PURCHASE_PROCESS,
+    )
+    permission_denied_message = "缺少欠料提醒查看权限"
     page_actions = (
         ("导出CSV", "sales:shortage_alert_export", ""),
         ("生成采购需求", "sales:shortage_create_purchase_request", "primary"),
@@ -655,6 +684,8 @@ class ShortageAlertExportView(SalesCsvExportView):
 class SalesShipmentListView(ErpListView):
     model = SalesShipment
     page_title = "销售出库"
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
     detail_url_name = "sales:sales_shipment_detail"
     columns = (
         ("出库单号", "shipment_no"),
@@ -749,6 +780,11 @@ class SalesShipmentDetailView(LoginRequiredMixin, DetailView):
     model = SalesShipment
     template_name = "sales/sales_shipment_detail.html"
     context_object_name = "shipment"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SalesShipmentListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -899,6 +935,11 @@ class SalesShipmentPrintView(LoginRequiredMixin, DetailView):
     template_name = "sales/sales_shipment_print.html"
     context_object_name = "shipment"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SalesShipmentListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_sales_shipment_queryset_for_user(super().get_queryset(), self.request.user)
@@ -941,6 +982,8 @@ class SalesShipmentConfirmView(LoginRequiredMixin, View):
 class CustomerReturnListView(ErpListView):
     model = CustomerReturn
     page_title = "客户退货"
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
     create_url_name = "sales:customer_return_create"
     detail_url_name = "sales:customer_return_detail"
     columns = (
@@ -1108,6 +1151,11 @@ class CustomerReturnDetailView(LoginRequiredMixin, DetailView):
     template_name = "sales/customer_return_detail.html"
     context_object_name = "customer_return"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, CustomerReturnListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_customer_return_queryset_for_user(super().get_queryset(), self.request.user)
@@ -1140,6 +1188,11 @@ class CustomerReturnPrintView(LoginRequiredMixin, DetailView):
     model = CustomerReturn
     template_name = "sales/customer_return_print.html"
     context_object_name = "customer_return"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, CustomerReturnListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -1335,6 +1388,8 @@ class CustomerReturnConfirmReceiptView(LoginRequiredMixin, View):
 class SampleLoanListView(ErpListView):
     model = SampleLoan
     page_title = "借样"
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
     create_url_name = "sales:sample_loan_create"
     create_permission_required = PermissionCode.SALES_PROCESS
     detail_url_name = "sales:sample_loan_detail"
@@ -1420,6 +1475,8 @@ class SampleLoanImportView(LoginRequiredMixin, TemplateView):
 class SampleLoanReturnListView(ErpListView):
     model = SampleLoanReturn
     page_title = "借样归还"
+    view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
+    permission_denied_message = "缺少销售数据查看权限"
     detail_url_name = "sales:sample_loan_return_detail"
     columns = (
         ("归还单号", "sample_return_no"),
@@ -1490,6 +1547,11 @@ class SampleLoanDetailView(LoginRequiredMixin, DetailView):
     template_name = "sales/sample_loan_detail.html"
     context_object_name = "loan"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SampleLoanListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_sample_loan_queryset_for_user(super().get_queryset(), self.request.user)
@@ -1540,6 +1602,11 @@ class SampleLoanPrintView(LoginRequiredMixin, DetailView):
     model = SampleLoan
     template_name = "sales/sample_loan_print.html"
     context_object_name = "loan"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SampleLoanListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -1735,6 +1802,11 @@ class SampleLoanReturnDetailView(LoginRequiredMixin, DetailView):
     template_name = "sales/sample_loan_return_detail.html"
     context_object_name = "sample_return"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SampleLoanReturnListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             _filter_sample_return_queryset_for_user(super().get_queryset(), self.request.user)
@@ -1762,6 +1834,11 @@ class SampleLoanReturnPrintView(LoginRequiredMixin, DetailView):
     model = SampleLoanReturn
     template_name = "sales/sample_loan_return_print.html"
     context_object_name = "sample_return"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SampleLoanReturnListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -2095,7 +2172,7 @@ def _filter_sales_order_queryset_for_user(queryset, user):
 
 
 def _filter_shortage_queryset_for_user(queryset, user):
-    if _can_view_all_sales(user):
+    if _can_view_all_sales(user) or user_has_permission(user, PermissionCode.PURCHASE_VIEW) or user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
         return queryset
     return queryset.filter(Q(sales_order__customer__sales_owner=user) | Q(sales_order__created_by=user)).distinct()
 

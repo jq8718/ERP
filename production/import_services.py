@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from bom.models import Bom
 from files.models import ImportJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material
 from sales.models import SalesOrder, SalesOrderItem
@@ -40,7 +40,7 @@ PRODUCTION_ORDER_IMPORT_COLUMNS = (
 )
 
 PRODUCTION_ORDER_IMPORT_TEMPLATE_ROWS = (
-    PRODUCTION_ORDER_IMPORT_COLUMNS,
+    csv_import_header_row(PRODUCTION_ORDER_IMPORT_COLUMNS),
     ("MO-INIT-001", "SO001", "1", "FG001", "10", "", "", "2026-06-10", "2026-06-15", "示例行，导入前可删除"),
     ("MO-INIT-002", "", "", "FG002", "5", "BOM-FG002", "V1", "2026-06-12", "2026-06-18", ""),
 )
@@ -59,7 +59,7 @@ MATERIAL_REQUISITION_IMPORT_COLUMNS = (
 )
 
 MATERIAL_REQUISITION_IMPORT_TEMPLATE_ROWS = (
-    MATERIAL_REQUISITION_IMPORT_COLUMNS,
+    csv_import_header_row(MATERIAL_REQUISITION_IMPORT_COLUMNS),
     ("MR-INIT-001", "MO001", "2026-06-10", "RM001", "20", "20", "BATCH001", "A01", "", "示例行，导入前可删除"),
     ("MR-INIT-001", "MO001", "2026-06-10", "RM002", "5", "4", "BATCH002", "A01", "少领 1", ""),
 )
@@ -76,7 +76,7 @@ PRODUCTION_RECEIPT_IMPORT_COLUMNS = (
 )
 
 PRODUCTION_RECEIPT_IMPORT_TEMPLATE_ROWS = (
-    PRODUCTION_RECEIPT_IMPORT_COLUMNS,
+    csv_import_header_row(PRODUCTION_RECEIPT_IMPORT_COLUMNS),
     ("PI-INIT-001", "MO001", "2026-06-10", "10", "A01", "FG-BATCH-001", "qualified", "示例行，导入前可删除"),
     ("PI-INIT-002", "MO002", "2026-06-11", "5", "A01", "", "pending", ""),
 )

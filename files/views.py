@@ -24,6 +24,7 @@ from .permissions import (
     can_access_source_doc,
     filter_attachments_for_user,
     resolve_source_doc_no,
+    source_doc_type_choices_for_user,
 )
 from .services import (
     ALLOWED_EXTENSIONS,
@@ -335,6 +336,7 @@ class AttachmentUploadView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = "上传附件"
+        context["source_doc_type_choices"] = source_doc_type_choices_for_user(self.request.user)
         return context
 
     def post(self, request):

@@ -1,13 +1,13 @@
 param(
     [string]$ServerHost = "",
     [int]$Port = 8000,
-    [string]$ShortcutName = "打开 ERP 系统"
+    [string]$ShortcutName = "Open ERP System"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $ServerHost) {
-    $ServerHost = Read-Host "请输入服务器固定 IP 或内网主机名，例如 192.168.1.10"
+    $ServerHost = Read-Host "Enter server static IP or intranet host name, for example 192.168.1.10"
 }
 
 $desktop = [Environment]::GetFolderPath("Desktop")

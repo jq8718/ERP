@@ -12,7 +12,7 @@ from django.views import View
 from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView
 
-from accounts.permissions import PermissionCode, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
 from bom.services import UnitConversionMissing, required_component_qty_base
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
 from files.view_helpers import build_attachment_panel, export_file_response
@@ -45,6 +45,8 @@ class ProductionOrderListView(ErpListView):
     page_title = "生产指令"
     create_url_name = "production:production_order_create"
     create_permission_required = PermissionCode.PRODUCTION_PROCESS
+    view_permission_required = (PermissionCode.PRODUCTION_VIEW, PermissionCode.PRODUCTION_PROCESS)
+    permission_denied_message = "缺少生产数据查看权限"
     detail_url_name = "production:production_order_detail"
     columns = (
         ("生产单号", "production_order_no"),
@@ -103,6 +105,11 @@ class ProductionOrderDetailView(LoginRequiredMixin, DetailView):
     template_name = "production/production_order_detail.html"
     context_object_name = "production_order"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, ProductionOrderListView.view_permission_required, "缺少生产数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -142,6 +149,11 @@ class ProductionOrderPrintView(LoginRequiredMixin, DetailView):
     model = ProductionOrder
     template_name = "production/production_order_print.html"
     context_object_name = "production_order"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, ProductionOrderListView.view_permission_required, "缺少生产数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -415,6 +427,8 @@ class ProductionOrderCreateReceiptView(LoginRequiredMixin, View):
 class ProductionMaterialRequisitionListView(ErpListView):
     model = ProductionMaterialRequisition
     page_title = "生产领料"
+    view_permission_required = (PermissionCode.PRODUCTION_VIEW, PermissionCode.PRODUCTION_PROCESS)
+    permission_denied_message = "缺少生产数据查看权限"
     detail_url_name = "production:material_requisition_detail"
     columns = (
         ("领料单号", "requisition_no"),
@@ -441,6 +455,12 @@ class ProductionCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        required_permissions = getattr(self.list_view_class, "view_permission_required", ())
+        if request.user.is_authenticated and required_permissions:
+            require_any_erp_permission(request.user, required_permissions, "缺少生产数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -580,6 +600,15 @@ class ProductionMaterialRequisitionDetailView(LoginRequiredMixin, DetailView):
     template_name = "production/material_requisition_detail.html"
     context_object_name = "requisition"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(
+                request.user,
+                ProductionMaterialRequisitionListView.view_permission_required,
+                "缺少生产数据查看权限",
+            )
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -695,6 +724,15 @@ class ProductionMaterialRequisitionPrintView(LoginRequiredMixin, DetailView):
     template_name = "production/material_requisition_print.html"
     context_object_name = "requisition"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(
+                request.user,
+                ProductionMaterialRequisitionListView.view_permission_required,
+                "缺少生产数据查看权限",
+            )
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -740,6 +778,8 @@ class ProductionMaterialRequisitionConfirmView(LoginRequiredMixin, View):
 class ProductionReceiptListView(ErpListView):
     model = ProductionReceipt
     page_title = "生产入库"
+    view_permission_required = (PermissionCode.PRODUCTION_VIEW, PermissionCode.PRODUCTION_PROCESS)
+    permission_denied_message = "缺少生产数据查看权限"
     detail_url_name = "production:production_receipt_detail"
     columns = (
         ("入库单号", "production_receipt_no"),
@@ -816,6 +856,11 @@ class ProductionReceiptDetailView(LoginRequiredMixin, DetailView):
     model = ProductionReceipt
     template_name = "production/production_receipt_detail.html"
     context_object_name = "receipt"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, ProductionReceiptListView.view_permission_required, "缺少生产数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -935,6 +980,11 @@ class ProductionReceiptPrintView(LoginRequiredMixin, DetailView):
     model = ProductionReceipt
     template_name = "production/production_receipt_print.html"
     context_object_name = "receipt"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, ProductionReceiptListView.view_permission_required, "缺少生产数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (

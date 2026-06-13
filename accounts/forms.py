@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth.password_validation import validate_password
 
+from system.display import set_form_labels
+
 from .models import Permission, Role, User
 
 
@@ -34,6 +36,9 @@ class AccountUserCreateForm(forms.ModelForm):
     def __init__(self, *args, operator=None, **kwargs):
         self.operator = operator
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
+        if "username" in self.fields:
+            self.fields["username"].help_text = "必填。150 个字符以内，可使用字母、数字和 @/./+/-/_。"
         self.fields["roles"].queryset = Role.objects.order_by("role_code")
 
     def clean(self):
@@ -82,6 +87,7 @@ class AccountUserUpdateForm(forms.ModelForm):
     def __init__(self, *args, operator=None, **kwargs):
         self.operator = operator
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         self.fields["roles"].queryset = Role.objects.order_by("role_code")
 
     def clean_current_password(self):
@@ -154,7 +160,8 @@ class RoleForm(forms.ModelForm):
     def __init__(self, *args, operator=None, **kwargs):
         self.operator = operator
         super().__init__(*args, **kwargs)
-        self.fields["permissions"].queryset = Permission.objects.order_by("permission_code")
+        set_form_labels(self)
+        self.fields["permissions"].queryset = Permission.objects.order_by("permission_type", "permission_name")
 
     def clean_current_password(self):
         current_password = self.cleaned_data.get("current_password")

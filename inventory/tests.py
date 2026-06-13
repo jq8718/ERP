@@ -27,13 +27,15 @@ class StockCountAdjustmentServiceTests(TestCase):
             base_unit="pcs",
             qty_precision=0,
         )
+        self._grant_permission(PermissionCode.INVENTORY_VIEW)
 
     def _grant_permission(self, permission_code: str):
+        permission_type = Permission.PermissionType.MODULE if permission_code == PermissionCode.INVENTORY_VIEW else Permission.PermissionType.ACTION
         permission, _ = Permission.objects.get_or_create(
             permission_code=permission_code,
             defaults={
                 "permission_name": permission_code,
-                "permission_type": Permission.PermissionType.ACTION,
+                "permission_type": permission_type,
             },
         )
         role = Role.objects.create(role_code=f"inventory-role-{permission_code}-{self.user.id}", role_name=permission_code)
@@ -713,7 +715,7 @@ class StockCountAdjustmentServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("location_code,location_name,status,remark", content)
+        self.assertIn("库位编码,库位名称,状态,备注", content)
         self.assertIn("A01", content)
 
     def test_warehouse_location_import_requires_inventory_process_permission(self):
@@ -729,7 +731,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "warehouse_locations.csv",
             (
-                "location_code,location_name,status,remark\n"
+                "库位编码,库位名称,状态,备注\n"
                 "C01,库位 C01,active,新库位\n"
                 "D01,库位 D01,inactive,停用库位\n"
             ).encode("utf-8-sig"),
@@ -752,7 +754,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "warehouse_locations.csv",
             (
-                "location_code,location_name,status,remark\n"
+                "库位编码,库位名称,状态,备注\n"
                 "A01,重复库位,bad_status,重复\n"
                 "E01,,active,缺名称\n"
             ).encode("utf-8"),
@@ -775,7 +777,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "warehouse_locations.csv",
-            b"location_code,location_name,status,remark\nC99,big,active,\n",
+            "库位编码,库位名称,状态,备注\nC99,big,active,\n".encode("utf-8-sig"),
             content_type="text/csv",
         )
 
@@ -793,7 +795,7 @@ class StockCountAdjustmentServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
-        self.assertIn("material_code,location_code,batch_no,inventory_type,initial_qty", content)
+        self.assertIn("物料编码,库位编码,批次号,库存类型,期初数量", content)
         self.assertIn("OPEN-RM001-A01-001", content)
 
     def test_initial_inventory_import_template_requires_inventory_process_permission(self):
@@ -809,7 +811,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "initial_inventory.csv",
             (
-                "material_code,location_code,batch_no,inventory_type,initial_qty,cost_price,received_at\n"
+                "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
                 "RM001,A01,OPEN-RM001-A01,available,12.5000,3.210000,2026-06-09\n"
                 "RM001,B01,,sample,2.0000,,2026-06-09T09:30:00\n"
             ).encode("utf-8-sig"),
@@ -869,7 +871,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "initial_inventory.csv",
-            b"material_code,location_code,batch_no,inventory_type,initial_qty\nRM001,A01,BIG,available,1\n",
+            "物料编码,库位编码,批次号,库存类型,期初数量\nRM001,A01,BIG,available,1\n".encode("utf-8-sig"),
             content_type="text/csv",
         )
 
@@ -884,7 +886,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "initial_inventory.csv",
             (
-                "material_code,location_code,batch_no,inventory_type,initial_qty,cost_price,received_at\n"
+                "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
                 "RM001,A01,OPEN-CANCEL,available,5.0000,1.000000,2026-06-09\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
@@ -920,7 +922,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "initial_inventory.csv",
             (
-                "material_code,location_code,batch_no,inventory_type,initial_qty,cost_price,received_at\n"
+                "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
                 "RM-MISSING,A01,B001,bad_type,0,-1,bad-date\n"
             ).encode("utf-8"),
             content_type="text/csv",
@@ -944,7 +946,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         upload = SimpleUploadedFile(
             "initial_inventory.csv",
             (
-                "material_code,location_code,batch_no,inventory_type,initial_qty,cost_price,received_at\n"
+                "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
                 "RM001,A01,OPEN-DENIED,available,1.0000,,2026-06-09\n"
             ).encode("utf-8"),
             content_type="text/csv",

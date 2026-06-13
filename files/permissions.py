@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from django.db.models import Q
 
-from accounts.permissions import PermissionCode, user_has_permission
+from accounts.permissions import PermissionCode, user_has_any_permission, user_has_permission
+from system.display import code_label
 from .models import Attachment
 
 
@@ -59,6 +60,18 @@ def _is_privileged(user) -> bool:
 
 def _can_view_sales_scope(user) -> bool:
     return user_has_permission(user, PermissionCode.SALES_VIEW_ALL)
+
+
+def _can_view_purchase(user) -> bool:
+    return user_has_any_permission(user, (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS))
+
+
+def _can_view_production(user) -> bool:
+    return user_has_any_permission(user, (PermissionCode.PRODUCTION_VIEW, PermissionCode.PRODUCTION_PROCESS))
+
+
+def _can_view_inventory(user) -> bool:
+    return user_has_any_permission(user, (PermissionCode.INVENTORY_VIEW, PermissionCode.INVENTORY_PROCESS))
 
 
 def _sales_order(user, source_doc_id: int) -> bool:
@@ -139,7 +152,7 @@ def _sample_loan_return_no(source_doc_id: int) -> str:
 def _purchase_request(user, source_doc_id: int) -> bool:
     from purchase.models import PurchaseRequest
 
-    if not user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+    if not _can_view_purchase(user):
         return False
     return PurchaseRequest.objects.filter(id=source_doc_id).exists()
 
@@ -153,7 +166,7 @@ def _purchase_request_no(source_doc_id: int) -> str:
 def _purchase_order(user, source_doc_id: int) -> bool:
     from purchase.models import PurchaseOrder
 
-    if not user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+    if not _can_view_purchase(user):
         return False
     return PurchaseOrder.objects.filter(id=source_doc_id).exists()
 
@@ -167,7 +180,7 @@ def _purchase_order_no(source_doc_id: int) -> str:
 def _purchase_receipt(user, source_doc_id: int) -> bool:
     from purchase.models import PurchaseReceipt
 
-    if not user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+    if not _can_view_purchase(user):
         return False
     return PurchaseReceipt.objects.filter(id=source_doc_id).exists()
 
@@ -181,7 +194,7 @@ def _purchase_receipt_no(source_doc_id: int) -> str:
 def _supplier_return(user, source_doc_id: int) -> bool:
     from purchase.models import SupplierReturn
 
-    if not user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+    if not _can_view_purchase(user):
         return False
     return SupplierReturn.objects.filter(id=source_doc_id).exists()
 
@@ -195,7 +208,7 @@ def _supplier_return_no(source_doc_id: int) -> str:
 def _production_order(user, source_doc_id: int) -> bool:
     from production.models import ProductionOrder
 
-    if not user_has_permission(user, PermissionCode.PRODUCTION_PROCESS):
+    if not _can_view_production(user):
         return False
     return ProductionOrder.objects.filter(id=source_doc_id).exists()
 
@@ -209,7 +222,7 @@ def _production_order_no(source_doc_id: int) -> str:
 def _production_material_requisition(user, source_doc_id: int) -> bool:
     from production.models import ProductionMaterialRequisition
 
-    if not user_has_permission(user, PermissionCode.PRODUCTION_PROCESS):
+    if not _can_view_production(user):
         return False
     return ProductionMaterialRequisition.objects.filter(id=source_doc_id).exists()
 
@@ -223,7 +236,7 @@ def _production_material_requisition_no(source_doc_id: int) -> str:
 def _production_receipt(user, source_doc_id: int) -> bool:
     from production.models import ProductionReceipt
 
-    if not user_has_permission(user, PermissionCode.PRODUCTION_PROCESS):
+    if not _can_view_production(user):
         return False
     return ProductionReceipt.objects.filter(id=source_doc_id).exists()
 
@@ -237,7 +250,7 @@ def _production_receipt_no(source_doc_id: int) -> str:
 def _location_transfer(user, source_doc_id: int) -> bool:
     from inventory.models import LocationTransfer
 
-    if not user_has_permission(user, PermissionCode.INVENTORY_PROCESS):
+    if not _can_view_inventory(user):
         return False
     return LocationTransfer.objects.filter(id=source_doc_id).exists()
 
@@ -251,7 +264,7 @@ def _location_transfer_no(source_doc_id: int) -> str:
 def _stock_count(user, source_doc_id: int) -> bool:
     from inventory.models import StockCount
 
-    if not user_has_permission(user, PermissionCode.INVENTORY_PROCESS):
+    if not _can_view_inventory(user):
         return False
     return StockCount.objects.filter(id=source_doc_id).exists()
 
@@ -390,3 +403,33 @@ _SOURCE_NO_RESOLVERS = {
     "reconciliation": _reconciliation_no,
     "approval": _approval_no,
 }
+
+
+def source_doc_type_choices_for_user(user) -> tuple[tuple[str, str], ...]:
+    choices = []
+    for source_doc_type in _SOURCE_CHECKERS:
+        if _is_privileged(user) or _can_upload_source_type(user, source_doc_type):
+            choices.append((source_doc_type, code_label(source_doc_type)))
+    return tuple(choices)
+
+
+def _can_upload_source_type(user, source_doc_type: str) -> bool:
+    if source_doc_type in {"sales_order", "sales_shipment", "customer_return", "sample_loan", "sample_loan_return"}:
+        return user_has_permission(user, PermissionCode.SALES_PROCESS) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL)
+    if source_doc_type in {"purchase_request", "purchase_order", "purchase_receipt", "supplier_return"}:
+        return user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+    if source_doc_type in {"production_order", "production_material_requisition", "production_receipt"}:
+        return user_has_permission(user, PermissionCode.PRODUCTION_PROCESS)
+    if source_doc_type in {"location_transfer", "stock_count"}:
+        return user_has_permission(user, PermissionCode.INVENTORY_PROCESS)
+    if source_doc_type in {
+        "customer_receipt",
+        "supplier_payment",
+        "customer_credit_balance",
+        "supplier_credit_balance",
+        "reconciliation",
+    }:
+        return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
+    if source_doc_type == "approval":
+        return True
+    return False

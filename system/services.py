@@ -8,6 +8,8 @@ from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from system.display import code_label
+
 from .models import AuditLog, BackgroundJob, DocumentSequence, PendingEvent
 
 
@@ -114,7 +116,7 @@ def start_background_job(
             return ServiceResult(
                 False,
                 "SYSTEM_JOB_RUNNING",
-                f"{job_type} 任务正在运行",
+                f"{code_label(job_type)}任务正在运行",
                 data={"job_id": running_job.id, "job_no": running_job.job_no},
             )
         job = BackgroundJob.objects.create(
@@ -281,7 +283,7 @@ def _notify_background_job_failure(job: BackgroundJob) -> None:
         .distinct()
         .order_by("id")
     )
-    title = f"后台任务失败：{job.job_type}"
+    title = f"后台任务失败：{code_label(job.job_type)}"
     content = f"任务单号：{job.job_no}\n失败原因：{job.error_message or '未提供错误信息'}"
     for receiver in receivers:
         if SystemMessage.objects.filter(
@@ -756,7 +758,7 @@ def _handle_purchase_order_created(event: PendingEvent) -> dict[str, Any]:
 
 
 def _handle_generic_event(event: PendingEvent) -> dict[str, Any]:
-    return _notify_operator(event, f"事件已处理：{event.event_type}", str(event.payload))
+    return _notify_operator(event, f"事件已处理：{code_label(event.event_type)}", str(event.payload))
 
 
 def _notify_operator(

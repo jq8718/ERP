@@ -16,18 +16,22 @@
     <div class="stat-label">活跃欠料</div>
     <div class="stat-value">{{ active_shortages }}</div>
   </div>
-  <div class="stat">
-    <div class="stat-label">待审采购需求</div>
-    <div class="stat-value">{{ pending_purchase_requests }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">待入库进货单</div>
-    <div class="stat-value">{{ pending_purchase_receipts }}</div>
-  </div>
-  <div class="stat">
-    <div class="stat-label">在库批次数量</div>
-    <div class="stat-value">{{ inventory_qty }}</div>
-  </div>
+  {% if can_view_purchase_dashboard %}
+    <div class="stat">
+      <div class="stat-label">待审采购需求</div>
+      <div class="stat-value">{{ pending_purchase_requests }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">待入库进货单</div>
+      <div class="stat-value">{{ pending_purchase_receipts }}</div>
+    </div>
+  {% endif %}
+  {% if can_view_inventory_dashboard %}
+    <div class="stat">
+      <div class="stat-label">在库批次数量</div>
+      <div class="stat-value">{{ inventory_qty }}</div>
+    </div>
+  {% endif %}
 </section>
 
 <section class="grid-2">

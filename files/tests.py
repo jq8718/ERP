@@ -14,6 +14,7 @@ from files.models import Attachment, AttachmentAccessLog, ExportLog, ImportJob, 
 from files.services import (
     CsvImportReadError,
     _attachment_scan_command,
+    csv_import_header_row,
     delete_attachment,
     export_queryset_to_csv,
     read_csv_dict_rows,
@@ -196,15 +197,31 @@ class FileServiceTests(TestCase):
     @override_settings(ERP_MAX_CSV_IMPORT_ROWS=1)
     def test_read_csv_dict_rows_rejects_too_many_rows(self):
         with self.assertRaises(CsvImportReadError) as context:
-            read_csv_dict_rows(StringIO("code,name\nA,一\nB,二\n"))
+            read_csv_dict_rows(StringIO("物料编码,物料名称\nA,一\nB,二\n"))
 
         self.assertIn("超过 1 行限制", str(context.exception))
 
     def test_read_csv_dict_rows_rejects_extra_columns(self):
         with self.assertRaises(CsvImportReadError) as context:
-            read_csv_dict_rows(StringIO("code,name\nA,一,多余\n"))
+            read_csv_dict_rows(StringIO("物料编码,物料名称\nA,一,多余\n"))
 
         self.assertIn("列数超过表头", str(context.exception))
+
+    def test_read_csv_dict_rows_normalizes_chinese_headers(self):
+        rows = read_csv_dict_rows(StringIO("物料编码,物料名称\nRM001,中文 English 混合\n"))
+
+        self.assertEqual(rows, [{"material_code": "RM001", "material_name": "中文 English 混合"}])
+
+    def test_read_csv_dict_rows_rejects_english_headers(self):
+        with self.assertRaises(CsvImportReadError) as context:
+            read_csv_dict_rows(StringIO("material_code,material_name\nRM001,中文 English 混合\n"))
+
+        self.assertIn("不支持的表头", str(context.exception))
+
+    def test_csv_import_header_row_uses_chinese_labels(self):
+        header = csv_import_header_row(("material_code", "material_name", "unknown_field"))
+
+        self.assertEqual(header, ("物料编码", "物料名称", "unknown_field"))
 
 
 class FileViewTests(TestCase):
@@ -875,7 +892,7 @@ class FileViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "PRT-DETAIL")
-        self.assertContains(response, "sales_order")
+        self.assertContains(response, "销售订单")
         self.assertContains(response, "SO-DETAIL")
         self.assertContains(response, self.user.username)
 
@@ -896,6 +913,7 @@ class FileViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "EXP-DETAIL")
+        self.assertContains(response, "物料")
         self.assertContains(response, "下载CSV")
         self.assertContains(response, "RM001")
 

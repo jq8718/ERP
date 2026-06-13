@@ -33,20 +33,18 @@
     <table>
       <thead>
         <tr>
-          <th>权限码</th>
-          <th>名称</th>
+          <th>权限名称</th>
           <th>类型</th>
         </tr>
       </thead>
       <tbody>
         {% for permission in role.permissions.all %}
           <tr>
-            <td>{{ permission.permission_code }}</td>
             <td>{{ permission.permission_name }}</td>
             <td>{{ permission.get_permission_type_display }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="3" class="empty">暂无权限</td></tr>
+          <tr><td colspan="2" class="empty">暂无权限</td></tr>
         {% endfor %}
       </tbody>
     </table>

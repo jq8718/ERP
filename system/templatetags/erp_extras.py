@@ -1,6 +1,7 @@
 from django import template
 
-from accounts.permissions import user_has_permission
+from accounts.permissions import user_has_any_permission, user_has_permission
+from system.display import code_label
 from system.view_helpers import row_value
 
 register = template.Library()
@@ -16,6 +17,11 @@ def has_erp_perm(user, permission_code):
     return user_has_permission(user, permission_code)
 
 
+@register.simple_tag
+def has_any_erp_perm(user, *permission_codes):
+    return user_has_any_permission(user, permission_codes)
+
+
 @register.filter
 def contains(value, item):
     return item in value
@@ -26,3 +32,8 @@ def get_item(value, key):
     if isinstance(value, dict):
         return value.get(key)
     return None
+
+
+@register.filter
+def code_name(value):
+    return code_label(value)

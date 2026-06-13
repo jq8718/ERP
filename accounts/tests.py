@@ -171,7 +171,7 @@ class AccountsViewTests(TestCase):
         self.assertContains(role_response, role.role_code)
         self.assertEqual(permission_response.status_code, 200)
         self.assertContains(permission_response, "权限清单")
-        self.assertContains(permission_response, "sales.process")
+        self.assertContains(permission_response, "处理销售单据")
 
     def test_account_user_and_role_details_show_effective_permissions(self):
         role = _grant_permission(self.user, PermissionCode.ADMIN_PERMISSION_MANAGE)
@@ -188,13 +188,13 @@ class AccountsViewTests(TestCase):
 
         self.assertEqual(user_response.status_code, 200)
         self.assertContains(user_response, "有效权限")
-        self.assertContains(user_response, "sales.process")
+        self.assertContains(user_response, "处理销售单据")
         self.assertContains(user_response, "最近会话")
         self.assertContains(user_response, "有效")
         self.assertEqual(role_response.status_code, 200)
         self.assertContains(role_response, "角色详情")
         self.assertContains(role_response, "login-user")
-        self.assertContains(role_response, "sales.process")
+        self.assertContains(role_response, "处理销售单据")
 
     def test_permission_manager_can_create_and_update_user(self):
         admin_role = _grant_permission(self.user, PermissionCode.ADMIN_PERMISSION_MANAGE)

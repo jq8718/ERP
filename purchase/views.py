@@ -15,7 +15,7 @@ from django.views.generic import DetailView
 from django.views.generic.edit import CreateView
 from django.utils import timezone
 
-from accounts.permissions import PermissionCode, can_view_amount, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, can_view_amount, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch, WarehouseLocation
@@ -45,6 +45,9 @@ class PurchaseRequestListView(ErpListView):
     model = PurchaseRequest
     page_title = "采购需求"
     create_url_name = "purchase:purchase_request_create"
+    create_permission_required = PermissionCode.PURCHASE_PROCESS
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:purchase_request_detail"
     columns = (
         ("需求单号", "purchase_request_no"),
@@ -162,6 +165,11 @@ class PurchaseRequestDetailView(LoginRequiredMixin, DetailView):
     model = PurchaseRequest
     template_name = "purchase/purchase_request_detail.html"
     context_object_name = "purchase_request"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, PurchaseRequestListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -336,6 +344,9 @@ class PurchaseOrderListView(ErpListView):
     model = PurchaseOrder
     page_title = "采购单"
     create_url_name = "purchase:purchase_order_create"
+    create_permission_required = PermissionCode.PURCHASE_PROCESS
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:purchase_order_detail"
     columns = (
         ("采购单号", "purchase_order_no"),
@@ -376,6 +387,12 @@ class PurchaseCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        required_permissions = getattr(self.list_view_class, "view_permission_required", ())
+        if request.user.is_authenticated and required_permissions:
+            require_any_erp_permission(request.user, required_permissions, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -639,6 +656,11 @@ class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
     template_name = "purchase/purchase_order_detail.html"
     context_object_name = "purchase_order"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, PurchaseOrderListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -682,6 +704,11 @@ class PurchaseOrderPrintView(LoginRequiredMixin, DetailView):
     model = PurchaseOrder
     template_name = "purchase/purchase_order_print.html"
     context_object_name = "purchase_order"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, PurchaseOrderListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -888,6 +915,8 @@ class PurchaseRequestCreateOrderView(LoginRequiredMixin, View):
 class PurchaseReceiptListView(ErpListView):
     model = PurchaseReceipt
     page_title = "进货单"
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:purchase_receipt_detail"
     columns = (
         ("进货单号", "purchase_receipt_no"),
@@ -972,6 +1001,11 @@ class PurchaseReceiptDetailView(LoginRequiredMixin, DetailView):
     model = PurchaseReceipt
     template_name = "purchase/purchase_receipt_detail.html"
     context_object_name = "receipt"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, PurchaseReceiptListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -1097,6 +1131,11 @@ class PurchaseReceiptPrintView(LoginRequiredMixin, DetailView):
     template_name = "purchase/purchase_receipt_print.html"
     context_object_name = "receipt"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, PurchaseReceiptListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -1138,6 +1177,9 @@ class SupplierReturnListView(ErpListView):
     model = SupplierReturn
     page_title = "供应商退货"
     create_url_name = "purchase:supplier_return_create"
+    create_permission_required = PermissionCode.PURCHASE_PROCESS
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:supplier_return_detail"
     columns = (
         ("退货单号", "supplier_return_no"),
@@ -1296,6 +1338,11 @@ class SupplierReturnDetailView(LoginRequiredMixin, DetailView):
     template_name = "purchase/supplier_return_detail.html"
     context_object_name = "supplier_return"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SupplierReturnListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return (
             super()
@@ -1329,6 +1376,11 @@ class SupplierReturnPrintView(LoginRequiredMixin, DetailView):
     model = SupplierReturn
     template_name = "purchase/supplier_return_print.html"
     context_object_name = "supplier_return"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(request.user, SupplierReturnListView.view_permission_required, "缺少采购数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (

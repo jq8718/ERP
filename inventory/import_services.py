@@ -8,7 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from files.models import ImportJob, InitializationJob
-from files.services import CsvImportReadError, read_csv_dict_rows
+from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from masterdata.models import Material
 from system.services import ServiceResult, next_document_no
 
@@ -26,7 +26,7 @@ INITIAL_INVENTORY_IMPORT_COLUMNS = (
 )
 
 INITIAL_INVENTORY_IMPORT_TEMPLATE_ROWS = (
-    INITIAL_INVENTORY_IMPORT_COLUMNS,
+    csv_import_header_row(INITIAL_INVENTORY_IMPORT_COLUMNS),
     ("RM001", "A01", "OPEN-RM001-A01-001", "available", "100.0000", "12.345600", "2026-06-09"),
     ("FG001", "A01", "", "available", "20.0000", "", "2026-06-09"),
 )
@@ -39,7 +39,7 @@ WAREHOUSE_LOCATION_IMPORT_COLUMNS = (
 )
 
 WAREHOUSE_LOCATION_IMPORT_TEMPLATE_ROWS = (
-    WAREHOUSE_LOCATION_IMPORT_COLUMNS,
+    csv_import_header_row(WAREHOUSE_LOCATION_IMPORT_COLUMNS),
     ("A01", "原料库 A01", "active", "示例行，导入前可删除"),
     ("B01", "成品库 B01", "active", ""),
 )

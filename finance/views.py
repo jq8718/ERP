@@ -62,6 +62,8 @@ MONEY_QUANT = Decimal("0.01")
 class CustomerReceiptListView(ErpListView):
     model = CustomerReceipt
     page_title = "客户收款"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
     create_url_name = "finance:customer_receipt_create"
     create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:customer_receipt_detail"
@@ -106,6 +108,11 @@ class FinanceCsvExportView(LoginRequiredMixin, View):
     list_view_class = None
     ordering = ()
     select_related = ()
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
@@ -166,7 +173,8 @@ class CustomerReceiptImportView(LoginRequiredMixin, TemplateView):
     template_name = "masterdata/csv_import.html"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_payment_process(request.user)
+        if request.user.is_authenticated:
+            _require_finance_payment_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -199,7 +207,8 @@ class CustomerReceiptCreateView(LoginRequiredMixin, TemplateView):
     template_name = "finance/customer_receipt_form.html"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_payment_process(request.user)
+        if request.user.is_authenticated:
+            _require_finance_payment_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -238,6 +247,11 @@ class CustomerReceiptDetailView(LoginRequiredMixin, DetailView):
     model = CustomerReceipt
     template_name = "finance/customer_receipt_detail.html"
     context_object_name = "receipt"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -283,6 +297,11 @@ class CustomerReceiptPrintView(LoginRequiredMixin, DetailView):
     model = CustomerReceipt
     template_name = "finance/customer_receipt_print.html"
     context_object_name = "receipt"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -494,6 +513,8 @@ class CustomerReceiptReverseView(LoginRequiredMixin, View):
 class SupplierPaymentListView(ErpListView):
     model = SupplierPayment
     page_title = "供应商付款"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
     create_url_name = "finance:supplier_payment_create"
     create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:supplier_payment_detail"
@@ -555,7 +576,8 @@ class SupplierPaymentImportView(LoginRequiredMixin, TemplateView):
     template_name = "masterdata/csv_import.html"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_payment_process(request.user)
+        if request.user.is_authenticated:
+            _require_finance_payment_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -588,7 +610,8 @@ class SupplierPaymentCreateView(LoginRequiredMixin, TemplateView):
     template_name = "finance/supplier_payment_form.html"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_payment_process(request.user)
+        if request.user.is_authenticated:
+            _require_finance_payment_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -627,6 +650,11 @@ class SupplierPaymentDetailView(LoginRequiredMixin, DetailView):
     model = SupplierPayment
     template_name = "finance/supplier_payment_detail.html"
     context_object_name = "payment"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -672,6 +700,11 @@ class SupplierPaymentPrintView(LoginRequiredMixin, DetailView):
     model = SupplierPayment
     template_name = "finance/supplier_payment_print.html"
     context_object_name = "payment"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return (
@@ -883,6 +916,8 @@ class SupplierPaymentReverseView(LoginRequiredMixin, View):
 class CustomerCreditBalanceListView(ErpListView):
     model = CustomerCreditBalance
     page_title = "客户待处理余额"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
     detail_url_name = "finance:customer_credit_balance_detail"
     columns = (
         ("客户", "customer.customer_name"),
@@ -915,6 +950,11 @@ class CustomerCreditBalanceDetailView(LoginRequiredMixin, DetailView):
     template_name = "finance/customer_credit_balance_detail.html"
     context_object_name = "balance"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().select_related("customer", "created_by").prefetch_related("transactions")
 
@@ -941,6 +981,11 @@ class CustomerCreditBalancePrintView(LoginRequiredMixin, DetailView):
     model = CustomerCreditBalance
     template_name = "finance/customer_credit_balance_print.html"
     context_object_name = "balance"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().select_related("customer", "created_by").prefetch_related("transactions")
@@ -996,6 +1041,8 @@ class CustomerCreditBalanceApplyView(LoginRequiredMixin, View):
 class SupplierCreditBalanceListView(ErpListView):
     model = SupplierCreditBalance
     page_title = "供应商待处理余额"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
     detail_url_name = "finance:supplier_credit_balance_detail"
     columns = (
         ("供应商", "supplier.supplier_name"),
@@ -1028,6 +1075,11 @@ class SupplierCreditBalanceDetailView(LoginRequiredMixin, DetailView):
     template_name = "finance/supplier_credit_balance_detail.html"
     context_object_name = "balance"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
         return super().get_queryset().select_related("supplier", "created_by").prefetch_related("transactions")
 
@@ -1054,6 +1106,11 @@ class SupplierCreditBalancePrintView(LoginRequiredMixin, DetailView):
     model = SupplierCreditBalance
     template_name = "finance/supplier_credit_balance_print.html"
     context_object_name = "balance"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return super().get_queryset().select_related("supplier", "created_by").prefetch_related("transactions")
@@ -1109,6 +1166,8 @@ class SupplierCreditBalanceApplyView(LoginRequiredMixin, View):
 class ReconciliationListView(ErpListView):
     model = Reconciliation
     page_title = "对账单"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
     create_url_name = "finance:reconciliation_create"
     create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:reconciliation_detail"
@@ -1210,7 +1269,8 @@ class ReconciliationDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "reconciliation"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_amount(request.user)
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -1248,7 +1308,8 @@ class ReconciliationPrintView(LoginRequiredMixin, DetailView):
     context_object_name = "reconciliation"
 
     def dispatch(self, request, *args, **kwargs):
-        _require_finance_amount(request.user)
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):

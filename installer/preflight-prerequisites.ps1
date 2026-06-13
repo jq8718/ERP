@@ -52,15 +52,41 @@ if ($pgService) {
     Write-Result "PostgreSQL service" $false "No postgresql* service found"
 }
 
-$nssmPath = Join-Path $PSScriptRoot "packages\nssm-2.24\win64\nssm.exe"
-$nssmZip = Join-Path $PSScriptRoot "packages\nssm-2.24.zip"
-if (Test-Path -LiteralPath $nssmPath) {
-    Write-Result "NSSM" $true $nssmPath
-} elseif (Test-Path -LiteralPath $nssmZip) {
-    Write-Result "NSSM" $true "Zip exists; register script can extract it"
+function Find-NssmCandidate {
+    $candidates = @()
+    if ($env:ERP_NSSM_EXE) {
+        $candidates += $env:ERP_NSSM_EXE
+    }
+    $candidates += (Join-Path $PSScriptRoot "tools\nssm.exe")
+    $candidates += (Join-Path $PSScriptRoot "packages\nssm-2.24\win64\nssm.exe")
+    $candidates += "C:\nssm\nssm-2.24\win64\nssm.exe"
+    $candidates += "C:\nssm\win64\nssm.exe"
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+
+    $cmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+
+    $zip = Join-Path $PSScriptRoot "packages\nssm-2.24.zip"
+    if (Test-Path -LiteralPath $zip) {
+        return "Zip exists in installer\packages; register script can extract it"
+    }
+
+    return $null
+}
+
+$nssmCandidate = Find-NssmCandidate
+if ($nssmCandidate) {
+    Write-Result "NSSM" $true $nssmCandidate
 } else {
-    Write-Result "NSSM" $false "nssm package not found"
+    Write-Result "NSSM" $false "nssm.exe not found. Extract NSSM to C:\nssm or add nssm.exe to PATH."
 }
 
 Write-Host ""
-Write-Host "If Python, PostgreSQL, PostgreSQL service, or NSSM is missing, install it from installer\packages, then rerun this script."
+Write-Host "If Python, PostgreSQL, PostgreSQL service, or NSSM is missing, install prerequisites first, then rerun this script."
