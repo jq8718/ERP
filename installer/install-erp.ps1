@@ -13,7 +13,8 @@ param(
     [string]$AdminEmail = "admin@example.com",
     [string]$AdminDisplayName = "System Administrator",
     [switch]$RunReleaseGate,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$AllowOnlinePipInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +122,54 @@ function Invoke-Checked {
     if ($null -ne $exitCode -and $exitCode -ne 0) {
         throw "$Step failed with exit code $exitCode"
     }
+}
+
+function Get-RequirementNames {
+    param([string]$Path)
+    $names = @()
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        if ($trimmed -match "^\s*([A-Za-z0-9_.-]+)\s*==") {
+            $names += $Matches[1].ToLowerInvariant().Replace("-", "_")
+        }
+    }
+    return $names
+}
+
+function Assert-OfflineWheels {
+    param(
+        [string]$WheelDir,
+        [string]$RequirementsPath
+    )
+
+    if (-not (Test-Path -LiteralPath $WheelDir)) {
+        throw "Offline wheels folder not found: $WheelDir. Copy installer\wheels from the ERP package, or rerun setup with -AllowOnlinePipInstall."
+    }
+
+    $wheelFiles = @(Get-ChildItem -LiteralPath $WheelDir -File | Where-Object {
+        $_.Name -like "*.whl" -or $_.Name -like "*.tar.gz" -or $_.Name -like "*.zip"
+    })
+    if ($wheelFiles.Count -eq 0) {
+        throw "Offline wheels folder is empty: $WheelDir. Copy installer\wheels from the ERP package, or rerun setup with -AllowOnlinePipInstall."
+    }
+
+    $wheelNames = @($wheelFiles | ForEach-Object { $_.Name.ToLowerInvariant().Replace("-", "_") })
+    $missing = @()
+    foreach ($requirementName in Get-RequirementNames -Path $RequirementsPath) {
+        $matched = $wheelNames | Where-Object { $_.StartsWith("$requirementName-") } | Select-Object -First 1
+        if (-not $matched) {
+            $missing += $requirementName
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        throw "Offline wheels are incomplete. Missing packages: $($missing -join ', '). Add the missing wheel files to $WheelDir, or rerun setup with -AllowOnlinePipInstall."
+    }
+
+    return $wheelFiles
 }
 
 function Read-RequiredSecret {
@@ -249,20 +298,18 @@ try {
     if (-not (Test-Path -LiteralPath ".\.venv\Scripts\python.exe")) {
         Invoke-Checked "Create Python virtual environment" { py -3.12 -m venv .venv }
     }
-    Invoke-Checked "Upgrade pip" { .\.venv\Scripts\python.exe -m pip install --upgrade pip }
     $wheelDir = Join-Path $InstallDir "installer\wheels"
-    $wheelFiles = @()
-    if (Test-Path -LiteralPath $wheelDir) {
-        $wheelFiles = @(Get-ChildItem -LiteralPath $wheelDir -File | Where-Object {
-            $_.Name -like "*.whl" -or $_.Name -like "*.tar.gz" -or $_.Name -like "*.zip"
-        })
-    }
-    if ($wheelFiles.Count -gt 0) {
+    try {
+        Assert-OfflineWheels -WheelDir $wheelDir -RequirementsPath (Join-Path $InstallDir "requirements.txt") | Out-Null
         Write-Host "Installing Python dependencies from offline wheels: $wheelDir"
         Invoke-Checked "Install Python dependencies from offline wheels" {
             .\.venv\Scripts\pip.exe install --no-index --find-links $wheelDir -r requirements.txt
         }
-    } else {
+    } catch {
+        if (-not $AllowOnlinePipInstall) {
+            throw
+        }
+        Write-Host $_.Exception.Message
         Write-Host "Offline wheels not found. Installing Python dependencies from configured pip index."
         Invoke-Checked "Install Python dependencies from pip index" {
             .\.venv\Scripts\pip.exe install -r requirements.txt
