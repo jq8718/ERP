@@ -159,7 +159,7 @@ function Assert-OfflineWheels {
     $wheelNames = @($wheelFiles | ForEach-Object { $_.Name.ToLowerInvariant().Replace("-", "_") })
     $missing = @()
     foreach ($requirementName in Get-RequirementNames -Path $RequirementsPath) {
-        $matched = $wheelNames | Where-Object { $_.StartsWith("$requirementName-") } | Select-Object -First 1
+        $matched = $wheelNames | Where-Object { $_.StartsWith("$requirementName`_") } | Select-Object -First 1
         if (-not $matched) {
             $missing += $requirementName
         }
