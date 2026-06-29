@@ -20,6 +20,7 @@ from files.services import (
     read_csv_dict_rows,
     record_attachment_access,
     register_attachment,
+    uploaded_csv_text_file,
 )
 from finance.models import CustomerReceipt, Reconciliation
 from inventory.models import StockCount
@@ -222,6 +223,17 @@ class FileServiceTests(TestCase):
         header = csv_import_header_row(("material_code", "material_name", "unknown_field"))
 
         self.assertEqual(header, ("物料编码", "物料名称", "unknown_field"))
+
+    def test_uploaded_csv_text_file_accepts_gbk_csv_from_excel(self):
+        upload = SimpleUploadedFile(
+            "materials.csv",
+            "物料编码,物料名称\nRM001,中文 English 混合\n".encode("gbk"),
+            content_type="text/csv",
+        )
+
+        rows = read_csv_dict_rows(uploaded_csv_text_file(upload))
+
+        self.assertEqual(rows, [{"material_code": "RM001", "material_name": "中文 English 混合"}])
 
 
 class FileViewTests(TestCase):

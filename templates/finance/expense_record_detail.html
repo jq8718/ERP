@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ expense.expense_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:expense_record_list' %}">返回列表</a>
+  {% if can_confirm %}
+    <form method="post" action="{% url 'finance:expense_record_confirm' expense.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">确认</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'finance:expense_record_void' expense.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell"><div class="detail-label">费用日期</div><div class="detail-value">{{ expense.expense_date }}</div></div>
+  <div class="detail-cell"><div class="detail-label">费用类别</div><div class="detail-value">{{ expense.get_category_display }}</div></div>
+  <div class="detail-cell"><div class="detail-label">金额</div><div class="detail-value">{% if can_view_amount %}{{ expense.amount }}{% else %}******{% endif %}</div></div>
+  <div class="detail-cell"><div class="detail-label">付款方式</div><div class="detail-value">{{ expense.get_payment_method_display }}</div></div>
+  <div class="detail-cell"><div class="detail-label">收款方</div><div class="detail-value">{{ expense.payee|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">发票号</div><div class="detail-value">{{ expense.invoice_no|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">状态</div><div class="detail-value">{{ expense.get_status_display }}</div></div>
+  <div class="detail-cell"><div class="detail-label">经办人</div><div class="detail-value">{{ expense.handled_by|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">确认人</div><div class="detail-value">{{ expense.confirmed_by|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">确认时间</div><div class="detail-value">{{ expense.confirmed_at|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">备注</div><div class="detail-value">{{ expense.remark|default:"" }}</div></div>
+</section>
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

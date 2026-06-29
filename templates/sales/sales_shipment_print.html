@@ -5,9 +5,9 @@
   <title>{{ page_title }}</title>
   <style>
     body {
-      margin: 24px;
+      margin: 18px;
       color: #111827;
-      font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif;
+      font: 12px/1.35 "Microsoft YaHei", Arial, sans-serif;
     }
     .toolbar {
       display: flex;
@@ -23,10 +23,21 @@
       cursor: pointer;
     }
     h1 {
-      margin: 0 0 18px;
+      margin: 0 0 6px;
       text-align: center;
       font-size: 22px;
       letter-spacing: 0;
+    }
+    .company {
+      text-align: center;
+      margin-bottom: 12px;
+      color: #374151;
+    }
+    .company strong {
+      display: block;
+      color: #111827;
+      font-size: 16px;
+      margin-bottom: 2px;
     }
     .meta {
       display: grid;
@@ -35,8 +46,8 @@
       border-bottom: 0;
     }
     .cell {
-      min-height: 36px;
-      padding: 8px;
+      min-height: 32px;
+      padding: 6px 8px;
       border-right: 1px solid #9ca3af;
       border-bottom: 1px solid #9ca3af;
     }
@@ -56,14 +67,14 @@
     }
     th, td {
       border: 1px solid #9ca3af;
-      padding: 7px 8px;
+      padding: 6px 8px;
       text-align: left;
       vertical-align: top;
     }
     th { background: #f3f4f6; }
     .signatures {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 28px;
       margin-top: 34px;
     }
@@ -72,7 +83,8 @@
       padding-top: 8px;
     }
     @media print {
-      body { margin: 12mm; }
+      @page { size: 241mm 140mm; margin: 8mm; }
+      body { margin: 0; }
       .toolbar { display: none; }
     }
   </style>
@@ -83,11 +95,17 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
-  <h1>销售出库单</h1>
+  <h1>送货单</h1>
+  <div class="company">
+    {% if company_info.name %}<strong>{{ company_info.name }}</strong>{% endif %}
+    {% if company_info.address %}<span>地址：{{ company_info.address }}</span>{% endif %}
+    {% if company_info.phone %}<span> 电话：{{ company_info.phone }}</span>{% endif %}
+    {% if company_info.contact %}<span> 联系人：{{ company_info.contact }}</span>{% endif %}
+  </div>
 
   <section class="meta">
     <div class="cell">
-      <div class="label">出库单号</div>
+      <div class="label">送货单号</div>
       <div class="value">{{ shipment.shipment_no }}</div>
     </div>
     <div class="cell">
@@ -99,20 +117,32 @@
       <div class="value">{{ shipment.customer.customer_name }}</div>
     </div>
     <div class="cell">
-      <div class="label">出库日期</div>
+      <div class="label">送货日期</div>
       <div class="value">{{ shipment.shipment_date }}</div>
     </div>
     <div class="cell">
-      <div class="label">状态</div>
-      <div class="value">{{ shipment.get_status_display }}</div>
+      <div class="label">客户合同编号</div>
+      <div class="value">{{ shipment.customer_contract_no }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">客户联系人</div>
+      <div class="value">{{ shipment.customer_contact_name }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">客户电话</div>
+      <div class="value">{{ shipment.customer_contact_phone }}</div>
+    </div>
+    <div class="cell">
+      <div class="label">结算方式</div>
+      <div class="value">{{ shipment.settlement_method }}</div>
+    </div>
+    <div class="cell" style="grid-column: span 2;">
+      <div class="label">客户地址</div>
+      <div class="value">{{ shipment.customer_address_text }}</div>
     </div>
     <div class="cell">
       <div class="label">制单人</div>
       <div class="value">{{ shipment.created_by|default:"" }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">备注</div>
-      <div class="value">{{ shipment.remark }}</div>
     </div>
     <div class="cell">
       <div class="label">打印时间</div>
@@ -123,23 +153,23 @@
   <table>
     <thead>
       <tr>
-        <th>销售行</th>
-        <th>物料</th>
-        <th>出库数量</th>
+        <th style="width: 54px;">序号</th>
+        <th>产品/物料</th>
+        <th>规格</th>
+        <th>单位</th>
+        <th>送货数量</th>
         <th>批次</th>
-        <th>库位</th>
-        <th>成本价</th>
       </tr>
     </thead>
     <tbody>
       {% for item in shipment.items.all %}
         <tr>
-          <td>{{ item.sales_order_item.line_no }}</td>
+          <td>{{ forloop.counter }}</td>
           <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+          <td>{{ item.material.spec }}</td>
+          <td>{{ item.material.base_unit }}</td>
           <td>{{ item.shipment_qty }}</td>
           <td>{{ item.batch.batch_no }}</td>
-          <td>{{ item.location.location_code }}</td>
-          <td>{% if can_view_amount %}{{ item.cost_price|default:"" }}{% else %}******{% endif %}</td>
         </tr>
       {% empty %}
         <tr><td colspan="6">暂无明细</td></tr>
@@ -147,10 +177,18 @@
     </tbody>
   </table>
 
+  <section class="meta" style="margin-top: 16px;">
+    <div class="cell" style="grid-column: span 4;">
+      <div class="label">备注</div>
+      <div class="value">{{ shipment.remark }}</div>
+    </div>
+  </section>
+
   <section class="signatures">
-    <div class="signature">销售</div>
+    <div class="signature">制单</div>
     <div class="signature">仓库</div>
-    <div class="signature">客户确认</div>
+    <div class="signature">送货人</div>
+    <div class="signature">客户签收</div>
   </section>
 </body>
 </html>

@@ -617,6 +617,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertNotContains(location_response, reverse("inventory:warehouse_location_import_template"))
         self.assertNotContains(location_response, reverse("inventory:warehouse_location_import"))
         self.assertContains(inventory_response, reverse("inventory:inventory_export"))
+        self.assertNotContains(inventory_response, reverse("inventory:initial_inventory_manual"))
         self.assertNotContains(inventory_response, reverse("inventory:initial_inventory_import_template"))
         self.assertNotContains(inventory_response, reverse("inventory:initial_inventory_import"))
         self.assertNotContains(transfer_response, reverse("inventory:location_transfer_create"))
@@ -634,6 +635,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertContains(location_response, reverse("inventory:warehouse_location_import"))
         self.assertContains(inventory_response, reverse("inventory:initial_inventory_import_template"))
         self.assertContains(inventory_response, reverse("inventory:initial_inventory_import"))
+        self.assertContains(inventory_response, reverse("inventory:initial_inventory_manual"))
         self.assertContains(transfer_response, reverse("inventory:location_transfer_create"))
         self.assertContains(stock_count_response, reverse("inventory:stock_count_create"))
 
@@ -864,6 +866,51 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertEqual(transaction.source_doc_type, "initial_inventory_import")
         self.assertEqual(transaction.source_doc_id, job.id)
         self.assertTrue(AuditLog.objects.filter(action="initial_inventory_import", source_doc_id=job.id).exists())
+
+    def test_initial_inventory_manual_creates_pending_initialization_job(self):
+        self._grant_permission(PermissionCode.INVENTORY_PROCESS)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("inventory:initial_inventory_manual"),
+            {
+                "material": self.material.id,
+                "location": self.location.id,
+                "batch_no": "MANUAL-OPEN-001",
+                "inventory_type": InventoryBatch.InventoryType.AVAILABLE,
+                "initial_qty": "6.5000",
+                "cost_price": "2.300000",
+                "received_at": "2026-06-09",
+            },
+        )
+
+        job = InitializationJob.objects.get(template_type="initial_inventory")
+        self.assertRedirects(response, reverse("files:initialization_job_detail", kwargs={"pk": job.id}))
+        self.assertEqual(job.status, InitializationJob.JobStatus.PENDING_CONFIRM)
+        self.assertEqual(job.success_count, 1)
+        self.assertEqual(job.error_summary["preview_rows"][0]["batch_no"], "MANUAL-OPEN-001")
+        self.assertFalse(InventoryBatch.objects.filter(batch_no="MANUAL-OPEN-001").exists())
+        self.assertTrue(AuditLog.objects.filter(action="initial_inventory_manual_preview", source_doc_id=job.id).exists())
+
+    def test_initial_inventory_import_accepts_gbk_csv_and_slash_date(self):
+        self._grant_permission(PermissionCode.INVENTORY_PROCESS)
+        self.client.force_login(self.user)
+        upload = SimpleUploadedFile(
+            "initial_inventory.csv",
+            (
+                "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
+                "RM001,A01,OPEN-GBK-A01,available,12.5000,3.210000,2026/6/9\n"
+            ).encode("gbk"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(reverse("inventory:initial_inventory_import"), {"import_file": upload})
+
+        job = InitializationJob.objects.get(template_type="initial_inventory")
+        self.assertRedirects(response, reverse("files:initialization_job_detail", kwargs={"pk": job.id}))
+        self.assertEqual(job.status, InitializationJob.JobStatus.PENDING_CONFIRM)
+        self.assertEqual(job.success_count, 1)
+        self.assertEqual(job.error_summary["preview_rows"][0]["received_at"], "2026/6/9")
 
     @override_settings(ERP_MAX_CSV_IMPORT_SIZE=16)
     def test_initial_inventory_import_rejects_oversized_csv_before_creating_job(self):

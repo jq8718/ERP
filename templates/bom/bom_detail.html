@@ -6,14 +6,14 @@
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'bom:bom_list' %}">返回列表</a>
   {% if can_edit_bom %}
-    <a class="button" href="{% url 'bom:bom_edit' bom.pk %}">编辑 BOM 信息</a>
+    <a class="button" href="{% url 'bom:bom_edit' bom.pk %}">编辑清单信息</a>
   {% endif %}
   {% if can_process_bom and bom.status != bom.BomStatus.ENABLED and bom.status != bom.BomStatus.VOIDED %}
     <form method="post" action="{% url 'bom:bom_enable' bom.pk %}">
       {% csrf_token %}
       <input type="password" name="current_password" placeholder="当前密码" aria-label="当前密码" style="width: 140px;">
       <input type="text" name="reason" placeholder="启用原因" aria-label="启用原因" style="width: 140px;">
-      <button class="button primary" type="submit">启用为默认 BOM</button>
+      <button class="button primary" type="submit">启用为默认清单</button>
     </form>
   {% endif %}
   {% if can_process_bom and bom.status == bom.BomStatus.ENABLED %}
@@ -27,7 +27,7 @@
   {% if can_process_bom and bom.status != bom.BomStatus.VOIDED %}
     <form method="post" action="{% url 'bom:bom_copy_version' bom.pk %}" class="form-actions" style="margin: 0;">
       {% csrf_token %}
-      <input type="text" name="new_bom_no" placeholder="{{ copy_bom_no_placeholder }}" aria-label="新 BOM 编号" style="width: 160px;">
+      <input type="text" name="new_bom_no" placeholder="{{ copy_bom_no_placeholder }}" aria-label="新清单编号" style="width: 160px;">
       <input type="text" name="new_bom_version" placeholder="{{ copy_bom_version_placeholder }}" aria-label="新版本" style="width: 120px;">
       <input type="text" name="operation_reason" placeholder="复制原因" aria-label="复制原因" style="width: 140px;">
       <button class="button" type="submit">复制为新版本</button>
@@ -45,7 +45,7 @@
     <div class="detail-value">{{ bom.bom_version }}</div>
   </div>
   <div class="detail-cell">
-    <div class="detail-label">基准数量</div>
+    <div class="detail-label">成品基准数量</div>
     <div class="detail-value">{{ bom.base_qty }}</div>
   </div>
   <div class="detail-cell">
@@ -61,7 +61,7 @@
     <div class="detail-value">{{ bom.expiry_date|default:"" }}</div>
   </div>
   <div class="detail-cell">
-    <div class="detail-label">默认 BOM</div>
+    <div class="detail-label">默认清单</div>
     <div class="detail-value">{{ bom.is_default|yesno:"是,否" }}</div>
   </div>
   <div class="detail-cell">
@@ -71,14 +71,14 @@
 </section>
 
 <section class="panel">
-  <h2>BOM 明细</h2>
+  <h2>原料 / 配件组成</h2>
   <div class="table-wrap" style="border: 0; border-radius: 0;">
     <table>
       <thead>
         <tr>
           <th>行号</th>
-          <th>子件物料</th>
-          <th>用量</th>
+          <th>原料 / 配件</th>
+          <th>每基准数量用量</th>
           <th>单位</th>
           <th>损耗率</th>
           <th>必需</th>
@@ -111,7 +111,7 @@
             {% endif %}
           </tr>
         {% empty %}
-          <tr><td colspan="{% if can_edit_bom %}8{% else %}7{% endif %}" class="empty">暂无 BOM 明细</td></tr>
+          <tr><td colspan="{% if can_edit_bom %}8{% else %}7{% endif %}" class="empty">暂无原料或配件</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -120,14 +120,14 @@
 
 {% if can_edit_bom %}
   <section class="panel" style="margin-top: 18px;">
-    <h2>新增明细</h2>
+    <h2>新增原料 / 配件</h2>
     <form method="post" action="{% url 'bom:bom_item_create' bom.pk %}" style="padding: 14px;">
       {% csrf_token %}
       <div class="form-grid">
         <label class="form-row">行号
           <input type="text" name="line_no">
         </label>
-        <label class="form-row">子件物料
+        <label class="form-row">原料 / 配件
           <select name="component_material">
             <option value="">请选择</option>
             {% for material in component_materials %}
@@ -135,7 +135,7 @@
             {% endfor %}
           </select>
         </label>
-        <label class="form-row">用量
+        <label class="form-row">每基准数量用量
           <input type="text" name="usage_qty">
         </label>
         <label class="form-row">单位
@@ -145,7 +145,7 @@
           <input type="text" name="loss_rate" value="0">
         </label>
         <label class="form-row">
-          <span>必需子件</span>
+          <span>必需物料</span>
           <input type="checkbox" name="is_required" checked>
         </label>
         <label class="form-row">备注
@@ -156,7 +156,7 @@
         </label>
       </div>
       <div class="form-actions">
-        <button class="button primary" type="submit">新增明细</button>
+        <button class="button primary" type="submit">新增原料 / 配件</button>
       </div>
     </form>
   </section>

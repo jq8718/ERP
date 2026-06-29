@@ -70,14 +70,20 @@ def import_warehouse_locations_from_csv(file_obj: TextIOBase, operator_id: int |
 
 
 def preview_initial_inventory_from_csv(file_obj: TextIOBase, operator_id: int | None = None) -> ServiceResult:
-    job = InitializationJob.objects.create(
-        job_no=next_document_no("INI"),
-        template_type="initial_inventory",
-        status=InitializationJob.JobStatus.VALIDATING,
-        created_by_id=operator_id,
-    )
     try:
         rows = read_csv_dict_rows(file_obj)
+    except UnicodeDecodeError:
+        job = _start_initial_inventory_job(operator_id)
+        return _fail_initialization_job(job, "导入文件编码错误，请使用 UTF-8 CSV")
+    except CsvImportReadError as exc:
+        job = _start_initial_inventory_job(operator_id)
+        return _fail_initialization_job(job, str(exc), exc.error_code)
+    return preview_initial_inventory_rows(rows, operator_id)
+
+
+def preview_initial_inventory_rows(rows: list[dict[str, str]], operator_id: int | None = None) -> ServiceResult:
+    job = _start_initial_inventory_job(operator_id)
+    try:
         errors, material_map, location_map = _validate_initial_inventory_rows(rows)
         if errors:
             return _validation_failed(job, "期初库存导入校验失败", errors)
@@ -97,8 +103,6 @@ def preview_initial_inventory_from_csv(file_obj: TextIOBase, operator_id: int | 
                 "preview_rows": preview_rows,
             },
         )
-    except UnicodeDecodeError:
-        return _fail_initialization_job(job, "导入文件编码错误，请使用 UTF-8 CSV")
     except CsvImportReadError as exc:
         return _fail_initialization_job(job, str(exc), exc.error_code)
     except Exception as exc:
@@ -472,11 +476,16 @@ def _parse_decimal(value: str) -> Decimal | None:
 def _parse_received_at(value: str):
     if not value:
         return None
+    normalized_value = value.replace("/", "-")
+    if normalized_value != value:
+        parts = normalized_value.split("-")
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            normalized_value = "-".join((parts[0].zfill(4), parts[1].zfill(2), parts[2].zfill(2)))
     try:
-        parsed = datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(normalized_value)
     except ValueError:
         try:
-            parsed_date = date.fromisoformat(value)
+            parsed_date = date.fromisoformat(normalized_value)
         except ValueError:
             return None
         parsed = datetime.combine(parsed_date, time.min)
@@ -509,6 +518,15 @@ def _start_import_job(template_type: str, operator_id: int | None) -> ImportJob:
         template_version="v1",
         status=ImportJob.JobStatus.VALIDATING,
         started_at=timezone.now(),
+        created_by_id=operator_id,
+    )
+
+
+def _start_initial_inventory_job(operator_id: int | None) -> InitializationJob:
+    return InitializationJob.objects.create(
+        job_no=next_document_no("INI"),
+        template_type="initial_inventory",
+        status=InitializationJob.JobStatus.VALIDATING,
         created_by_id=operator_id,
     )
 

@@ -1,5 +1,5 @@
 import csv
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -14,7 +14,7 @@ from django.views.generic.edit import CreateView
 
 from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
 from bom.services import UnitConversionMissing, required_component_qty_base
-from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
+from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch, WarehouseLocation
 from system.services import next_document_no, record_audit_log_from_request
@@ -531,7 +531,7 @@ class ProductionMaterialRequisitionImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("production:material_requisition_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_material_requisitions_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -582,7 +582,7 @@ class ProductionOrderImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("production:production_order_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_production_orders_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -839,7 +839,7 @@ class ProductionReceiptImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("production:production_receipt_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_production_receipts_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")

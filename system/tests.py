@@ -83,7 +83,7 @@ class SystemDashboardTests(TestCase):
         self.assertContains(response, 'href="/sales/orders/"')
         self.assertContains(response, 'href="/sales/shipments/"')
         self.assertContains(response, 'href="/masterdata/customers/"')
-        self.assertContains(response, 'href="/masterdata/customer-products/"')
+        self.assertNotContains(response, 'href="/masterdata/customer-products/"')
         self.assertNotContains(response, 'href="/purchase/orders/"')
         self.assertNotContains(response, 'href="/production/orders/"')
         self.assertNotContains(response, 'href="/inventory/"')
@@ -129,7 +129,9 @@ class SystemDashboardTests(TestCase):
         self.assertContains(response, 'href="/inventory/"')
         self.assertContains(response, 'href="/production/orders/"')
         self.assertContains(response, 'href="/finance/customer-receipts/"')
+        self.assertContains(response, 'href="/finance/operations/"')
         self.assertContains(response, 'href="/bom/"')
+        self.assertContains(response, "产品组成清单")
         self.assertNotContains(response, 'href="/roles/"')
 
     def test_module_list_urls_require_matching_view_or_process_permission(self):
@@ -319,6 +321,7 @@ class SystemDashboardTests(TestCase):
             "/inventory/transactions/",
             "/inventory/transfers/",
             "/inventory/stock-counts/",
+            "/finance/operations/",
             "/finance/customer-receipts/",
             "/finance/supplier-payments/",
             "/finance/customer-balances/",

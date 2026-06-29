@@ -1,5 +1,5 @@
 import csv
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -13,7 +13,7 @@ from django.views.generic import DetailView
 from django.views.generic.edit import CreateView, UpdateView
 
 from accounts.permissions import PermissionCode, can_view_amount, can_view_personal_info, require_any_erp_permission, require_erp_permission, user_has_permission
-from files.services import csv_upload_validation_error, export_queryset_to_csv
+from files.services import csv_upload_validation_error, export_queryset_to_csv, uploaded_csv_text_file
 from files.view_helpers import export_file_response
 from system.display import set_form_labels
 from system.services import record_audit_log_from_request
@@ -189,7 +189,7 @@ class CsvImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect(self.import_url_name)
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = self.import_service(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 行")

@@ -123,6 +123,38 @@
         </tbody>
       </table>
     </div>
+    <h3 style="padding: 0 14px;">期初应付</h3>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>期初单号</th>
+            <th>来源单号</th>
+            <th>建账日期</th>
+            <th>期初金额</th>
+            <th>可核销金额</th>
+            <th>核销金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for target in opening_allocation_targets %}
+            <tr>
+              <td>
+                {{ target.opening.opening_no }}
+                <input type="hidden" name="opening_payable_id" value="{{ target.opening.pk }}">
+              </td>
+              <td>{{ target.opening.source_doc_no|default:"" }}</td>
+              <td>{{ target.opening.opening_date }}</td>
+              <td>{% if can_view_amount %}{{ target.opening.opening_amount }}{% else %}******{% endif %}</td>
+              <td>{% if can_view_amount %}{{ target.available_amount|floatformat:2 }}{% else %}******{% endif %}</td>
+              <td><input type="text" name="opening_payable_allocated_amount" value="{{ target.suggested_amount|floatformat:2 }}"></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">暂无可核销期初应付</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     <div class="form-actions" style="padding: 0 14px 14px;">
       <input type="password" name="current_password" placeholder="当前密码" required style="max-width: 220px;">
       <button class="button primary" type="submit">确认付款核销</button>
@@ -161,6 +193,7 @@
           <th>类型</th>
           <th>进货单</th>
           <th>对账单</th>
+          <th>期初应付</th>
           <th>金额</th>
           <th>创建时间</th>
           <th>备注</th>
@@ -172,12 +205,13 @@
             <td>{{ allocation.get_allocation_type_display }}</td>
             <td>{{ allocation.purchase_receipt.purchase_receipt_no|default:"" }}</td>
             <td>{{ allocation.reconciliation.reconciliation_no|default:"" }}</td>
+            <td>{{ allocation.opening_payable.opening_no|default:"" }}</td>
             <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
             <td>{{ allocation.created_at }}</td>
             <td>{{ allocation.remark }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">暂无核销明细</td></tr>
+          <tr><td colspan="7" class="empty">暂无核销明细</td></tr>
         {% endfor %}
       </tbody>
     </table>

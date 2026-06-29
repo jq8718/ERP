@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>编辑 BOM 明细</h1>
+<h1>编辑组成明细</h1>
 
 <div class="form-actions" style="margin-bottom: 16px;">
-  <a class="button" href="{% url 'bom:bom_detail' bom.pk %}">返回 BOM</a>
+  <a class="button" href="{% url 'bom:bom_detail' bom.pk %}">返回产品组成清单</a>
 </div>
 
 <section class="panel">
@@ -15,7 +15,7 @@
       <label class="form-row">行号
         <input type="text" name="line_no" value="{{ item.line_no }}">
       </label>
-      <label class="form-row">子件物料
+      <label class="form-row">原料 / 配件
         <select name="component_material">
           {% for material in component_materials %}
             <option value="{{ material.pk }}" {% if material.pk == item.component_material_id %}selected{% endif %}>
@@ -24,7 +24,7 @@
           {% endfor %}
         </select>
       </label>
-      <label class="form-row">用量
+      <label class="form-row">每基准数量用量
         <input type="text" name="usage_qty" value="{{ item.usage_qty }}">
       </label>
       <label class="form-row">单位
@@ -34,7 +34,7 @@
         <input type="text" name="loss_rate" value="{{ item.loss_rate }}">
       </label>
       <label class="form-row">
-        <span>必需子件</span>
+        <span>必需物料</span>
         <input type="checkbox" name="is_required" {% if item.is_required %}checked{% endif %}>
       </label>
       <label class="form-row">备注
@@ -43,7 +43,7 @@
       {% include "common/operation_reason_field.html" with is_edit=True %}
     </div>
     <div class="form-actions">
-      <button class="button primary" type="submit">保存明细</button>
+      <button class="button primary" type="submit">保存组成明细</button>
     </div>
   </form>
 </section>

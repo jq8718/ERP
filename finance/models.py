@@ -117,16 +117,46 @@ class CustomerReceipt(models.Model):
         ]
 
 
+class OpeningReceivable(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open", "未结清"
+        PART_SETTLED = "part_settled", "部分结清"
+        SETTLED = "settled", "已结清"
+        VOIDED = "voided", "已作废"
+
+    opening_no = models.CharField(max_length=100, unique=True)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="opening_receivables")
+    source_doc_no = models.CharField(max_length=100, blank=True)
+    opening_date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
+    opening_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    settled_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    remaining_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    remark = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "opening_receivables"
+        indexes = [
+            models.Index(fields=["customer", "status", "opening_date"]),
+            models.Index(fields=["status", "remaining_amount"]),
+        ]
+
+
 class CustomerReceiptAllocation(models.Model):
     class AllocationType(models.TextChoices):
         SALES_ORDER = "sales_order", "销售订单核销"
         RECONCILIATION = "reconciliation", "客户对账单核销"
+        OPENING_RECEIVABLE = "opening_receivable", "期初应收核销"
         REVERSAL = "reversal", "红冲反向核销"
         CREDIT_BALANCE = "credit_balance", "余额核销"
 
     customer_receipt = models.ForeignKey(CustomerReceipt, on_delete=models.CASCADE, related_name="allocations")
     sales_order = models.ForeignKey(SalesOrder, null=True, blank=True, on_delete=models.PROTECT)
     reconciliation = models.ForeignKey(Reconciliation, null=True, blank=True, on_delete=models.PROTECT)
+    opening_receivable = models.ForeignKey(OpeningReceivable, null=True, blank=True, on_delete=models.PROTECT)
     allocated_amount = models.DecimalField(max_digits=14, decimal_places=2)
     allocation_type = models.CharField(max_length=32, choices=AllocationType.choices, default=AllocationType.SALES_ORDER)
     source_reversal = models.ForeignKey(
@@ -146,6 +176,7 @@ class CustomerReceiptAllocation(models.Model):
             models.Index(fields=["customer_receipt", "allocation_type"]),
             models.Index(fields=["sales_order"]),
             models.Index(fields=["reconciliation"]),
+            models.Index(fields=["opening_receivable"]),
         ]
 
     def save(self, *args, **kwargs):
@@ -197,6 +228,20 @@ class CustomerReceiptAllocation(models.Model):
             )
             if self.allocated_amount > reconciliation.total_amount - allocated:
                 raise ValidationError("核销金额超过对账单可核销余额")
+        if self.opening_receivable_id:
+            opening = OpeningReceivable.objects.select_for_update().get(pk=self.opening_receivable_id)
+            if opening.customer_id != receipt.customer_id:
+                raise ValidationError("收款单客户与期初应收客户不一致")
+            if opening.status == OpeningReceivable.Status.VOIDED:
+                raise ValidationError("已作废期初应收不能核销")
+            allocated = (
+                CustomerReceiptAllocation.objects.filter(opening_receivable_id=self.opening_receivable_id)
+                .exclude(pk=current_id)
+                .aggregate(total=models.Sum("allocated_amount"))["total"]
+                or 0
+            )
+            if self.allocated_amount > opening.opening_amount - allocated:
+                raise ValidationError("核销金额超过期初应收可核销余额")
 
 
 class CustomerReceiptReversal(models.Model):
@@ -341,16 +386,46 @@ class SupplierPayment(models.Model):
         ]
 
 
+class OpeningPayable(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open", "未结清"
+        PART_SETTLED = "part_settled", "部分结清"
+        SETTLED = "settled", "已结清"
+        VOIDED = "voided", "已作废"
+
+    opening_no = models.CharField(max_length=100, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="opening_payables")
+    source_doc_no = models.CharField(max_length=100, blank=True)
+    opening_date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
+    opening_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    settled_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    remaining_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    remark = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "opening_payables"
+        indexes = [
+            models.Index(fields=["supplier", "status", "opening_date"]),
+            models.Index(fields=["status", "remaining_amount"]),
+        ]
+
+
 class SupplierPaymentAllocation(models.Model):
     class AllocationType(models.TextChoices):
         PURCHASE_RECEIPT = "purchase_receipt", "进货单核销"
         RECONCILIATION = "reconciliation", "供应商对账单核销"
+        OPENING_PAYABLE = "opening_payable", "期初应付核销"
         REVERSAL = "reversal", "红冲反向核销"
         CREDIT_BALANCE = "credit_balance", "余额核销"
 
     supplier_payment = models.ForeignKey(SupplierPayment, on_delete=models.CASCADE, related_name="allocations")
     purchase_receipt = models.ForeignKey(PurchaseReceipt, null=True, blank=True, on_delete=models.PROTECT)
     reconciliation = models.ForeignKey(Reconciliation, null=True, blank=True, on_delete=models.PROTECT)
+    opening_payable = models.ForeignKey(OpeningPayable, null=True, blank=True, on_delete=models.PROTECT)
     allocated_amount = models.DecimalField(max_digits=14, decimal_places=2)
     allocation_type = models.CharField(
         max_length=32,
@@ -374,6 +449,7 @@ class SupplierPaymentAllocation(models.Model):
             models.Index(fields=["supplier_payment", "allocation_type"]),
             models.Index(fields=["purchase_receipt"]),
             models.Index(fields=["reconciliation"]),
+            models.Index(fields=["opening_payable"]),
         ]
 
     def save(self, *args, **kwargs):
@@ -425,6 +501,73 @@ class SupplierPaymentAllocation(models.Model):
             )
             if self.allocated_amount > reconciliation.total_amount - allocated:
                 raise ValidationError("核销金额超过对账单可核销余额")
+        if self.opening_payable_id:
+            opening = OpeningPayable.objects.select_for_update().get(pk=self.opening_payable_id)
+            if opening.supplier_id != payment.supplier_id:
+                raise ValidationError("付款单供应商与期初应付供应商不一致")
+            if opening.status == OpeningPayable.Status.VOIDED:
+                raise ValidationError("已作废期初应付不能核销")
+            allocated = (
+                SupplierPaymentAllocation.objects.filter(opening_payable_id=self.opening_payable_id)
+                .exclude(pk=current_id)
+                .aggregate(total=models.Sum("allocated_amount"))["total"]
+                or 0
+            )
+            if self.allocated_amount > opening.opening_amount - allocated:
+                raise ValidationError("核销金额超过期初应付可核销余额")
+
+
+class ExpenseRecord(models.Model):
+    class ExpenseCategory(models.TextChoices):
+        AUXILIARY = "auxiliary", "采购辅料"
+        FREIGHT = "freight", "运费"
+        ELECTRICITY = "electricity", "电费"
+        RENT = "rent", "房租"
+        EQUIPMENT = "equipment", "设备采购"
+        MEAL = "meal", "餐费"
+        BUSINESS = "business", "业务费用"
+        GIFT = "gift", "礼品"
+        OFFICE = "office", "办公费用"
+        OTHER = "other", "其他"
+
+    class PaymentMethod(models.TextChoices):
+        CASH = "cash", "现金"
+        TRANSFER = "transfer", "转账"
+        CHECK = "check", "支票"
+        OTHER = "other", "其他"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "草稿"
+        CONFIRMED = "confirmed", "已确认"
+        VOIDED = "voided", "已作废"
+
+    expense_no = models.CharField(max_length=100, unique=True)
+    expense_date = models.DateField()
+    category = models.CharField(max_length=32, choices=ExpenseCategory.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    payment_method = models.CharField(max_length=24, choices=PaymentMethod.choices, default=PaymentMethod.TRANSFER)
+    payee = models.CharField(max_length=160, blank=True)
+    invoice_no = models.CharField(max_length=100, blank=True)
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="handled_expense_records",
+    )
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    remark = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "expense_records"
+        indexes = [
+            models.Index(fields=["expense_date", "category"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
 
 
 class SupplierPaymentReversal(models.Model):

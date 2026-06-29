@@ -4,6 +4,7 @@ import csv
 import json
 import shlex
 import subprocess
+from io import StringIO
 from pathlib import Path, PurePosixPath
 
 from django.conf import settings
@@ -20,6 +21,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".docx"}
 MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
 MAX_CSV_IMPORT_SIZE = 5 * 1024 * 1024
 MAX_CSV_IMPORT_ROWS = 5000
+CSV_IMPORT_ENCODINGS = ("utf-8-sig", "gb18030")
 
 
 CSV_IMPORT_COLUMN_LABELS = {
@@ -150,6 +152,20 @@ def csv_upload_validation_error(upload) -> str:
     if upload.size > max_size:
         return f"CSV 文件大小超过 {_format_size_limit(max_size)} 限制"
     return ""
+
+
+def uploaded_csv_text_file(upload):
+    try:
+        upload.file.seek(0)
+    except (AttributeError, OSError):
+        pass
+    data = upload.file.read()
+    for encoding in CSV_IMPORT_ENCODINGS:
+        try:
+            return StringIO(data.decode(encoding), newline="")
+        except UnicodeDecodeError:
+            continue
+    return StringIO(data.decode("utf-8-sig", errors="replace"), newline="")
 
 
 def read_csv_dict_rows(file_obj) -> list[dict[str, str]]:

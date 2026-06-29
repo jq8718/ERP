@@ -23,6 +23,31 @@
         {{ form.shipment_date }}
         {{ form.shipment_date.errors }}
       </div>
+      <div class="form-row">
+        <label for="{{ form.customer_contract_no.id_for_label }}">客户合同编号</label>
+        {{ form.customer_contract_no }}
+        {{ form.customer_contract_no.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.customer_contact_name.id_for_label }}">客户联系人</label>
+        {{ form.customer_contact_name }}
+        {{ form.customer_contact_name.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.customer_contact_phone.id_for_label }}">客户联系电话</label>
+        {{ form.customer_contact_phone }}
+        {{ form.customer_contact_phone.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.settlement_method.id_for_label }}">结算方式</label>
+        {{ form.settlement_method }}
+        {{ form.settlement_method.errors }}
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="{{ form.customer_address_text.id_for_label }}">客户地址</label>
+      {{ form.customer_address_text }}
+      {{ form.customer_address_text.errors }}
     </div>
     <div class="form-row">
       <label for="{{ form.remark.id_for_label }}">备注</label>

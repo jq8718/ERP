@@ -17,6 +17,8 @@ from .models import (
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
+    OpeningPayable,
+    OpeningReceivable,
     Reconciliation,
     SupplierCreditBalance,
     SupplierCreditBalanceTransaction,
@@ -57,6 +59,10 @@ def confirm_customer_receipt(
             reconciliation_rows = sorted(
                 (row for row in allocation_rows if row["target_type"] == "reconciliation"),
                 key=lambda row: row["reconciliation_id"],
+            )
+            opening_rows = sorted(
+                (row for row in allocation_rows if row["target_type"] == "opening_receivable"),
+                key=lambda row: row["opening_receivable_id"],
             )
             for row in reconciliation_rows:
                 reconciliation = Reconciliation.objects.select_for_update().get(
@@ -103,6 +109,30 @@ def confirm_customer_receipt(
                     }
                 )
 
+            for row in opening_rows:
+                opening = OpeningReceivable.objects.select_for_update().get(
+                    id=row["opening_receivable_id"],
+                    customer=receipt.customer,
+                )
+                available_amount = customer_opening_receivable_available_allocation_amount(opening)
+                if row["allocated_amount"] > available_amount:
+                    return ServiceResult(False, "PAYMENT_ALLOCATION_OVER", "核销金额超过期初应收可核销余额")
+                allocation = CustomerReceiptAllocation.objects.create(
+                    customer_receipt=receipt,
+                    opening_receivable=opening,
+                    allocated_amount=row["allocated_amount"],
+                    allocation_type=CustomerReceiptAllocation.AllocationType.OPENING_RECEIVABLE,
+                    created_by_id=operator_id,
+                )
+                _refresh_opening_receivable(opening)
+                created_allocations.append(
+                    {
+                        "allocation_id": allocation.id,
+                        "target_type": "opening_receivable",
+                        "opening_receivable_id": opening.id,
+                    }
+                )
+
             receipt.unallocated_amount = receipt.receipt_amount - allocation_total
             receipt.status = CustomerReceipt.Status.CONFIRMED
             receipt.confirmed_at = timezone.now()
@@ -111,8 +141,8 @@ def confirm_customer_receipt(
             if receipt.unallocated_amount > ZERO:
                 _create_customer_credit_balance(receipt, receipt.unallocated_amount, operator_id)
             _mark_event_confirmed(event_key, "payment_confirmed", {"receipt_id": receipt.id, "party": "customer"})
-    except (CustomerReceipt.DoesNotExist, SalesOrder.DoesNotExist, Reconciliation.DoesNotExist):
-        return ServiceResult(False, "DOC_NOT_FOUND", "收款单、销售订单或对账单不存在")
+    except (CustomerReceipt.DoesNotExist, SalesOrder.DoesNotExist, Reconciliation.DoesNotExist, OpeningReceivable.DoesNotExist):
+        return ServiceResult(False, "DOC_NOT_FOUND", "收款单、销售订单、对账单或期初应收不存在")
 
     return ServiceResult(True, message="客户收款已确认", data={"receipt_id": receipt.id, "allocations": created_allocations})
 
@@ -160,6 +190,8 @@ def reverse_customer_receipt(
             reversed_total = _customer_reversed_amount(receipt)
             receipt.status = CustomerReceipt.Status.REVERSED if reversed_total >= receipt.receipt_amount else CustomerReceipt.Status.PART_REVERSED
             receipt.save(update_fields=["status"])
+            for opening_id in receipt.allocations.filter(opening_receivable__isnull=False).values_list("opening_receivable_id", flat=True).distinct():
+                _refresh_opening_receivable(OpeningReceivable.objects.select_for_update().get(id=opening_id))
             _mark_event_confirmed(
                 f"payment_reversed:customer:{idempotency_key}",
                 "payment_reversed",
@@ -265,6 +297,10 @@ def confirm_supplier_payment(
                 (row for row in allocation_rows if row["target_type"] == "reconciliation"),
                 key=lambda row: row["reconciliation_id"],
             )
+            opening_rows = sorted(
+                (row for row in allocation_rows if row["target_type"] == "opening_payable"),
+                key=lambda row: row["opening_payable_id"],
+            )
             for row in reconciliation_rows:
                 reconciliation = Reconciliation.objects.select_for_update().get(
                     id=row["reconciliation_id"],
@@ -310,6 +346,30 @@ def confirm_supplier_payment(
                     }
                 )
 
+            for row in opening_rows:
+                opening = OpeningPayable.objects.select_for_update().get(
+                    id=row["opening_payable_id"],
+                    supplier=payment.supplier,
+                )
+                available_amount = supplier_opening_payable_available_allocation_amount(opening)
+                if row["allocated_amount"] > available_amount:
+                    return ServiceResult(False, "PAYMENT_ALLOCATION_OVER", "核销金额超过期初应付可核销余额")
+                allocation = SupplierPaymentAllocation.objects.create(
+                    supplier_payment=payment,
+                    opening_payable=opening,
+                    allocated_amount=row["allocated_amount"],
+                    allocation_type=SupplierPaymentAllocation.AllocationType.OPENING_PAYABLE,
+                    created_by_id=operator_id,
+                )
+                _refresh_opening_payable(opening)
+                created_allocations.append(
+                    {
+                        "allocation_id": allocation.id,
+                        "target_type": "opening_payable",
+                        "opening_payable_id": opening.id,
+                    }
+                )
+
             payment.unallocated_amount = payment.payment_amount - allocation_total
             payment.status = SupplierPayment.Status.CONFIRMED
             payment.confirmed_at = timezone.now()
@@ -318,8 +378,8 @@ def confirm_supplier_payment(
             if payment.unallocated_amount > ZERO:
                 _create_supplier_credit_balance(payment, payment.unallocated_amount, operator_id)
             _mark_event_confirmed(event_key, "payment_confirmed", {"payment_id": payment.id, "party": "supplier"})
-    except (SupplierPayment.DoesNotExist, PurchaseReceipt.DoesNotExist, Reconciliation.DoesNotExist):
-        return ServiceResult(False, "DOC_NOT_FOUND", "付款单、进货单或对账单不存在")
+    except (SupplierPayment.DoesNotExist, PurchaseReceipt.DoesNotExist, Reconciliation.DoesNotExist, OpeningPayable.DoesNotExist):
+        return ServiceResult(False, "DOC_NOT_FOUND", "付款单、进货单、对账单或期初应付不存在")
 
     return ServiceResult(True, message="供应商付款已确认", data={"payment_id": payment.id, "allocations": created_allocations})
 
@@ -366,6 +426,8 @@ def reverse_supplier_payment(
             reversed_total = _supplier_reversed_amount(payment)
             payment.status = SupplierPayment.Status.REVERSED if reversed_total >= payment.payment_amount else SupplierPayment.Status.PART_REVERSED
             payment.save(update_fields=["status"])
+            for opening_id in payment.allocations.filter(opening_payable__isnull=False).values_list("opening_payable_id", flat=True).distinct():
+                _refresh_opening_payable(OpeningPayable.objects.select_for_update().get(id=opening_id))
             _mark_event_confirmed(
                 f"payment_reversed:supplier:{idempotency_key}",
                 "payment_reversed",
@@ -461,6 +523,14 @@ def _normalize_customer_allocations(allocations: list[dict]) -> list[dict]:
                     "allocated_amount": amount,
                 }
             )
+        elif row.get("opening_receivable_id"):
+            rows.append(
+                {
+                    "target_type": "opening_receivable",
+                    "opening_receivable_id": int(row["opening_receivable_id"]),
+                    "allocated_amount": amount,
+                }
+            )
     return rows
 
 
@@ -486,6 +556,14 @@ def _normalize_supplier_allocations(allocations: list[dict]) -> list[dict]:
                     "allocated_amount": amount,
                 }
             )
+        elif row.get("opening_payable_id"):
+            rows.append(
+                {
+                    "target_type": "opening_payable",
+                    "opening_payable_id": int(row["opening_payable_id"]),
+                    "allocated_amount": amount,
+                }
+            )
     return rows
 
 
@@ -503,6 +581,15 @@ def customer_reconciliation_available_allocation_amount(reconciliation: Reconcil
     return available_amount
 
 
+def customer_opening_receivable_available_allocation_amount(opening: OpeningReceivable) -> Decimal:
+    if opening.status == OpeningReceivable.Status.VOIDED:
+        return ZERO
+    available_amount = opening.opening_amount - _allocated_customer_opening_receivable_amount(opening)
+    if available_amount <= ZERO:
+        return ZERO
+    return available_amount
+
+
 def supplier_receipt_available_allocation_amount(receipt: PurchaseReceipt) -> Decimal:
     available_amount = _purchase_receipt_payable_amount(receipt) - _allocated_supplier_amount(receipt)
     if available_amount <= ZERO:
@@ -512,6 +599,15 @@ def supplier_receipt_available_allocation_amount(receipt: PurchaseReceipt) -> De
 
 def supplier_reconciliation_available_allocation_amount(reconciliation: Reconciliation) -> Decimal:
     available_amount = reconciliation.total_amount - _allocated_supplier_reconciliation_amount(reconciliation)
+    if available_amount <= ZERO:
+        return ZERO
+    return available_amount
+
+
+def supplier_opening_payable_available_allocation_amount(opening: OpeningPayable) -> Decimal:
+    if opening.status == OpeningPayable.Status.VOIDED:
+        return ZERO
+    available_amount = opening.opening_amount - _allocated_supplier_opening_payable_amount(opening)
     if available_amount <= ZERO:
         return ZERO
     return available_amount
@@ -536,12 +632,20 @@ def _allocated_customer_reconciliation_amount(reconciliation: Reconciliation) ->
     return CustomerReceiptAllocation.objects.filter(reconciliation=reconciliation).aggregate(total=Sum("allocated_amount"))["total"] or ZERO
 
 
+def _allocated_customer_opening_receivable_amount(opening: OpeningReceivable) -> Decimal:
+    return CustomerReceiptAllocation.objects.filter(opening_receivable=opening).aggregate(total=Sum("allocated_amount"))["total"] or ZERO
+
+
 def _allocated_supplier_amount(receipt: PurchaseReceipt) -> Decimal:
     return SupplierPaymentAllocation.objects.filter(purchase_receipt=receipt).aggregate(total=Sum("allocated_amount"))["total"] or ZERO
 
 
 def _allocated_supplier_reconciliation_amount(reconciliation: Reconciliation) -> Decimal:
     return SupplierPaymentAllocation.objects.filter(reconciliation=reconciliation).aggregate(total=Sum("allocated_amount"))["total"] or ZERO
+
+
+def _allocated_supplier_opening_payable_amount(opening: OpeningPayable) -> Decimal:
+    return SupplierPaymentAllocation.objects.filter(opening_payable=opening).aggregate(total=Sum("allocated_amount"))["total"] or ZERO
 
 
 def _customer_reversed_amount(receipt: CustomerReceipt) -> Decimal:
@@ -562,6 +666,7 @@ def _create_customer_reverse_allocations(receipt, reversal, reversal_amount, ope
             customer_receipt=receipt,
             sales_order=allocation.sales_order,
             reconciliation=allocation.reconciliation,
+            opening_receivable=allocation.opening_receivable,
             allocated_amount=-amount,
             allocation_type=CustomerReceiptAllocation.AllocationType.REVERSAL,
             source_reversal=reversal,
@@ -580,6 +685,7 @@ def _create_supplier_reverse_allocations(payment, reversal, reversal_amount, ope
             supplier_payment=payment,
             purchase_receipt=allocation.purchase_receipt,
             reconciliation=allocation.reconciliation,
+            opening_payable=allocation.opening_payable,
             allocated_amount=-amount,
             allocation_type=SupplierPaymentAllocation.AllocationType.REVERSAL,
             source_reversal=reversal,
@@ -600,6 +706,36 @@ def _create_customer_credit_balance(receipt: CustomerReceipt, amount: Decimal, o
         status=CustomerCreditBalance.Status.PENDING,
         created_by_id=operator_id,
     )
+
+
+def _refresh_opening_receivable(opening: OpeningReceivable) -> None:
+    settled_amount = _allocated_customer_opening_receivable_amount(opening)
+    if settled_amount < ZERO:
+        settled_amount = ZERO
+    opening.settled_amount = settled_amount
+    opening.remaining_amount = max(opening.opening_amount - settled_amount, ZERO)
+    if opening.remaining_amount <= ZERO:
+        opening.status = OpeningReceivable.Status.SETTLED
+    elif opening.settled_amount > ZERO:
+        opening.status = OpeningReceivable.Status.PART_SETTLED
+    elif opening.status != OpeningReceivable.Status.VOIDED:
+        opening.status = OpeningReceivable.Status.OPEN
+    opening.save(update_fields=["settled_amount", "remaining_amount", "status"])
+
+
+def _refresh_opening_payable(opening: OpeningPayable) -> None:
+    settled_amount = _allocated_supplier_opening_payable_amount(opening)
+    if settled_amount < ZERO:
+        settled_amount = ZERO
+    opening.settled_amount = settled_amount
+    opening.remaining_amount = max(opening.opening_amount - settled_amount, ZERO)
+    if opening.remaining_amount <= ZERO:
+        opening.status = OpeningPayable.Status.SETTLED
+    elif opening.settled_amount > ZERO:
+        opening.status = OpeningPayable.Status.PART_SETTLED
+    elif opening.status != OpeningPayable.Status.VOIDED:
+        opening.status = OpeningPayable.Status.OPEN
+    opening.save(update_fields=["settled_amount", "remaining_amount", "status"])
 
 
 def _create_supplier_credit_balance(payment: SupplierPayment, amount: Decimal, operator_id: int) -> SupplierCreditBalance:

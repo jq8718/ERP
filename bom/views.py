@@ -30,14 +30,14 @@ EDITABLE_BOM_STATUSES = {
 
 class BomListView(ErpListView):
     model = Bom
-    page_title = "BOM"
+    page_title = "产品组成清单"
     create_url_name = "bom:bom_create"
     create_permission_required = PermissionCode.BOM_PROCESS
     view_permission_required = (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS)
-    permission_denied_message = "缺少 BOM 查看权限"
+    permission_denied_message = "缺少产品组成清单查看权限"
     detail_url_name = "bom:bom_detail"
     columns = (
-        ("BOM 编号", "bom_no"),
+        ("清单编号", "bom_no"),
         ("成品", "finished_material.material_code"),
         ("版本", "bom_version"),
         ("状态", "get_status_display"),
@@ -55,7 +55,7 @@ class BomListView(ErpListView):
 class BomExportView(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少 BOM 查看权限")
+            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少产品组成清单查看权限")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -92,7 +92,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
     ]
 
     def dispatch(self, request, *args, **kwargs):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         return super().dispatch(request, *args, **kwargs)
 
     def get_form(self, form_class=None):
@@ -103,7 +103,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["page_title"] = "新建 BOM"
+        context["page_title"] = "新建产品组成清单"
         return context
 
     def form_valid(self, form):
@@ -111,7 +111,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
         form.instance.is_default = False
         form.instance.created_by = self.request.user
         form.instance.updated_by = self.request.user
-        operation_reason = optional_post_reason(self.request, default="页面创建 BOM")
+        operation_reason = optional_post_reason(self.request, default="页面创建产品组成清单")
         response = super().form_valid(form)
         record_audit_log_from_request(
             self.request,
@@ -121,7 +121,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
             self.object.bom_no,
             after_snapshot=_bom_snapshot(self.object, operation_reason),
         )
-        messages.success(self.request, "BOM 已创建")
+        messages.success(self.request, "产品组成清单已创建")
         return response
 
     def get_success_url(self):
@@ -142,10 +142,10 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
     ]
 
     def dispatch(self, request, *args, **kwargs):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         self.object = self.get_object()
         if not _can_edit_bom_items(self.object):
-            messages.error(request, "当前 BOM 状态不允许直接编辑，请复制为新版本后修改")
+            messages.error(request, "当前组成清单状态不允许直接编辑，请复制为新版本后修改")
             return redirect("bom:bom_detail", pk=self.object.pk)
         return super().dispatch(request, *args, **kwargs)
 
@@ -157,13 +157,13 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["page_title"] = f"编辑 BOM {self.object.bom_no}"
+        context["page_title"] = f"编辑产品组成清单 {self.object.bom_no}"
         context["bom"] = self.object
         return context
 
     def form_valid(self, form):
         before_snapshot = _bom_snapshot(Bom.objects.select_related("finished_material").get(pk=self.object.pk))
-        operation_reason = optional_post_reason(self.request, default="页面编辑 BOM")
+        operation_reason = optional_post_reason(self.request, default="页面编辑产品组成清单")
         form.instance.updated_by = self.request.user
         form.instance.version += 1
         response = super().form_valid(form)
@@ -176,7 +176,7 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
             before_snapshot=before_snapshot,
             after_snapshot=_bom_snapshot(self.object, operation_reason),
         )
-        messages.success(self.request, "BOM 信息已更新")
+        messages.success(self.request, "产品组成清单已更新")
         return response
 
     def get_success_url(self):
@@ -190,7 +190,7 @@ class BomDetailView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少 BOM 查看权限")
+            require_any_erp_permission(request.user, (PermissionCode.BOM_VIEW, PermissionCode.BOM_PROCESS), "缺少产品组成清单查看权限")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -198,7 +198,7 @@ class BomDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["page_title"] = f"BOM {self.object.bom_no}"
+        context["page_title"] = f"产品组成清单 {self.object.bom_no}"
         context["component_materials"] = (
             Material.objects.exclude(id=self.object.finished_material_id)
             .filter(status=Material.MaterialStatus.ACTIVE)
@@ -214,15 +214,15 @@ class BomDetailView(LoginRequiredMixin, DetailView):
 
 class BomItemCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         try:
             bom = Bom.objects.get(pk=pk)
         except Bom.DoesNotExist:
-            messages.error(request, "BOM 不存在")
+            messages.error(request, "产品组成清单不存在")
             return redirect("bom:bom_list")
 
         if bom.status in [Bom.BomStatus.ENABLED, Bom.BomStatus.DISABLED, Bom.BomStatus.VOIDED]:
-            messages.error(request, "已启用、已停用或已作废 BOM 不能直接新增明细，请复制为新版本后修改")
+            messages.error(request, "已启用、已停用或已作废组成清单不能直接新增明细，请复制为新版本后修改")
             return redirect("bom:bom_detail", pk=pk)
 
         parsed = _parse_item_post(request, bom)
@@ -230,7 +230,7 @@ class BomItemCreateView(LoginRequiredMixin, View):
             messages.error(request, parsed["message"])
             return redirect("bom:bom_detail", pk=pk)
 
-        operation_reason = optional_post_reason(request, default="页面新增 BOM 明细")
+        operation_reason = optional_post_reason(request, default="页面新增组成明细")
         try:
             item = BomItem.objects.create(
                 bom=bom,
@@ -243,7 +243,7 @@ class BomItemCreateView(LoginRequiredMixin, View):
                 remark=parsed["remark"],
             )
         except IntegrityError:
-            messages.error(request, "BOM 明细保存失败，请检查行号是否重复")
+            messages.error(request, "组成明细保存失败，请检查行号是否重复")
             return redirect("bom:bom_detail", pk=pk)
         _touch_bom(bom, request.user)
         record_audit_log_from_request(
@@ -254,7 +254,7 @@ class BomItemCreateView(LoginRequiredMixin, View):
             bom.bom_no,
             after_snapshot=_bom_item_snapshot(item, operation_reason),
         )
-        messages.success(request, "BOM 明细已新增")
+        messages.success(request, "组成明细已新增")
         return redirect("bom:bom_detail", pk=pk)
 
 
@@ -262,25 +262,25 @@ class BomItemEditView(LoginRequiredMixin, View):
     template_name = "bom/bom_item_form.html"
 
     def get(self, request, pk, item_pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         item = _get_bom_item(pk, item_pk)
         if item is None:
-            messages.error(request, "BOM 明细不存在")
+            messages.error(request, "组成明细不存在")
             return redirect("bom:bom_detail", pk=pk)
         if not _can_edit_bom_items(item.bom):
-            messages.error(request, "当前 BOM 状态不允许编辑明细")
+            messages.error(request, "当前组成清单状态不允许编辑明细")
             return redirect("bom:bom_detail", pk=pk)
         return render(request, self.template_name, self._context(item))
 
     def post(self, request, pk, item_pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         item = _get_bom_item(pk, item_pk)
         if item is None:
-            messages.error(request, "BOM 明细不存在")
+            messages.error(request, "组成明细不存在")
             return redirect("bom:bom_detail", pk=pk)
         bom = item.bom
         if not _can_edit_bom_items(bom):
-            messages.error(request, "当前 BOM 状态不允许编辑明细")
+            messages.error(request, "当前组成清单状态不允许编辑明细")
             return redirect("bom:bom_detail", pk=pk)
 
         parsed = _parse_item_post(request, bom, exclude_item_id=item.id)
@@ -289,7 +289,7 @@ class BomItemEditView(LoginRequiredMixin, View):
             return redirect("bom:bom_item_edit", pk=pk, item_pk=item_pk)
 
         before_snapshot = _bom_item_snapshot(item)
-        operation_reason = optional_post_reason(request, default="页面编辑 BOM 明细")
+        operation_reason = optional_post_reason(request, default="页面编辑组成明细")
 
         item.line_no = parsed["line_no"]
         item.component_material = parsed["component"]
@@ -301,7 +301,7 @@ class BomItemEditView(LoginRequiredMixin, View):
         try:
             item.save()
         except IntegrityError:
-            messages.error(request, "BOM 明细保存失败，请检查行号是否重复")
+            messages.error(request, "组成明细保存失败，请检查行号是否重复")
             return redirect("bom:bom_item_edit", pk=pk, item_pk=item_pk)
         _touch_bom(bom, request.user)
         record_audit_log_from_request(
@@ -313,12 +313,12 @@ class BomItemEditView(LoginRequiredMixin, View):
             before_snapshot=before_snapshot,
             after_snapshot=_bom_item_snapshot(item, operation_reason),
         )
-        messages.success(request, "BOM 明细已更新")
+        messages.success(request, "组成明细已更新")
         return redirect("bom:bom_detail", pk=pk)
 
     def _context(self, item):
         return {
-            "page_title": f"编辑 BOM 明细 {item.line_no}",
+            "page_title": f"编辑组成明细 {item.line_no}",
             "bom": item.bom,
             "item": item,
             "component_materials": _component_materials_for_bom(item.bom),
@@ -327,7 +327,7 @@ class BomItemEditView(LoginRequiredMixin, View):
 
 class BomItemDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, item_pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         verification_response = require_second_verify(request, "bom:bom_detail", pk)
         if verification_response:
             return verification_response
@@ -336,11 +336,11 @@ class BomItemDeleteView(LoginRequiredMixin, View):
             return reason_response
         item = _get_bom_item(pk, item_pk)
         if item is None:
-            messages.error(request, "BOM 明细不存在")
+            messages.error(request, "组成明细不存在")
             return redirect("bom:bom_detail", pk=pk)
         bom = item.bom
         if not _can_edit_bom_items(bom):
-            messages.error(request, "当前 BOM 状态不允许删除明细")
+            messages.error(request, "当前组成清单状态不允许删除明细")
             return redirect("bom:bom_detail", pk=pk)
 
         before_snapshot = _bom_item_snapshot(item, reason)
@@ -355,18 +355,18 @@ class BomItemDeleteView(LoginRequiredMixin, View):
             before_snapshot=before_snapshot,
             after_snapshot={"deleted": True, "reason": reason},
         )
-        messages.success(request, "BOM 明细已删除")
+        messages.success(request, "组成明细已删除")
         return redirect("bom:bom_detail", pk=pk)
 
 
 class BomCopyVersionView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         new_bom_no = request.POST.get("new_bom_no", "").strip()
         new_bom_version = request.POST.get("new_bom_version", "").strip()
-        operation_reason = optional_post_reason(request, default="复制 BOM 新版本")
+        operation_reason = optional_post_reason(request, default="复制产品组成清单新版本")
         if not new_bom_no or not new_bom_version:
-            messages.error(request, "新 BOM 编号和新版本必须填写")
+            messages.error(request, "新清单编号和新版本必须填写")
             return redirect("bom:bom_detail", pk=pk)
 
         try:
@@ -374,7 +374,7 @@ class BomCopyVersionView(LoginRequiredMixin, View):
                 source = Bom.objects.select_for_update().prefetch_related("items").get(pk=pk)
                 before_snapshot = _bom_snapshot(source, operation_reason, include_items=True)
                 if source.status == Bom.BomStatus.VOIDED:
-                    messages.error(request, "已作废 BOM 不能复制")
+                    messages.error(request, "已作废组成清单不能复制")
                     return redirect("bom:bom_detail", pk=pk)
                 copied = Bom.objects.create(
                     bom_no=new_bom_no,
@@ -405,10 +405,10 @@ class BomCopyVersionView(LoginRequiredMixin, View):
                     ]
                 )
         except Bom.DoesNotExist:
-            messages.error(request, "BOM 不存在")
+            messages.error(request, "产品组成清单不存在")
             return redirect("bom:bom_list")
         except IntegrityError:
-            messages.error(request, "复制失败，请检查新 BOM 编号或新版本是否重复")
+            messages.error(request, "复制失败，请检查新清单编号或新版本是否重复")
             return redirect("bom:bom_detail", pk=pk)
 
         record_audit_log_from_request(
@@ -420,13 +420,13 @@ class BomCopyVersionView(LoginRequiredMixin, View):
             before_snapshot=before_snapshot,
             after_snapshot=_bom_snapshot(copied, operation_reason, include_items=True),
         )
-        messages.success(request, "BOM 已复制为新版本")
+        messages.success(request, "产品组成清单已复制为新版本")
         return redirect("bom:bom_detail", pk=copied.pk)
 
 
 class BomEnableView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         verification_response = require_second_verify(request, "bom:bom_detail", pk)
         if verification_response:
             return verification_response
@@ -454,7 +454,7 @@ class BomEnableView(LoginRequiredMixin, View):
 
 class BomDisableView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少 BOM 维护权限")
+        require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         verification_response = require_second_verify(request, "bom:bom_detail", pk)
         if verification_response:
             return verification_response
@@ -582,7 +582,7 @@ def _parse_item_post(request, bom: Bom, exclude_item_id=None):
     if exclude_item_id:
         duplicate_query = duplicate_query.exclude(id=exclude_item_id)
     if duplicate_query.exists():
-        return {"success": False, "message": "同一个 BOM 下行号不能重复"}
+        return {"success": False, "message": "同一个组成清单下行号不能重复"}
 
     component = Material.objects.filter(
         id=component_material_id,

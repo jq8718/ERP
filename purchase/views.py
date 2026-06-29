@@ -1,6 +1,6 @@
 import csv
 from datetime import date
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -16,7 +16,7 @@ from django.views.generic.edit import CreateView
 from django.utils import timezone
 
 from accounts.permissions import PermissionCode, can_view_amount, require_any_erp_permission, require_erp_permission, user_has_permission
-from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
+from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material, Supplier
@@ -108,7 +108,7 @@ class PurchaseRequestImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("purchase:purchase_request_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_purchase_requests_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -469,7 +469,7 @@ class PurchaseOrderImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("purchase:purchase_order_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_purchase_orders_from_csv(
             text_file,
             request.user.id,
@@ -984,7 +984,7 @@ class PurchaseReceiptImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("purchase:purchase_receipt_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_purchase_receipts_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -1246,7 +1246,7 @@ class SupplierReturnImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("purchase:supplier_return_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_supplier_returns_from_csv(
             text_file,
             request.user.id,

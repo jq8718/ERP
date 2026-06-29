@@ -29,7 +29,15 @@ class SalesOrderForm(forms.ModelForm):
 
     class Meta:
         model = SalesOrder
-        fields = ["customer", "customer_address", "order_date", "delivery_date", "remark"]
+        fields = [
+            "customer",
+            "customer_address",
+            "customer_contract_no",
+            "settlement_method",
+            "order_date",
+            "delivery_date",
+            "remark",
+        ]
         widgets = {
             "order_date": forms.DateInput(attrs={"type": "date"}),
             "delivery_date": forms.DateInput(attrs={"type": "date"}),
@@ -43,6 +51,7 @@ class SalesOrderForm(forms.ModelForm):
         self.fields["customer_address"].queryset = CustomerAddress.objects.select_related("customer").filter(
             status=CustomerAddress.AddressStatus.ACTIVE
         )
+        self.fields["settlement_method"].required = False
 
     def save(self, commit=True, user=None):
         order = super().save(commit=False)
@@ -427,9 +436,18 @@ def recalculate_customer_return_total(customer_return: CustomerReturn) -> None:
 class SalesShipmentForm(forms.ModelForm):
     class Meta:
         model = SalesShipment
-        fields = ["shipment_date", "remark"]
+        fields = [
+            "shipment_date",
+            "customer_contract_no",
+            "customer_address_text",
+            "customer_contact_name",
+            "customer_contact_phone",
+            "settlement_method",
+            "remark",
+        ]
         widgets = {
             "shipment_date": forms.DateInput(attrs={"type": "date"}),
+            "customer_address_text": forms.Textarea(attrs={"rows": 2}),
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 

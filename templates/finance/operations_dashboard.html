@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>经营看板</h1>
+
+<p class="muted" style="margin-top: -8px;">
+  当前为现金与余额粗看板，统计已确认或已生效单据；完整利润需后续接入生产成本和库存成本核算。
+</p>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <h2>本月 {{ month_start }} 至 {{ today }}</h2>
+  <div class="stats" style="padding: 14px; margin-bottom: 0;">
+    <div class="stat">
+      <div class="stat-label">销售额</div>
+      <div class="stat-value">{{ month.sales_amount }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">采购入库额</div>
+      <div class="stat-value">{{ month.purchase_amount }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">已收客户款</div>
+      <div class="stat-value">{{ month.received_amount }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">已付供应商款</div>
+      <div class="stat-value">{{ month.paid_amount }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">管理费用</div>
+      <div class="stat-value">{{ month.expense_amount }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">现金净额</div>
+      <div class="stat-value">{{ month.cash_net_amount }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="grid-2" style="margin-bottom: 18px;">
+  <div class="panel">
+    <h2>本年累计</h2>
+    <div class="detail-grid" style="grid-template-columns: repeat(2, minmax(140px, 1fr)); padding: 14px; margin-bottom: 0;">
+      <div class="detail-cell">
+        <div class="detail-label">销售额</div>
+        <div class="detail-value">{{ year.sales_amount }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">客户退货</div>
+        <div class="detail-value">{{ year.customer_return_amount }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">采购入库额</div>
+        <div class="detail-value">{{ year.purchase_amount }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">供应商退货</div>
+        <div class="detail-value">{{ year.supplier_return_amount }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">管理费用</div>
+        <div class="detail-value">{{ year.expense_amount }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">估算经营额</div>
+        <div class="detail-value">{{ year.estimated_margin_amount }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>当前余额</h2>
+    <div class="detail-grid" style="grid-template-columns: repeat(2, minmax(140px, 1fr)); padding: 14px; margin-bottom: 0;">
+      <div class="detail-cell">
+        <div class="detail-label">当前应收</div>
+        <div class="detail-value">{{ balances.total_receivable }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">当前应付</div>
+        <div class="detail-value">{{ balances.total_payable }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">期初应收未结</div>
+        <div class="detail-value">{{ balances.opening_receivable_remaining }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">期初应付未结</div>
+        <div class="detail-value">{{ balances.opening_payable_remaining }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">客户待处理余额</div>
+        <div class="detail-value">{{ balances.customer_credit_remaining }}</div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-label">供应商待处理余额</div>
+        <div class="detail-value">{{ balances.supplier_credit_remaining }}</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>最近确认费用</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>费用单号</th>
+          <th>日期</th>
+          <th>类别</th>
+          <th>金额</th>
+          <th>收款方</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for expense in recent_expenses %}
+          <tr>
+            <td><a href="{% url 'finance:expense_record_detail' expense.pk %}">{{ expense.expense_no }}</a></td>
+            <td>{{ expense.expense_date }}</td>
+            <td>{{ expense.get_category_display }}</td>
+            <td>{{ expense.amount }}</td>
+            <td>{{ expense.payee }}</td>
+            <td>{{ expense.remark }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">暂无已确认费用</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

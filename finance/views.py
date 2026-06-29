@@ -1,7 +1,7 @@
 import csv
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -15,7 +15,7 @@ from django.views.generic import DetailView, TemplateView
 from django.utils import timezone
 
 from accounts.permissions import PermissionCode, user_has_permission
-from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
+from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from masterdata.models import Customer, Supplier
 from purchase.models import PurchaseReceipt, SupplierReturn
@@ -23,6 +23,7 @@ from sales.models import CustomerReturn, SalesOrder
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
+from .forms import ExpenseRecordForm, OpeningPayableForm, OpeningReceivableForm
 from .import_services import (
     CUSTOMER_RECEIPT_IMPORT_TEMPLATE_ROWS,
     SUPPLIER_PAYMENT_IMPORT_TEMPLATE_ROWS,
@@ -34,22 +35,29 @@ from .models import (
     CustomerCreditBalanceTransaction,
     CustomerReceipt,
     CustomerReceiptAllocation,
+    CustomerReceiptReversal,
+    ExpenseRecord,
+    OpeningPayable,
+    OpeningReceivable,
     Reconciliation,
     ReconciliationItem,
     SupplierCreditBalance,
     SupplierCreditBalanceTransaction,
     SupplierPayment,
     SupplierPaymentAllocation,
+    SupplierPaymentReversal,
 )
 from .services import (
     apply_customer_credit_balance,
     apply_supplier_credit_balance,
     confirm_customer_receipt,
     confirm_supplier_payment,
+    customer_opening_receivable_available_allocation_amount,
     customer_order_available_allocation_amount,
     customer_reconciliation_available_allocation_amount,
     reverse_customer_receipt,
     reverse_supplier_payment,
+    supplier_opening_payable_available_allocation_amount,
     supplier_receipt_available_allocation_amount,
     supplier_reconciliation_available_allocation_amount,
 )
@@ -57,6 +65,30 @@ from .services import (
 
 ZERO_AMOUNT = Decimal("0.00")
 MONEY_QUANT = Decimal("0.01")
+
+
+class OperationsDashboardView(LoginRequiredMixin, TemplateView):
+    template_name = "finance/operations_dashboard.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        today = timezone.localdate()
+        month_start = today.replace(day=1)
+        year_start = today.replace(month=1, day=1)
+        context["page_title"] = "经营看板"
+        context["today"] = today
+        context["month_start"] = month_start
+        context["year_start"] = year_start
+        context["month"] = _operations_period_summary(month_start, today)
+        context["year"] = _operations_period_summary(year_start, today)
+        context["balances"] = _operations_balance_summary()
+        context["recent_expenses"] = ExpenseRecord.objects.filter(status=ExpenseRecord.Status.CONFIRMED).order_by("-expense_date", "-id")[:8]
+        return context
 
 
 class CustomerReceiptListView(ErpListView):
@@ -190,7 +222,7 @@ class CustomerReceiptImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("finance:customer_receipt_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_customer_receipts_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -281,9 +313,10 @@ class CustomerReceiptDetailView(LoginRequiredMixin, DetailView):
             and self.object.status in [CustomerReceipt.Status.DRAFT, CustomerReceipt.Status.PENDING_APPROVAL]
         )
         context["can_void"] = context["can_edit"]
-        allocation_targets, reconciliation_targets = _customer_allocation_target_groups(self.object)
+        allocation_targets, reconciliation_targets, opening_targets = _customer_allocation_target_groups(self.object)
         context["allocation_targets"] = allocation_targets
         context["reconciliation_allocation_targets"] = reconciliation_targets
+        context["opening_allocation_targets"] = opening_targets
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "customer_receipt",
@@ -474,6 +507,7 @@ class CustomerReceiptConfirmView(LoginRequiredMixin, View):
             return verification_response
         allocations = _allocation_rows_from_post(request, "sales_order_id", "sales_order_allocated_amount")
         allocations += _allocation_rows_from_post(request, "reconciliation_id", "reconciliation_allocated_amount")
+        allocations += _allocation_rows_from_post(request, "opening_receivable_id", "opening_receivable_allocated_amount")
         result = confirm_customer_receipt(
             pk,
             allocations,
@@ -593,7 +627,7 @@ class SupplierPaymentImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("finance:supplier_payment_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_supplier_payments_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -684,9 +718,10 @@ class SupplierPaymentDetailView(LoginRequiredMixin, DetailView):
             and self.object.status in [SupplierPayment.Status.DRAFT, SupplierPayment.Status.PENDING_APPROVAL]
         )
         context["can_void"] = context["can_edit"]
-        allocation_targets, reconciliation_targets = _supplier_allocation_target_groups(self.object)
+        allocation_targets, reconciliation_targets, opening_targets = _supplier_allocation_target_groups(self.object)
         context["allocation_targets"] = allocation_targets
         context["reconciliation_allocation_targets"] = reconciliation_targets
+        context["opening_allocation_targets"] = opening_targets
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "supplier_payment",
@@ -877,6 +912,7 @@ class SupplierPaymentConfirmView(LoginRequiredMixin, View):
             return verification_response
         allocations = _allocation_rows_from_post(request, "purchase_receipt_id", "purchase_receipt_allocated_amount")
         allocations += _allocation_rows_from_post(request, "reconciliation_id", "reconciliation_allocated_amount")
+        allocations += _allocation_rows_from_post(request, "opening_payable_id", "opening_payable_allocated_amount")
         result = confirm_supplier_payment(
             pk,
             allocations,
@@ -911,6 +947,430 @@ class SupplierPaymentReverseView(LoginRequiredMixin, View):
             )
         _flash_result(request, result, "供应商付款红冲失败")
         return redirect("finance:supplier_payment_detail", pk=pk)
+
+
+class OpeningReceivableListView(ErpListView):
+    model = OpeningReceivable
+    page_title = "期初应收"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
+    create_url_name = "finance:opening_receivable_create"
+    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
+    detail_url_name = "finance:opening_receivable_detail"
+    columns = (
+        ("期初单号", "opening_no"),
+        ("客户", "customer.customer_name"),
+        ("来源单号", "source_doc_no"),
+        ("建账日期", "opening_date"),
+        ("期初金额", "opening_amount"),
+        ("未收金额", "remaining_amount"),
+        ("状态", "get_status_display"),
+    )
+    sensitive_columns = ("opening_amount", "remaining_amount")
+    ordering = ["-opening_date", "-id"]
+    search_fields = ("opening_no", "source_doc_no", "customer__customer_name")
+    status_filter_field = "status"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("customer")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        return context
+
+
+class OpeningReceivableCreateView(LoginRequiredMixin, View):
+    template_name = "finance/opening_receivable_form.html"
+
+    def get(self, request):
+        _require_finance_payment_process(request.user)
+        return render(request, self.template_name, {"page_title": "新建期初应收", "form": OpeningReceivableForm()})
+
+    def post(self, request):
+        _require_finance_payment_process(request.user)
+        form = OpeningReceivableForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"page_title": "新建期初应收", "form": form})
+        opening = form.save(commit=False)
+        opening.opening_no = next_document_no("OR")
+        opening.remaining_amount = opening.opening_amount
+        opening.status = OpeningReceivable.Status.OPEN
+        opening.created_by = request.user
+        opening.save()
+        record_audit_log_from_request(
+            request,
+            "opening_receivable_create",
+            "opening_receivable",
+            opening.id,
+            opening.opening_no,
+            after_snapshot=_opening_receivable_snapshot(opening),
+        )
+        messages.success(request, "期初应收已创建")
+        return redirect("finance:opening_receivable_detail", pk=opening.pk)
+
+
+class OpeningReceivableDetailView(LoginRequiredMixin, DetailView):
+    model = OpeningReceivable
+    template_name = "finance/opening_receivable_detail.html"
+    context_object_name = "opening"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("customer", "created_by").prefetch_related("customerreceiptallocation_set__customer_receipt")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = f"期初应收 {self.object.opening_no}"
+        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
+        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
+        context["can_void"] = context["can_process_payment"] and self.object.status in [
+            OpeningReceivable.Status.OPEN,
+            OpeningReceivable.Status.PART_SETTLED,
+        ]
+        return context
+
+
+class OpeningReceivableVoidView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_finance_payment_process(request.user)
+        verification_response = require_second_verify(request, "finance:opening_receivable_detail", pk)
+        if verification_response:
+            return verification_response
+        reason, reason_response = require_post_reason(
+            request,
+            "finance:opening_receivable_detail",
+            pk,
+            field_names=("void_reason", "reason"),
+            message="请填写期初应收作废原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                opening = OpeningReceivable.objects.select_for_update().get(pk=pk)
+                if CustomerReceiptAllocation.objects.select_for_update().filter(opening_receivable=opening, allocated_amount__gt=0).exists():
+                    messages.error(request, "已有收款核销的期初应收不能作废，请先红冲对应收款")
+                    return redirect("finance:opening_receivable_detail", pk=pk)
+                before_snapshot = _opening_receivable_snapshot(opening)
+                opening.status = OpeningReceivable.Status.VOIDED
+                opening.remaining_amount = ZERO_AMOUNT
+                opening.save(update_fields=["status", "remaining_amount"])
+                after_snapshot = {**_opening_receivable_snapshot(opening), "operation_reason": reason}
+        except OpeningReceivable.DoesNotExist:
+            messages.error(request, "期初应收不存在")
+            return redirect("finance:opening_receivable_list")
+        record_audit_log_from_request(
+            request,
+            "opening_receivable_void",
+            "opening_receivable",
+            opening.id,
+            opening.opening_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "期初应收已作废")
+        return redirect("finance:opening_receivable_detail", pk=pk)
+
+
+class OpeningPayableListView(ErpListView):
+    model = OpeningPayable
+    page_title = "期初应付"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
+    create_url_name = "finance:opening_payable_create"
+    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
+    detail_url_name = "finance:opening_payable_detail"
+    columns = (
+        ("期初单号", "opening_no"),
+        ("供应商", "supplier.supplier_name"),
+        ("来源单号", "source_doc_no"),
+        ("建账日期", "opening_date"),
+        ("期初金额", "opening_amount"),
+        ("未付金额", "remaining_amount"),
+        ("状态", "get_status_display"),
+    )
+    sensitive_columns = ("opening_amount", "remaining_amount")
+    ordering = ["-opening_date", "-id"]
+    search_fields = ("opening_no", "source_doc_no", "supplier__supplier_name")
+    status_filter_field = "status"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("supplier")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        return context
+
+
+class OpeningPayableCreateView(LoginRequiredMixin, View):
+    template_name = "finance/opening_payable_form.html"
+
+    def get(self, request):
+        _require_finance_payment_process(request.user)
+        return render(request, self.template_name, {"page_title": "新建期初应付", "form": OpeningPayableForm()})
+
+    def post(self, request):
+        _require_finance_payment_process(request.user)
+        form = OpeningPayableForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"page_title": "新建期初应付", "form": form})
+        opening = form.save(commit=False)
+        opening.opening_no = next_document_no("OP")
+        opening.remaining_amount = opening.opening_amount
+        opening.status = OpeningPayable.Status.OPEN
+        opening.created_by = request.user
+        opening.save()
+        record_audit_log_from_request(
+            request,
+            "opening_payable_create",
+            "opening_payable",
+            opening.id,
+            opening.opening_no,
+            after_snapshot=_opening_payable_snapshot(opening),
+        )
+        messages.success(request, "期初应付已创建")
+        return redirect("finance:opening_payable_detail", pk=opening.pk)
+
+
+class OpeningPayableDetailView(LoginRequiredMixin, DetailView):
+    model = OpeningPayable
+    template_name = "finance/opening_payable_detail.html"
+    context_object_name = "opening"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("supplier", "created_by").prefetch_related("supplierpaymentallocation_set__supplier_payment")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = f"期初应付 {self.object.opening_no}"
+        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
+        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
+        context["can_void"] = context["can_process_payment"] and self.object.status in [
+            OpeningPayable.Status.OPEN,
+            OpeningPayable.Status.PART_SETTLED,
+        ]
+        return context
+
+
+class OpeningPayableVoidView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_finance_payment_process(request.user)
+        verification_response = require_second_verify(request, "finance:opening_payable_detail", pk)
+        if verification_response:
+            return verification_response
+        reason, reason_response = require_post_reason(
+            request,
+            "finance:opening_payable_detail",
+            pk,
+            field_names=("void_reason", "reason"),
+            message="请填写期初应付作废原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                opening = OpeningPayable.objects.select_for_update().get(pk=pk)
+                if SupplierPaymentAllocation.objects.select_for_update().filter(opening_payable=opening, allocated_amount__gt=0).exists():
+                    messages.error(request, "已有付款核销的期初应付不能作废，请先红冲对应付款")
+                    return redirect("finance:opening_payable_detail", pk=pk)
+                before_snapshot = _opening_payable_snapshot(opening)
+                opening.status = OpeningPayable.Status.VOIDED
+                opening.remaining_amount = ZERO_AMOUNT
+                opening.save(update_fields=["status", "remaining_amount"])
+                after_snapshot = {**_opening_payable_snapshot(opening), "operation_reason": reason}
+        except OpeningPayable.DoesNotExist:
+            messages.error(request, "期初应付不存在")
+            return redirect("finance:opening_payable_list")
+        record_audit_log_from_request(
+            request,
+            "opening_payable_void",
+            "opening_payable",
+            opening.id,
+            opening.opening_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "期初应付已作废")
+        return redirect("finance:opening_payable_detail", pk=pk)
+
+
+class ExpenseRecordListView(ErpListView):
+    model = ExpenseRecord
+    page_title = "管理费用"
+    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
+    permission_denied_message = "缺少财务金额查看权限"
+    create_url_name = "finance:expense_record_create"
+    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
+    detail_url_name = "finance:expense_record_detail"
+    columns = (
+        ("费用单号", "expense_no"),
+        ("日期", "expense_date"),
+        ("类别", "get_category_display"),
+        ("金额", "amount"),
+        ("收款方", "payee"),
+        ("状态", "get_status_display"),
+    )
+    sensitive_columns = ("amount",)
+    ordering = ["-expense_date", "-id"]
+    search_fields = ("expense_no", "payee", "invoice_no", "remark")
+    status_filter_field = "status"
+    filter_fields = (("类别", "category", ExpenseRecord.ExpenseCategory.choices),)
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("handled_by", "created_by", "confirmed_by")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        return context
+
+
+class ExpenseRecordCreateView(LoginRequiredMixin, View):
+    template_name = "finance/expense_record_form.html"
+
+    def get(self, request):
+        _require_finance_payment_process(request.user)
+        return render(request, self.template_name, {"page_title": "新建管理费用", "form": ExpenseRecordForm()})
+
+    def post(self, request):
+        _require_finance_payment_process(request.user)
+        form = ExpenseRecordForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"page_title": "新建管理费用", "form": form})
+        expense = form.save(commit=False)
+        expense.expense_no = next_document_no("EX")
+        expense.status = ExpenseRecord.Status.DRAFT
+        expense.handled_by = request.user
+        expense.created_by = request.user
+        expense.save()
+        record_audit_log_from_request(
+            request,
+            "expense_record_create",
+            "expense_record",
+            expense.id,
+            expense.expense_no,
+            after_snapshot=_expense_record_snapshot(expense),
+        )
+        messages.success(request, "管理费用已创建")
+        return redirect("finance:expense_record_detail", pk=expense.pk)
+
+
+class ExpenseRecordDetailView(LoginRequiredMixin, DetailView):
+    model = ExpenseRecord
+    template_name = "finance/expense_record_detail.html"
+    context_object_name = "expense"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_finance_amount(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("handled_by", "created_by", "confirmed_by")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = f"管理费用 {self.object.expense_no}"
+        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
+        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
+        context["can_confirm"] = context["can_process_payment"] and self.object.status == ExpenseRecord.Status.DRAFT
+        context["can_void"] = context["can_process_payment"] and self.object.status in [
+            ExpenseRecord.Status.DRAFT,
+            ExpenseRecord.Status.CONFIRMED,
+        ]
+        context["attachment_panel"] = build_attachment_panel(
+            self.request.user,
+            "expense_record",
+            self.object.id,
+            self.object.expense_no,
+        )
+        return context
+
+
+class ExpenseRecordConfirmView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_finance_payment_process(request.user)
+        verification_response = require_second_verify(request, "finance:expense_record_detail", pk)
+        if verification_response:
+            return verification_response
+        try:
+            with transaction.atomic():
+                expense = ExpenseRecord.objects.select_for_update().get(pk=pk)
+                if expense.status != ExpenseRecord.Status.DRAFT:
+                    messages.error(request, "只有草稿费用单可以确认")
+                    return redirect("finance:expense_record_detail", pk=pk)
+                before_snapshot = _expense_record_snapshot(expense)
+                expense.status = ExpenseRecord.Status.CONFIRMED
+                expense.confirmed_at = timezone.now()
+                expense.confirmed_by = request.user
+                expense.save(update_fields=["status", "confirmed_at", "confirmed_by"])
+                after_snapshot = _expense_record_snapshot(expense)
+        except ExpenseRecord.DoesNotExist:
+            messages.error(request, "管理费用不存在")
+            return redirect("finance:expense_record_list")
+        record_audit_log_from_request(
+            request,
+            "expense_record_confirm",
+            "expense_record",
+            expense.id,
+            expense.expense_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "管理费用已确认")
+        return redirect("finance:expense_record_detail", pk=pk)
+
+
+class ExpenseRecordVoidView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_finance_payment_process(request.user)
+        verification_response = require_second_verify(request, "finance:expense_record_detail", pk)
+        if verification_response:
+            return verification_response
+        reason, reason_response = require_post_reason(
+            request,
+            "finance:expense_record_detail",
+            pk,
+            field_names=("void_reason", "reason"),
+            message="请填写管理费用作废原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                expense = ExpenseRecord.objects.select_for_update().get(pk=pk)
+                if expense.status == ExpenseRecord.Status.VOIDED:
+                    messages.error(request, "费用单已作废")
+                    return redirect("finance:expense_record_detail", pk=pk)
+                before_snapshot = _expense_record_snapshot(expense)
+                expense.status = ExpenseRecord.Status.VOIDED
+                expense.save(update_fields=["status"])
+                after_snapshot = {**_expense_record_snapshot(expense), "operation_reason": reason}
+        except ExpenseRecord.DoesNotExist:
+            messages.error(request, "管理费用不存在")
+            return redirect("finance:expense_record_list")
+        record_audit_log_from_request(
+            request,
+            "expense_record_void",
+            "expense_record",
+            expense.id,
+            expense.expense_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "管理费用已作废")
+        return redirect("finance:expense_record_detail", pk=pk)
 
 
 class CustomerCreditBalanceListView(ErpListView):
@@ -1473,7 +1933,7 @@ def _allocation_signature(allocations: list[dict]) -> str:
 
 def _customer_allocation_target_groups(receipt: CustomerReceipt):
     if receipt.status != CustomerReceipt.Status.PENDING_APPROVAL:
-        return [], []
+        return [], [], []
     remaining_receipt_amount = receipt.receipt_amount
     order_targets = []
     orders = (
@@ -1514,12 +1974,32 @@ def _customer_allocation_target_groups(receipt: CustomerReceipt):
                 "suggested_amount": suggested_amount,
             }
         )
-    return order_targets, reconciliation_targets
+
+    opening_targets = []
+    openings = OpeningReceivable.objects.filter(
+        customer=receipt.customer,
+        status__in=[OpeningReceivable.Status.OPEN, OpeningReceivable.Status.PART_SETTLED],
+        remaining_amount__gt=0,
+    ).order_by("opening_date", "id")
+    for opening in openings:
+        available_amount = customer_opening_receivable_available_allocation_amount(opening)
+        if available_amount <= 0:
+            continue
+        suggested_amount = min(remaining_receipt_amount, available_amount) if remaining_receipt_amount > 0 else Decimal("0.00")
+        remaining_receipt_amount -= suggested_amount
+        opening_targets.append(
+            {
+                "opening": opening,
+                "available_amount": available_amount,
+                "suggested_amount": suggested_amount,
+            }
+        )
+    return order_targets, reconciliation_targets, opening_targets
 
 
 def _supplier_allocation_target_groups(payment: SupplierPayment):
     if payment.status != SupplierPayment.Status.PENDING_APPROVAL:
-        return [], []
+        return [], [], []
     remaining_payment_amount = payment.payment_amount
     receipt_targets = []
     receipts = (
@@ -1560,7 +2040,27 @@ def _supplier_allocation_target_groups(payment: SupplierPayment):
                 "suggested_amount": suggested_amount,
             }
         )
-    return receipt_targets, reconciliation_targets
+
+    opening_targets = []
+    openings = OpeningPayable.objects.filter(
+        supplier=payment.supplier,
+        status__in=[OpeningPayable.Status.OPEN, OpeningPayable.Status.PART_SETTLED],
+        remaining_amount__gt=0,
+    ).order_by("opening_date", "id")
+    for opening in openings:
+        available_amount = supplier_opening_payable_available_allocation_amount(opening)
+        if available_amount <= 0:
+            continue
+        suggested_amount = min(remaining_payment_amount, available_amount) if remaining_payment_amount > 0 else Decimal("0.00")
+        remaining_payment_amount -= suggested_amount
+        opening_targets.append(
+            {
+                "opening": opening,
+                "available_amount": available_amount,
+                "suggested_amount": suggested_amount,
+            }
+        )
+    return receipt_targets, reconciliation_targets, opening_targets
 
 
 def _flash_result(request, result, fallback_message: str) -> None:
@@ -1572,6 +2072,210 @@ def _flash_result(request, result, fallback_message: str) -> None:
 
 def _can_view_finance_amount(user) -> bool:
     return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
+
+
+def _operations_period_summary(start_date: date, end_date: date) -> dict:
+    sales_amount = _sum_decimal(
+        SalesOrder.objects.filter(
+            order_date__range=(start_date, end_date),
+            status__in=[
+                SalesOrder.Status.CONFIRMED,
+                SalesOrder.Status.IN_PRODUCTION,
+                SalesOrder.Status.SHIPPED,
+                SalesOrder.Status.COMPLETED,
+            ],
+        ),
+        "total_amount",
+    )
+    customer_return_amount = _sum_decimal(
+        CustomerReturn.objects.filter(
+            return_date__range=(start_date, end_date),
+            status__in=[
+                CustomerReturn.Status.CONFIRMED,
+                CustomerReturn.Status.RECEIVED,
+            ],
+        ),
+        "return_amount",
+    )
+    purchase_amount = _sum_decimal(
+        PurchaseReceipt.objects.filter(
+            receipt_date__range=(start_date, end_date),
+            status__in=[
+                PurchaseReceipt.Status.PARTIAL_RECEIVED,
+                PurchaseReceipt.Status.RECEIVED,
+            ],
+        ),
+        "items__accepted_qty",
+        multiplier_field="items__unit_price",
+    )
+    supplier_return_amount = _sum_decimal(
+        SupplierReturn.objects.filter(
+            return_date__range=(start_date, end_date),
+            status__in=[
+                SupplierReturn.Status.CONFIRMED,
+                SupplierReturn.Status.SHIPPED,
+            ],
+        ),
+        "return_amount",
+    )
+    received_amount = _net_customer_receipt_amount(start_date, end_date)
+    paid_amount = _net_supplier_payment_amount(start_date, end_date)
+    expense_amount = _sum_decimal(
+        ExpenseRecord.objects.filter(
+            expense_date__range=(start_date, end_date),
+            status=ExpenseRecord.Status.CONFIRMED,
+        ),
+        "amount",
+    )
+    gross_cash_amount = received_amount - paid_amount - expense_amount
+    estimated_margin_amount = sales_amount - customer_return_amount - purchase_amount + supplier_return_amount - expense_amount
+    return {
+        "sales_amount": sales_amount,
+        "customer_return_amount": customer_return_amount,
+        "purchase_amount": purchase_amount,
+        "supplier_return_amount": supplier_return_amount,
+        "received_amount": received_amount,
+        "paid_amount": paid_amount,
+        "expense_amount": expense_amount,
+        "cash_net_amount": gross_cash_amount.quantize(MONEY_QUANT),
+        "estimated_margin_amount": estimated_margin_amount.quantize(MONEY_QUANT),
+    }
+
+
+def _operations_balance_summary() -> dict:
+    opening_receivable_remaining = _sum_decimal(
+        OpeningReceivable.objects.exclude(status=OpeningReceivable.Status.VOIDED),
+        "remaining_amount",
+    )
+    opening_payable_remaining = _sum_decimal(
+        OpeningPayable.objects.exclude(status=OpeningPayable.Status.VOIDED),
+        "remaining_amount",
+    )
+    customer_credit_remaining = _sum_decimal(
+        CustomerCreditBalance.objects.exclude(
+            status__in=[
+                CustomerCreditBalance.Status.USED_UP,
+                CustomerCreditBalance.Status.CLOSED,
+            ]
+        ),
+        "remaining_amount",
+    )
+    supplier_credit_remaining = _sum_decimal(
+        SupplierCreditBalance.objects.exclude(
+            status__in=[
+                SupplierCreditBalance.Status.USED_UP,
+                SupplierCreditBalance.Status.CLOSED,
+            ]
+        ),
+        "remaining_amount",
+    )
+    current_receivable = _current_sales_receivable_amount()
+    current_payable = _current_purchase_payable_amount()
+    return {
+        "opening_receivable_remaining": opening_receivable_remaining,
+        "opening_payable_remaining": opening_payable_remaining,
+        "current_receivable": current_receivable,
+        "current_payable": current_payable,
+        "total_receivable": (opening_receivable_remaining + current_receivable).quantize(MONEY_QUANT),
+        "total_payable": (opening_payable_remaining + current_payable).quantize(MONEY_QUANT),
+        "customer_credit_remaining": customer_credit_remaining,
+        "supplier_credit_remaining": supplier_credit_remaining,
+    }
+
+
+def _current_sales_receivable_amount() -> Decimal:
+    total = ZERO_AMOUNT
+    for order in (
+        SalesOrder.objects.filter(
+            status__in=[
+                SalesOrder.Status.CONFIRMED,
+                SalesOrder.Status.IN_PRODUCTION,
+                SalesOrder.Status.SHIPPED,
+                SalesOrder.Status.COMPLETED,
+            ]
+        )
+        .prefetch_related("items")
+        .order_by("id")
+    ):
+        receivable = sum((item.line_amount for item in order.items.all()), start=ZERO_AMOUNT)
+        allocated = _sum_decimal(CustomerReceiptAllocation.objects.filter(sales_order=order), "allocated_amount")
+        remaining = receivable - allocated
+        if remaining > ZERO_AMOUNT:
+            total += remaining
+    return total.quantize(MONEY_QUANT)
+
+
+def _current_purchase_payable_amount() -> Decimal:
+    total = ZERO_AMOUNT
+    for receipt in (
+        PurchaseReceipt.objects.filter(
+            status__in=[
+                PurchaseReceipt.Status.PARTIAL_RECEIVED,
+                PurchaseReceipt.Status.RECEIVED,
+            ]
+        )
+        .prefetch_related("items")
+        .order_by("id")
+    ):
+        payable = sum((item.accepted_qty * item.unit_price for item in receipt.items.all()), start=ZERO_AMOUNT).quantize(MONEY_QUANT)
+        allocated = _sum_decimal(SupplierPaymentAllocation.objects.filter(purchase_receipt=receipt), "allocated_amount")
+        remaining = payable - allocated
+        if remaining > ZERO_AMOUNT:
+            total += remaining
+    return total.quantize(MONEY_QUANT)
+
+
+def _net_customer_receipt_amount(start_date: date, end_date: date) -> Decimal:
+    receipt_total = _sum_decimal(
+        CustomerReceipt.objects.filter(
+            receipt_date__range=(start_date, end_date),
+            status__in=[
+                CustomerReceipt.Status.CONFIRMED,
+                CustomerReceipt.Status.PART_REVERSED,
+                CustomerReceipt.Status.REVERSED,
+            ],
+        ),
+        "receipt_amount",
+    )
+    reversal_total = _sum_decimal(
+        CustomerReceiptReversal.objects.filter(
+            confirmed_at__date__range=(start_date, end_date),
+            status=CustomerReceiptReversal.Status.CONFIRMED,
+        ),
+        "reversal_amount",
+    )
+    return (receipt_total - reversal_total).quantize(MONEY_QUANT)
+
+
+def _net_supplier_payment_amount(start_date: date, end_date: date) -> Decimal:
+    payment_total = _sum_decimal(
+        SupplierPayment.objects.filter(
+            payment_date__range=(start_date, end_date),
+            status__in=[
+                SupplierPayment.Status.CONFIRMED,
+                SupplierPayment.Status.PART_REVERSED,
+                SupplierPayment.Status.REVERSED,
+            ],
+        ),
+        "payment_amount",
+    )
+    reversal_total = _sum_decimal(
+        SupplierPaymentReversal.objects.filter(
+            confirmed_at__date__range=(start_date, end_date),
+            status=SupplierPaymentReversal.Status.CONFIRMED,
+        ),
+        "reversal_amount",
+    )
+    return (payment_total - reversal_total).quantize(MONEY_QUANT)
+
+
+def _sum_decimal(queryset, field_name: str, multiplier_field: str = "") -> Decimal:
+    if multiplier_field:
+        total = ZERO_AMOUNT
+        for value, multiplier in queryset.values_list(field_name, multiplier_field):
+            total += (value or ZERO_AMOUNT) * (multiplier or ZERO_AMOUNT)
+        return total.quantize(MONEY_QUANT)
+    return (queryset.aggregate(total=Sum(field_name))["total"] or ZERO_AMOUNT).quantize(MONEY_QUANT)
 
 
 def _can_process_finance_payment(user) -> bool:
@@ -1613,6 +2317,56 @@ def _supplier_payment_snapshot(payment: SupplierPayment) -> dict:
         "status": payment.status,
         "handled_by_id": payment.handled_by_id,
         "remark": payment.remark,
+    }
+
+
+def _opening_receivable_snapshot(opening: OpeningReceivable) -> dict:
+    opening.refresh_from_db()
+    return {
+        "opening_no": opening.opening_no,
+        "customer_id": opening.customer_id,
+        "source_doc_no": opening.source_doc_no,
+        "opening_date": opening.opening_date.isoformat() if opening.opening_date else "",
+        "due_date": opening.due_date.isoformat() if opening.due_date else "",
+        "opening_amount": str(opening.opening_amount),
+        "settled_amount": str(opening.settled_amount),
+        "remaining_amount": str(opening.remaining_amount),
+        "status": opening.status,
+        "remark": opening.remark,
+    }
+
+
+def _opening_payable_snapshot(opening: OpeningPayable) -> dict:
+    opening.refresh_from_db()
+    return {
+        "opening_no": opening.opening_no,
+        "supplier_id": opening.supplier_id,
+        "source_doc_no": opening.source_doc_no,
+        "opening_date": opening.opening_date.isoformat() if opening.opening_date else "",
+        "due_date": opening.due_date.isoformat() if opening.due_date else "",
+        "opening_amount": str(opening.opening_amount),
+        "settled_amount": str(opening.settled_amount),
+        "remaining_amount": str(opening.remaining_amount),
+        "status": opening.status,
+        "remark": opening.remark,
+    }
+
+
+def _expense_record_snapshot(expense: ExpenseRecord) -> dict:
+    expense.refresh_from_db()
+    return {
+        "expense_no": expense.expense_no,
+        "expense_date": expense.expense_date.isoformat() if expense.expense_date else "",
+        "category": expense.category,
+        "amount": str(expense.amount),
+        "payment_method": expense.payment_method,
+        "payee": expense.payee,
+        "invoice_no": expense.invoice_no,
+        "handled_by_id": expense.handled_by_id,
+        "status": expense.status,
+        "confirmed_by_id": expense.confirmed_by_id,
+        "confirmed_at": expense.confirmed_at.isoformat() if expense.confirmed_at else "",
+        "remark": expense.remark,
     }
 
 

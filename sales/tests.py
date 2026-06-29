@@ -12,7 +12,7 @@ from accounts.permissions import PermissionCode
 from bom.models import Bom, BomItem
 from files.models import Attachment, ExportLog, ImportJob, PrintLog
 from inventory.models import Inventory, InventoryBatch, InventoryTransaction, WarehouseLocation
-from masterdata.models import Customer, CustomerProduct, Material
+from masterdata.models import Customer, CustomerAddress, CustomerProduct, Material
 from purchase.models import PurchaseRequest, PurchaseRequestItem
 from purchase.services import create_purchase_request_from_shortages
 from sales.models import (
@@ -596,6 +596,8 @@ class SalesOrderViewTests(SalesServiceTests):
             "/sales/orders/new/",
             {
                 "customer": self.customer.id,
+                "customer_contract_no": "HT-FORM",
+                "settlement_method": "月结",
                 "order_date": timezone.localdate().isoformat(),
                 "delivery_date": "",
                 "remark": "页面创建",
@@ -620,6 +622,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/sales/orders/{order.id}/")
         self.assertEqual(order.status, SalesOrder.Status.DRAFT)
+        self.assertEqual(order.customer_contract_no, "HT-FORM")
+        self.assertEqual(order.settlement_method, "月结")
         self.assertEqual(order.total_amount, Decimal("37.50"))
         self.assertEqual(order.items.get().line_status, SalesOrderItem.LineStatus.DRAFT)
 
@@ -1720,7 +1724,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, "确认出库")
         self.assertContains(response, self.finished.material_code)
 
-    def test_sales_shipment_print_masks_cost_and_records_log(self):
+    def test_sales_shipment_print_excludes_price_and_records_log(self):
         self.client.force_login(self.user)
         batch = self._batch(self.finished, Decimal("10.0000"))
         order, item = self._sales_order()
@@ -1730,8 +1734,14 @@ class SalesOrderViewTests(SalesServiceTests):
             sales_order=order,
             customer=self.customer,
             shipment_date=timezone.localdate(),
+            customer_contract_no="HT-001",
+            customer_address_text="深圳市测试路 1 号",
+            customer_contact_name="王五",
+            customer_contact_phone="13900000000",
+            settlement_method="月结",
             status=SalesShipment.Status.PENDING_CONFIRM,
             created_by=self.user,
+            remark="送货备注",
         )
         SalesShipmentItem.objects.create(
             shipment=shipment,
@@ -1746,16 +1756,21 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.get(f"/sales/shipments/{shipment.id}/print/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "销售出库单")
+        self.assertContains(response, "送货单")
         self.assertContains(response, shipment.shipment_no)
-        self.assertContains(response, "******")
+        self.assertContains(response, "HT-001")
+        self.assertContains(response, "深圳市测试路 1 号")
+        self.assertContains(response, "月结")
+        self.assertContains(response, "送货备注")
+        self.assertNotContains(response, "成本价")
+        self.assertNotContains(response, "******")
         self.assertNotContains(response, "3.123456")
         print_log = PrintLog.objects.get(source_doc_type="sales_shipment", source_doc_id=shipment.id)
         self.assertEqual(print_log.template_type, "sales_shipment")
         self.assertEqual(print_log.source_doc_no, shipment.shipment_no)
         self.assertEqual(print_log.printed_by, self.user)
 
-    def test_sales_shipment_print_shows_cost_with_finance_permission(self):
+    def test_sales_shipment_print_excludes_price_even_with_finance_permission(self):
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
         batch = self._batch(self.finished, Decimal("10.0000"))
@@ -1781,7 +1796,8 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.get(f"/sales/shipments/{shipment.id}/print/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "3.123456")
+        self.assertNotContains(response, "成本价")
+        self.assertNotContains(response, "3.123456")
 
     def test_sales_shipment_export_respects_scope_and_logs(self):
         other_user = get_user_model().objects.create_user(username="ship-export-other", password="x")
@@ -2114,6 +2130,18 @@ class SalesOrderViewTests(SalesServiceTests):
         self._grant_permission(PermissionCode.SALES_PROCESS)
         batch = self._batch(self.finished, Decimal("10.0000"))
         order, item = self._sales_order()
+        address = CustomerAddress.objects.create(
+            customer=self.customer,
+            receiver_name="王五",
+            receiver_phone_encrypted="13900000000",
+            address_encrypted="深圳市测试路 1 号",
+            status=CustomerAddress.AddressStatus.ACTIVE,
+        )
+        self.customer.settlement_method = "月结"
+        self.customer.save(update_fields=["settlement_method"])
+        order.customer_address = address
+        order.customer_contract_no = "HT-001"
+        order.save(update_fields=["customer_address", "customer_contract_no"])
         confirm_sales_order(order.id, self.user.id)
 
         page_response = self.client.get(f"/sales/orders/{order.id}/")
@@ -2127,6 +2155,11 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(response["Location"], f"/sales/shipments/{shipment.id}/")
         self.assertEqual(shipment.sales_order, order)
         self.assertEqual(shipment.status, SalesShipment.Status.PENDING_CONFIRM)
+        self.assertEqual(shipment.customer_contract_no, "HT-001")
+        self.assertEqual(shipment.customer_address_text, "深圳市测试路 1 号")
+        self.assertEqual(shipment.customer_contact_name, "王五")
+        self.assertEqual(shipment.customer_contact_phone, "13900000000")
+        self.assertEqual(shipment.settlement_method, "月结")
         self.assertEqual(shipment_item.sales_order_item, item)
         self.assertEqual(shipment_item.shipment_qty, Decimal("10.0000"))
         self.assertEqual(shipment_item.batch, batch)

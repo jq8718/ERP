@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:opening_receivable_list' %}">返回列表</a>
+</div>
+
+<section class="panel">
+  <h2>期初应收</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-row" for="{{ field.id_for_label }}">{{ field.label }}
+          {{ field }}
+          {{ field.errors }}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">保存</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

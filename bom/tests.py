@@ -47,7 +47,7 @@ class BomViewTests(TestCase):
         response = self.client.get("/bom/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "BOM")
+        self.assertContains(response, "产品组成清单")
         self.assertContains(response, "导出CSV")
         self.assertNotContains(response, "/bom/new/")
 

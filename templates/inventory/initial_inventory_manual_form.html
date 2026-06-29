@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="panel" style="padding: 14px;">
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="{{ form.material.id_for_label }}">物料</label>
+        {{ form.material }}
+        {{ form.material.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.location.id_for_label }}">库位</label>
+        {{ form.location }}
+        {{ form.location.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.batch_no.id_for_label }}">批次号</label>
+        {{ form.batch_no }}
+        {{ form.batch_no.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.inventory_type.id_for_label }}">库存类型</label>
+        {{ form.inventory_type }}
+        {{ form.inventory_type.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.initial_qty.id_for_label }}">期初数量</label>
+        {{ form.initial_qty }}
+        {{ form.initial_qty.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.cost_price.id_for_label }}">成本单价</label>
+        {{ form.cost_price }}
+        {{ form.cost_price.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.received_at.id_for_label }}">入库日期</label>
+        {{ form.received_at }}
+        {{ form.received_at.errors }}
+      </div>
+    </div>
+  </section>
+
+  {% if errors %}
+    <section class="panel" style="padding: 14px; margin-top: 16px;">
+      <h2>校验错误</h2>
+      <ul>
+        {% for error in errors %}
+          <li>第 {{ error.row }} 行：{{ error.message }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="button primary" type="submit">生成待确认建账任务</button>
+    <a class="button" href="{% url 'inventory:inventory_list' %}">返回库存汇总</a>
+  </div>
+</form>
+{% endblock %}

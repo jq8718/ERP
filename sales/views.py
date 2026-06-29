@@ -1,6 +1,7 @@
 import csv
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
@@ -14,7 +15,7 @@ from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView
 
 from accounts.permissions import PermissionCode, can_view_amount, require_any_erp_permission, require_erp_permission, user_has_permission
-from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
+from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch
 from system.services import next_document_no, record_audit_log_from_request
@@ -210,7 +211,7 @@ class SalesOrderImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("sales:sales_order_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_sales_orders_from_csv(text_file, request.user.id, can_import_amount=can_view_amount(request.user))
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")
@@ -540,7 +541,7 @@ class SalesOrderCreateShipmentView(LoginRequiredMixin, View):
             with transaction.atomic():
                 order = (
                     SalesOrder.objects.select_for_update()
-                    .select_related("customer")
+                    .select_related("customer", "customer_address")
                     .prefetch_related("items__finished_material")
                     .get(pk=pk)
                 )
@@ -560,6 +561,11 @@ class SalesOrderCreateShipmentView(LoginRequiredMixin, View):
                     sales_order=order,
                     customer=order.customer,
                     shipment_date=timezone.localdate(),
+                    customer_contract_no=order.customer_contract_no,
+                    customer_address_text=order.customer_address.address_encrypted if order.customer_address_id else "",
+                    customer_contact_name=order.customer_address.receiver_name if order.customer_address_id else "",
+                    customer_contact_phone=order.customer_address.receiver_phone_encrypted if order.customer_address_id else "",
+                    settlement_method=order.settlement_method or order.customer.settlement_method,
                     status=SalesShipment.Status.PENDING_CONFIRM,
                     created_by=request.user,
                     remark=request.POST.get("remark", "").strip(),
@@ -759,7 +765,7 @@ class SalesShipmentImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("sales:sales_shipment_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_sales_shipments_from_csv(
             text_file,
             request.user.id,
@@ -950,7 +956,12 @@ class SalesShipmentPrintView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"打印销售出库 {self.object.shipment_no}"
-        context["can_view_amount"] = can_view_amount(self.request.user)
+        context["company_info"] = {
+            "name": settings.ERP_COMPANY_NAME,
+            "address": settings.ERP_COMPANY_ADDRESS,
+            "phone": settings.ERP_COMPANY_PHONE,
+            "contact": settings.ERP_COMPANY_CONTACT,
+        }
         record_print_log(
             template_type="sales_shipment",
             source_doc_type="sales_shipment",
@@ -1057,7 +1068,7 @@ class CustomerReturnImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("sales:customer_return_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_customer_returns_from_csv(
             text_file,
             request.user.id,
@@ -1459,7 +1470,7 @@ class SampleLoanImportView(LoginRequiredMixin, TemplateView):
         if validation_error:
             messages.error(request, validation_error)
             return redirect("sales:sample_loan_import")
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_sample_loans_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 张")

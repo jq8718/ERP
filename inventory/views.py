@@ -1,5 +1,5 @@
 import csv
-from io import StringIO, TextIOWrapper
+from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -11,20 +11,21 @@ from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView, UpdateView
 
 from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
-from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log
+from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from masterdata.models import Material
 from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, require_post_reason, require_second_verify
 
-from .forms import LocationTransferForm, StockCountForm
+from .forms import InitialInventoryManualForm, LocationTransferForm, StockCountForm
 from .import_services import (
     INITIAL_INVENTORY_IMPORT_TEMPLATE_ROWS,
     WAREHOUSE_LOCATION_IMPORT_TEMPLATE_ROWS,
     cancel_initial_inventory_import,
     confirm_initial_inventory_import,
     import_warehouse_locations_from_csv,
+    preview_initial_inventory_rows,
     preview_initial_inventory_from_csv,
 )
 from .models import Inventory, InventoryBatch, InventoryTransaction, LocationTransfer, StockCount, StockCountItem, WarehouseLocation
@@ -163,7 +164,7 @@ class WarehouseLocationImportView(LoginRequiredMixin, TemplateView):
             messages.error(request, validation_error)
             return redirect("inventory:warehouse_location_import")
 
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = import_warehouse_locations_from_csv(text_file, request.user.id)
         if result.success:
             messages.success(request, f"{result.message}，成功 {result.data['success_count']} 行")
@@ -191,10 +192,12 @@ class InventoryListView(ErpListView):
     ordering = ["material_id", "location_id"]
     page_actions = (
         ("导出CSV", "inventory:inventory_export", ""),
+        ("手工期初建账", "inventory:initial_inventory_manual", "primary"),
         ("下载期初模板", "inventory:initial_inventory_import_template", ""),
-        ("导入期初库存", "inventory:initial_inventory_import", "primary"),
+        ("导入期初库存", "inventory:initial_inventory_import", ""),
     )
     page_action_permissions = {
+        "inventory:initial_inventory_manual": PermissionCode.INVENTORY_PROCESS,
         "inventory:initial_inventory_import_template": PermissionCode.INVENTORY_PROCESS,
         "inventory:initial_inventory_import": PermissionCode.INVENTORY_PROCESS,
     }
@@ -451,7 +454,7 @@ class InitialInventoryImportView(LoginRequiredMixin, TemplateView):
             messages.error(request, validation_error)
             return redirect("inventory:initial_inventory_import")
 
-        text_file = TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+        text_file = uploaded_csv_text_file(upload)
         result = preview_initial_inventory_from_csv(text_file, request.user.id)
         if result.success:
             record_audit_log_from_request(
@@ -465,6 +468,45 @@ class InitialInventoryImportView(LoginRequiredMixin, TemplateView):
             return redirect("files:initialization_job_detail", pk=result.data["initialization_job_id"])
         return self.render_to_response(
             self.get_context_data(
+                errors=result.data.get("errors", []),
+                import_job_id=result.data.get("initialization_job_id"),
+            )
+        )
+
+
+class InitialInventoryManualView(LoginRequiredMixin, TemplateView):
+    template_name = "inventory/initial_inventory_manual_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        require_erp_permission(request.user, PermissionCode.INVENTORY_PROCESS, "缺少库存单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = "手工期初库存建账"
+        context["form"] = kwargs.get("form") or InitialInventoryManualForm()
+        return context
+
+    def post(self, request):
+        form = InitialInventoryManualForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+
+        result = preview_initial_inventory_rows([form.to_import_row()], request.user.id)
+        if result.success:
+            record_audit_log_from_request(
+                request,
+                "initial_inventory_manual_preview",
+                "initialization_job",
+                result.data["initialization_job_id"],
+                after_snapshot=result.data,
+            )
+            messages.success(request, "期初库存已生成待确认任务，请确认后入账")
+            return redirect("files:initialization_job_detail", pk=result.data["initialization_job_id"])
+
+        return self.render_to_response(
+            self.get_context_data(
+                form=form,
                 errors=result.data.get("errors", []),
                 import_job_id=result.data.get("initialization_job_id"),
             )

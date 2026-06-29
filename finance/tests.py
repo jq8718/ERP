@@ -14,6 +14,9 @@ from finance.models import (
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
+    ExpenseRecord,
+    OpeningPayable,
+    OpeningReceivable,
     Reconciliation,
     ReconciliationItem,
     SupplierCreditBalance,
@@ -195,6 +198,71 @@ class FinanceServiceTests(TestCase):
         balance = CustomerCreditBalance.objects.get()
         self.assertEqual(balance.remaining_amount, Decimal("20.00"))
 
+    def test_confirm_customer_receipt_allocates_opening_receivable(self):
+        opening = OpeningReceivable.objects.create(
+            opening_no="OR001",
+            customer=self.customer,
+            source_doc_no="OLD-SO-001",
+            opening_date=timezone.localdate(),
+            opening_amount=Decimal("150.00"),
+            remaining_amount=Decimal("150.00"),
+            status=OpeningReceivable.Status.OPEN,
+        )
+        receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-OPEN",
+            customer=self.customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("60.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+
+        result = confirm_customer_receipt(
+            receipt.id,
+            [{"opening_receivable_id": opening.id, "allocated_amount": "60.00"}],
+            self.user.id,
+            "rc-open",
+        )
+
+        self.assertTrue(result.success)
+        opening.refresh_from_db()
+        self.assertEqual(opening.status, OpeningReceivable.Status.PART_SETTLED)
+        self.assertEqual(opening.settled_amount, Decimal("60.00"))
+        self.assertEqual(opening.remaining_amount, Decimal("90.00"))
+        allocation = CustomerReceiptAllocation.objects.get(customer_receipt=receipt)
+        self.assertEqual(allocation.opening_receivable, opening)
+        self.assertEqual(allocation.allocation_type, CustomerReceiptAllocation.AllocationType.OPENING_RECEIVABLE)
+
+    def test_reverse_customer_receipt_rolls_back_opening_receivable(self):
+        opening = OpeningReceivable.objects.create(
+            opening_no="OR-RCR",
+            customer=self.customer,
+            opening_date=timezone.localdate(),
+            opening_amount=Decimal("100.00"),
+            remaining_amount=Decimal("100.00"),
+            status=OpeningReceivable.Status.OPEN,
+        )
+        receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-RCR-OPEN",
+            customer=self.customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("100.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        confirm_customer_receipt(
+            receipt.id,
+            [{"opening_receivable_id": opening.id, "allocated_amount": "100.00"}],
+            self.user.id,
+            "rc-rcr-open",
+        )
+
+        result = reverse_customer_receipt(receipt.id, Decimal("100.00"), "录错", self.user.id, "rcr-open")
+
+        self.assertTrue(result.success)
+        opening.refresh_from_db()
+        self.assertEqual(opening.status, OpeningReceivable.Status.OPEN)
+        self.assertEqual(opening.settled_amount, Decimal("0.00"))
+        self.assertEqual(opening.remaining_amount, Decimal("100.00"))
+
     def test_confirm_customer_receipt_sorts_allocations_by_sales_order_id(self):
         order_1 = self._sales_order("SO001", Decimal("100.00"))
         order_2 = self._sales_order("SO002", Decimal("100.00"))
@@ -366,6 +434,71 @@ class FinanceServiceTests(TestCase):
         payment.refresh_from_db()
         self.assertEqual(payment.status, SupplierPayment.Status.REVERSED)
         self.assertEqual(SupplierPaymentReversal.objects.get().reversal_amount, Decimal("100.00"))
+
+    def test_confirm_supplier_payment_allocates_opening_payable(self):
+        opening = OpeningPayable.objects.create(
+            opening_no="OP001",
+            supplier=self.supplier,
+            source_doc_no="OLD-GR-001",
+            opening_date=timezone.localdate(),
+            opening_amount=Decimal("120.00"),
+            remaining_amount=Decimal("120.00"),
+            status=OpeningPayable.Status.OPEN,
+        )
+        payment = SupplierPayment.objects.create(
+            payment_no="PY-OPEN",
+            supplier=self.supplier,
+            payment_date=timezone.localdate(),
+            payment_amount=Decimal("120.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+        )
+
+        result = confirm_supplier_payment(
+            payment.id,
+            [{"opening_payable_id": opening.id, "allocated_amount": "120.00"}],
+            self.user.id,
+            "py-open",
+        )
+
+        self.assertTrue(result.success)
+        opening.refresh_from_db()
+        self.assertEqual(opening.status, OpeningPayable.Status.SETTLED)
+        self.assertEqual(opening.settled_amount, Decimal("120.00"))
+        self.assertEqual(opening.remaining_amount, Decimal("0.00"))
+        allocation = SupplierPaymentAllocation.objects.get(supplier_payment=payment)
+        self.assertEqual(allocation.opening_payable, opening)
+        self.assertEqual(allocation.allocation_type, SupplierPaymentAllocation.AllocationType.OPENING_PAYABLE)
+
+    def test_reverse_supplier_payment_rolls_back_opening_payable(self):
+        opening = OpeningPayable.objects.create(
+            opening_no="OP-RPY",
+            supplier=self.supplier,
+            opening_date=timezone.localdate(),
+            opening_amount=Decimal("80.00"),
+            remaining_amount=Decimal("80.00"),
+            status=OpeningPayable.Status.OPEN,
+        )
+        payment = SupplierPayment.objects.create(
+            payment_no="PY-RPY-OPEN",
+            supplier=self.supplier,
+            payment_date=timezone.localdate(),
+            payment_amount=Decimal("80.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+        )
+        confirm_supplier_payment(
+            payment.id,
+            [{"opening_payable_id": opening.id, "allocated_amount": "80.00"}],
+            self.user.id,
+            "py-rpy-open",
+        )
+
+        result = reverse_supplier_payment(payment.id, Decimal("80.00"), "录错", self.user.id, "rpy-open")
+
+        self.assertTrue(result.success)
+        opening.refresh_from_db()
+        self.assertEqual(opening.status, OpeningPayable.Status.OPEN)
+        self.assertEqual(opening.settled_amount, Decimal("0.00"))
+        self.assertEqual(opening.remaining_amount, Decimal("80.00"))
 
     def test_confirm_supplier_payment_sorts_allocations_by_purchase_receipt_id(self):
         receipt_1 = self._purchase_receipt_with_no("GR-SORT-1", "PO-SORT-1")
@@ -2048,6 +2181,176 @@ class FinanceServiceTests(TestCase):
         self.assertIn("123.45", content)
         export_log = ExportLog.objects.get(module="supplier_credit_balances")
         self.assertEqual(export_log.row_count, 1)
+
+    def test_opening_receivable_create_page_and_receipt_detail_target(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+
+        response = self.client.post(
+            "/finance/opening-receivables/new/",
+            {
+                "customer": str(self.customer.id),
+                "source_doc_no": "OLD-SO-PAGE",
+                "opening_date": timezone.localdate().isoformat(),
+                "opening_amount": "88.00",
+                "remark": "期初导入",
+            },
+        )
+
+        opening = OpeningReceivable.objects.get(source_doc_no="OLD-SO-PAGE")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/finance/opening-receivables/{opening.id}/")
+        receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-OPEN-PAGE",
+            customer=self.customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("88.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        detail_response = self.client.get(f"/finance/customer-receipts/{receipt.id}/")
+        self.assertContains(detail_response, "期初应收")
+        self.assertContains(detail_response, opening.opening_no)
+
+    def test_opening_payable_create_page_and_payment_detail_target(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+
+        response = self.client.post(
+            "/finance/opening-payables/new/",
+            {
+                "supplier": str(self.supplier.id),
+                "source_doc_no": "OLD-GR-PAGE",
+                "opening_date": timezone.localdate().isoformat(),
+                "opening_amount": "66.00",
+                "remark": "期初导入",
+            },
+        )
+
+        opening = OpeningPayable.objects.get(source_doc_no="OLD-GR-PAGE")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/finance/opening-payables/{opening.id}/")
+        payment = SupplierPayment.objects.create(
+            payment_no="PY-OPEN-PAGE",
+            supplier=self.supplier,
+            payment_date=timezone.localdate(),
+            payment_amount=Decimal("66.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+        )
+        detail_response = self.client.get(f"/finance/supplier-payments/{payment.id}/")
+        self.assertContains(detail_response, "期初应付")
+        self.assertContains(detail_response, opening.opening_no)
+
+    def test_expense_record_create_confirm_and_void(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        create_response = self.client.post(
+            "/finance/expenses/new/",
+            {
+                "expense_date": timezone.localdate().isoformat(),
+                "category": ExpenseRecord.ExpenseCategory.FREIGHT,
+                "amount": "32.50",
+                "payment_method": ExpenseRecord.PaymentMethod.CASH,
+                "payee": "物流公司",
+                "invoice_no": "INV-001",
+                "remark": "运费",
+            },
+        )
+        expense = ExpenseRecord.objects.get(payee="物流公司")
+        self.assertEqual(create_response.status_code, 302)
+        self.assertEqual(expense.status, ExpenseRecord.Status.DRAFT)
+
+        confirm_response = self.client.post(f"/finance/expenses/{expense.id}/confirm/", {"current_password": "x"})
+        self.assertEqual(confirm_response.status_code, 302)
+        expense.refresh_from_db()
+        self.assertEqual(expense.status, ExpenseRecord.Status.CONFIRMED)
+        self.assertEqual(expense.confirmed_by, self.user)
+
+        void_response = self.client.post(
+            f"/finance/expenses/{expense.id}/void/",
+            {"current_password": "x", "void_reason": "录错"},
+        )
+        self.assertEqual(void_response.status_code, 302)
+        expense.refresh_from_db()
+        self.assertEqual(expense.status, ExpenseRecord.Status.VOIDED)
+
+    def test_operations_dashboard_summarizes_cash_and_balances(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        today = timezone.localdate()
+        sales_order = self._sales_order("SO-DASH-001", Decimal("300.00"))
+        receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-DASH-001",
+            customer=self.customer,
+            receipt_date=today,
+            receipt_amount=Decimal("120.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        confirm_customer_receipt(
+            receipt.id,
+            [{"sales_order_id": sales_order.id, "allocated_amount": "120.00"}],
+            self.user.id,
+            "rc-dashboard",
+        )
+        purchase_receipt = self._purchase_receipt(Decimal("80.00"))
+        payment = SupplierPayment.objects.create(
+            payment_no="PY-DASH-001",
+            supplier=self.supplier,
+            payment_date=today,
+            payment_amount=Decimal("50.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+        )
+        confirm_supplier_payment(
+            payment.id,
+            [{"purchase_receipt_id": purchase_receipt.id, "allocated_amount": "50.00"}],
+            self.user.id,
+            "py-dashboard",
+        )
+        OpeningReceivable.objects.create(
+            opening_no="OR-DASH-001",
+            customer=self.customer,
+            opening_date=today,
+            opening_amount=Decimal("40.00"),
+            remaining_amount=Decimal("40.00"),
+            status=OpeningReceivable.Status.OPEN,
+        )
+        OpeningPayable.objects.create(
+            opening_no="OP-DASH-001",
+            supplier=self.supplier,
+            opening_date=today,
+            opening_amount=Decimal("25.00"),
+            remaining_amount=Decimal("25.00"),
+            status=OpeningPayable.Status.OPEN,
+        )
+        ExpenseRecord.objects.create(
+            expense_no="EX-DASH-001",
+            expense_date=today,
+            category=ExpenseRecord.ExpenseCategory.FREIGHT,
+            amount=Decimal("10.00"),
+            payment_method=ExpenseRecord.PaymentMethod.CASH,
+            payee="物流公司",
+            status=ExpenseRecord.Status.CONFIRMED,
+            confirmed_by=self.user,
+            confirmed_at=timezone.now(),
+        )
+
+        response = self.client.get("/finance/operations/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "经营看板")
+        self.assertContains(response, "现金净额")
+        self.assertContains(response, "60.00")
+        self.assertContains(response, "当前应收")
+        self.assertContains(response, "220.00")
+        self.assertContains(response, "当前应付")
+        self.assertContains(response, "75.00")
+        self.assertContains(response, "EX-DASH-001")
+
+    def test_operations_dashboard_requires_amount_permission(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get("/finance/operations/")
+
+        self.assertEqual(response.status_code, 403)
 
 
 def _streaming_text(response) -> str:

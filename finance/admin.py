@@ -6,6 +6,9 @@ from .models import (
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
+    ExpenseRecord,
+    OpeningPayable,
+    OpeningReceivable,
     Reconciliation,
     ReconciliationItem,
     SupplierCreditBalance,
@@ -51,6 +54,13 @@ class CustomerReceiptReversalAdmin(admin.ModelAdmin):
     search_fields = ("reversal_no", "source_receipt__receipt_no")
 
 
+@admin.register(OpeningReceivable)
+class OpeningReceivableAdmin(admin.ModelAdmin):
+    list_display = ("opening_no", "customer", "source_doc_no", "opening_date", "opening_amount", "remaining_amount", "status")
+    list_filter = ("status", "opening_date")
+    search_fields = ("opening_no", "source_doc_no", "customer__customer_name")
+
+
 @admin.register(CustomerCreditBalance)
 class CustomerCreditBalanceAdmin(admin.ModelAdmin):
     list_display = ("customer", "source_doc_type", "source_doc_no", "balance_amount", "used_amount", "remaining_amount", "status")
@@ -84,6 +94,20 @@ class SupplierPaymentReversalAdmin(admin.ModelAdmin):
     list_display = ("reversal_no", "source_payment", "reversal_amount", "status", "created_at")
     list_filter = ("status",)
     search_fields = ("reversal_no", "source_payment__payment_no")
+
+
+@admin.register(OpeningPayable)
+class OpeningPayableAdmin(admin.ModelAdmin):
+    list_display = ("opening_no", "supplier", "source_doc_no", "opening_date", "opening_amount", "remaining_amount", "status")
+    list_filter = ("status", "opening_date")
+    search_fields = ("opening_no", "source_doc_no", "supplier__supplier_name")
+
+
+@admin.register(ExpenseRecord)
+class ExpenseRecordAdmin(admin.ModelAdmin):
+    list_display = ("expense_no", "expense_date", "category", "amount", "payee", "status")
+    list_filter = ("status", "category", "expense_date")
+    search_fields = ("expense_no", "payee", "invoice_no", "remark")
 
 
 @admin.register(SupplierCreditBalance)

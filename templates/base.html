@@ -207,11 +207,15 @@
             <a class="nav-link" href="{% url 'inventory:stock_count_list' %}">盘点</a>
           {% endif %}
           {% if can_finance_view_amount or can_finance_payment_process %}
+            <a class="nav-link" href="{% url 'finance:operations_dashboard' %}">经营看板</a>
             <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
             <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
+            <a class="nav-link" href="{% url 'finance:opening_receivable_list' %}">期初应收</a>
+            <a class="nav-link" href="{% url 'finance:opening_payable_list' %}">期初应付</a>
             <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
             <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
             <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
+            <a class="nav-link" href="{% url 'finance:expense_record_list' %}">管理费用</a>
           {% endif %}
         </div>
       {% endif %}
@@ -222,13 +226,10 @@
             <a class="nav-link" href="{% url 'masterdata:material_list' %}">物料</a>
           {% endif %}
           {% if can_bom_view or can_bom_process %}
-            <a class="nav-link" href="{% url 'bom:bom_list' %}">BOM</a>
+            <a class="nav-link" href="{% url 'bom:bom_list' %}">产品组成清单</a>
           {% endif %}
           {% if can_sales_view or can_sales_process or can_sales_view_all or can_finance_view_amount or can_finance_payment_process %}
             <a class="nav-link" href="{% url 'masterdata:customer_list' %}">客户</a>
-          {% endif %}
-          {% if can_sales_view or can_sales_process or can_sales_view_all %}
-            <a class="nav-link" href="{% url 'masterdata:customer_product_list' %}">客户产品</a>
           {% endif %}
           {% if can_purchase_view or can_purchase_process or can_finance_payment_process %}
             <a class="nav-link" href="{% url 'masterdata:supplier_list' %}">供应商</a>

@@ -52,6 +52,14 @@
     <div class="detail-value">{{ order.delivery_date|default:"" }}</div>
   </div>
   <div class="detail-cell">
+    <div class="detail-label">客户合同编号</div>
+    <div class="detail-value">{{ order.customer_contract_no|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">结算方式</div>
+    <div class="detail-value">{{ order.settlement_method|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
     <div class="detail-label">状态</div>
     <div class="detail-value">{{ order.get_status_display }}</div>
   </div>

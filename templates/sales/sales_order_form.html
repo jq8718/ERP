@@ -19,6 +19,16 @@
         {{ form.customer_address.errors }}
       </div>
       <div class="form-row">
+        <label for="{{ form.customer_contract_no.id_for_label }}">客户合同编号</label>
+        {{ form.customer_contract_no }}
+        {{ form.customer_contract_no.errors }}
+      </div>
+      <div class="form-row">
+        <label for="{{ form.settlement_method.id_for_label }}">结算方式</label>
+        {{ form.settlement_method }}
+        {{ form.settlement_method.errors }}
+      </div>
+      <div class="form-row">
         <label for="{{ form.order_date.id_for_label }}">订单日期</label>
         {{ form.order_date }}
         {{ form.order_date.errors }}
@@ -42,7 +52,7 @@
     {{ item_formset.management_form }}
     {{ item_formset.non_form_errors }}
     <div class="table-wrap" style="border: 0; border-radius: 0;">
-      <table class="inline-table">
+      <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
             <th>客户产品</th>
@@ -53,7 +63,7 @@
         </thead>
         <tbody>
           {% for item_form in item_formset.forms %}
-            <tr>
+            <tr data-formset-row>
               <td>{{ item_form.customer_product }}{{ item_form.customer_product.errors }}</td>
               <td>{{ item_form.order_qty }}{{ item_form.order_qty.errors }}</td>
               {% if can_view_amount %}
@@ -64,11 +74,31 @@
               <td>
                 {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
                 {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                <button class="button" type="button" data-formset-delete>删除</button>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    <template data-formset-empty>
+      <tr data-formset-row>
+        <td>{{ item_formset.empty_form.customer_product }}</td>
+        <td>{{ item_formset.empty_form.order_qty }}</td>
+        {% if can_view_amount %}
+          <td>{{ item_formset.empty_form.unit_price }}</td>
+        {% else %}
+          {{ item_formset.empty_form.unit_price.as_hidden }}
+        {% endif %}
+        <td>
+          {% if item_formset.empty_form.DELETE %}{{ item_formset.empty_form.DELETE }}{% endif %}
+          {% for hidden in item_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+          <button class="button" type="button" data-formset-delete>删除</button>
+        </td>
+      </tr>
+    </template>
+    <div class="form-actions" style="justify-content: flex-start; margin-top: 12px;">
+      <button class="button" type="button" data-formset-add>新增一行</button>
     </div>
   </section>
 
@@ -84,4 +114,40 @@
     {% endif %}
   </div>
 </form>
+<script>
+  (function () {
+    const table = document.querySelector("[data-formset-table]");
+    const template = document.querySelector("[data-formset-empty]");
+    const addButton = document.querySelector("[data-formset-add]");
+    if (!table || !template || !addButton) return;
+
+    const prefix = table.dataset.formsetPrefix;
+    const totalInput = document.querySelector(`#id_${prefix}-TOTAL_FORMS`);
+
+    function bindDelete(row) {
+      const button = row.querySelector("[data-formset-delete]");
+      if (!button) return;
+      button.addEventListener("click", function () {
+        const deleteInput = row.querySelector(`input[type="checkbox"][name$="-DELETE"]`);
+        if (deleteInput) {
+          deleteInput.checked = true;
+          row.style.display = "none";
+          return;
+        }
+        row.remove();
+      });
+    }
+
+    table.querySelectorAll("[data-formset-row]").forEach(bindDelete);
+    addButton.addEventListener("click", function () {
+      const index = Number(totalInput.value);
+      const wrapper = document.createElement("tbody");
+      wrapper.innerHTML = template.innerHTML.replace(/__prefix__/g, String(index)).trim();
+      const row = wrapper.firstElementChild;
+      table.querySelector("tbody").appendChild(row);
+      totalInput.value = index + 1;
+      bindDelete(row);
+    });
+  })();
+</script>
 {% endblock %}

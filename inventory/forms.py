@@ -1,9 +1,49 @@
 from django import forms
+from django.utils import timezone
 
+from masterdata.models import Material
 from system.display import set_form_labels
 from system.services import next_document_no
 
 from .models import InventoryBatch, LocationTransfer, StockCount, WarehouseLocation
+
+
+class InitialInventoryManualForm(forms.Form):
+    material = forms.ModelChoiceField(queryset=Material.objects.none(), label="物料")
+    location = forms.ModelChoiceField(queryset=WarehouseLocation.objects.none(), label="库位")
+    batch_no = forms.CharField(label="批次号", required=False, max_length=100)
+    inventory_type = forms.ChoiceField(label="库存类型", choices=InventoryBatch.InventoryType.choices)
+    initial_qty = forms.DecimalField(label="期初数量", max_digits=14, decimal_places=4, min_value=0)
+    cost_price = forms.DecimalField(label="成本单价", required=False, max_digits=14, decimal_places=6, min_value=0)
+    received_at = forms.DateField(label="入库日期", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
+        self.fields["location"].queryset = WarehouseLocation.objects.filter(
+            status=WarehouseLocation.LocationStatus.ACTIVE
+        ).order_by("location_code")
+        self.fields["inventory_type"].initial = InventoryBatch.InventoryType.AVAILABLE
+        self.fields["received_at"].initial = timezone.localdate()
+        set_form_labels(self)
+
+    def clean_initial_qty(self):
+        value = self.cleaned_data["initial_qty"]
+        if value <= 0:
+            raise forms.ValidationError("期初数量必须大于 0")
+        return value
+
+    def to_import_row(self) -> dict[str, str]:
+        cleaned = self.cleaned_data
+        return {
+            "material_code": cleaned["material"].material_code,
+            "location_code": cleaned["location"].location_code,
+            "batch_no": cleaned.get("batch_no") or "",
+            "inventory_type": cleaned.get("inventory_type") or InventoryBatch.InventoryType.AVAILABLE,
+            "initial_qty": str(cleaned["initial_qty"]),
+            "cost_price": str(cleaned["cost_price"]) if cleaned.get("cost_price") is not None else "",
+            "received_at": cleaned["received_at"].isoformat() if cleaned.get("received_at") else "",
+        }
 
 
 class StockCountForm(forms.ModelForm):

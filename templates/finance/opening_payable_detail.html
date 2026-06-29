@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ opening.opening_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:opening_payable_list' %}">返回列表</a>
+  {% if can_void %}
+    <form method="post" action="{% url 'finance:opening_payable_void' opening.pk %}">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+<section class="detail-grid">
+  <div class="detail-cell"><div class="detail-label">供应商</div><div class="detail-value">{{ opening.supplier.supplier_name }}</div></div>
+  <div class="detail-cell"><div class="detail-label">来源单号</div><div class="detail-value">{{ opening.source_doc_no|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">建账日期</div><div class="detail-value">{{ opening.opening_date }}</div></div>
+  <div class="detail-cell"><div class="detail-label">到期日期</div><div class="detail-value">{{ opening.due_date|default:"" }}</div></div>
+  <div class="detail-cell"><div class="detail-label">期初金额</div><div class="detail-value">{% if can_view_amount %}{{ opening.opening_amount }}{% else %}******{% endif %}</div></div>
+  <div class="detail-cell"><div class="detail-label">已付金额</div><div class="detail-value">{% if can_view_amount %}{{ opening.settled_amount }}{% else %}******{% endif %}</div></div>
+  <div class="detail-cell"><div class="detail-label">未付金额</div><div class="detail-value">{% if can_view_amount %}{{ opening.remaining_amount }}{% else %}******{% endif %}</div></div>
+  <div class="detail-cell"><div class="detail-label">状态</div><div class="detail-value">{{ opening.get_status_display }}</div></div>
+  <div class="detail-cell"><div class="detail-label">备注</div><div class="detail-value">{{ opening.remark|default:"" }}</div></div>
+</section>
+
+<section class="panel">
+  <h2>付款核销记录</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead><tr><th>付款单</th><th>金额</th><th>类型</th><th>时间</th></tr></thead>
+      <tbody>
+        {% for allocation in opening.supplierpaymentallocation_set.all %}
+          <tr>
+            <td>{{ allocation.supplier_payment.payment_no }}</td>
+            <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
+            <td>{{ allocation.get_allocation_type_display }}</td>
+            <td>{{ allocation.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">暂无核销记录</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

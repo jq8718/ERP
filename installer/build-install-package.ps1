@@ -1,17 +1,27 @@
 param(
-    [string]$OutputDir = "$(Split-Path -Parent $PSScriptRoot)\ERP安装包"
+    [string]$OutputDir = $null
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$packageDirName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x5B89, 0x88C5, 0x5305))
+$planFileName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x6A21, 0x5757, 0x5EFA, 0x8BBE, 0x8BA1, 0x5212, 0x002E, 0x006D, 0x0064))
+$manualFileName = -join ([char[]](0x0057, 0x0069, 0x006E, 0x0064, 0x006F, 0x0077, 0x0073, 0x0031, 0x0030, 0x5185, 0x7F51, 0x0045, 0x0052, 0x0050, 0x4E00, 0x952E, 0x5B89, 0x88C5, 0x624B, 0x518C, 0x002E, 0x006D, 0x0064))
+$zipFileName = "$packageDirName.zip"
+
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = Join-Path $repoRoot $packageDirName
+}
+
 if (-not (Test-Path -LiteralPath $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-robocopy $repoRoot $OutputDir /MIR `
-    /XD .git .venv .tmp backups logs logs-test media staticfiles dist work __pycache__ tests_safety packages "ERP安装包" `
-    /XF .env db.sqlite3 *.pyc "~*.DDF" "ERP模块建设计划.md" "ERP安装包.zip" | Out-Host
+$excludeDirs = @(".git", ".venv", ".tmp", "backups", "logs", "logs-test", "media", "staticfiles", "dist", "work", "__pycache__", "tests_safety", "packages", $packageDirName)
+$excludeFiles = @(".env", "db.sqlite3", "*.pyc", "~*.DDF", "*.docx", $planFileName, $zipFileName)
+$robocopyArgs = @($repoRoot, $OutputDir, "/MIR", "/XD") + $excludeDirs + @("/XF") + $excludeFiles
+& robocopy @robocopyArgs | Out-Host
 
 if ($LASTEXITCODE -ge 8) {
     throw "robocopy failed with exit code $LASTEXITCODE"
@@ -45,8 +55,8 @@ foreach ($relative in $cleanupDirs) {
 }
 
 $cleanupFiles = @(
-    "ERP模块建设计划.md",
-    "ERP安装包.zip"
+    $planFileName,
+    $zipFileName
 )
 
 foreach ($relative in $cleanupFiles) {
@@ -57,6 +67,17 @@ foreach ($relative in $cleanupFiles) {
             throw "Refusing to remove path outside package directory: $resolvedPath"
         }
         Remove-Item -LiteralPath $path -Force
+    }
+}
+
+$cleanupFilePatterns = @("*.docx")
+foreach ($pattern in $cleanupFilePatterns) {
+    Get-ChildItem -LiteralPath $OutputDir -Recurse -File -Filter $pattern | ForEach-Object {
+        $resolvedPath = $_.FullName
+        if (-not $resolvedPath.StartsWith($resolvedOutput, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove path outside package directory: $resolvedPath"
+        }
+        Remove-Item -LiteralPath $resolvedPath -Force
     }
 }
 
@@ -112,7 +133,7 @@ $required = @(
     "installer\templates\intranet.env.template",
     "installer\logs\README.txt",
     "installer\tools\nssm.exe",
-    "docs\Windows10内网ERP一键安装手册.md"
+    (Join-Path "docs" $manualFileName)
 )
 
 foreach ($relative in $required) {
