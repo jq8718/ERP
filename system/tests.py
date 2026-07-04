@@ -121,6 +121,19 @@ class SystemDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "工作台")
 
+    def test_sidebar_sections_are_collapsible_and_expanded_by_default(self):
+        superuser = get_user_model().objects.create_superuser(username="sidebar-root", password="x")
+        self.client.force_login(superuser)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        for section_key in ["work", "sales", "purchase-production", "inventory-finance", "masterdata"]:
+            self.assertContains(response, f'data-nav-section="{section_key}"')
+            self.assertContains(response, f'aria-controls="nav-items-{section_key}"')
+        self.assertContains(response, 'class="nav-title nav-toggle" type="button" aria-expanded="true"')
+        self.assertContains(response, "erp.sidebar.collapsed")
+
     def test_sidebar_for_sales_process_role_hides_other_business_modules(self):
         _grant_permission(self.user, PermissionCode.SALES_PROCESS)
         self.client.force_login(self.user)

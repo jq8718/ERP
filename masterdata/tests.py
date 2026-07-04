@@ -1395,11 +1395,16 @@ class MasterdataViewTests(TestCase):
         self.assertContains(detail_response, "测试供应商")
 
     def test_supplier_type_and_payment_method_use_select_options(self):
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/suppliers/new/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="supplier-grid"')
+        self.assertContains(response, 'class="supplier-field medium"')
+        self.assertContains(response, 'name="contact_phone_encrypted"')
+        self.assertNotContains(response, '<textarea name="contact_phone_encrypted"')
         self.assertContains(response, 'select name="supplier_type"')
         self.assertContains(response, '<option value="原料">原料</option>', html=True)
         self.assertContains(response, '<option value="外协加工">外协加工</option>', html=True)

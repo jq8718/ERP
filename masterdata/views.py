@@ -1,6 +1,7 @@
 import csv
 from io import StringIO
 
+from django import forms
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
@@ -37,6 +38,21 @@ from .import_services import (
     import_suppliers_from_csv,
 )
 from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, Supplier
+
+
+def configure_supplier_form_widgets(form):
+    if "contact_phone_encrypted" in form.fields:
+        form.fields["contact_phone_encrypted"].widget = forms.TextInput(
+            attrs={
+                "autocomplete": "tel",
+                "placeholder": "例如：13900000000",
+            }
+        )
+    if "contact_name" in form.fields:
+        form.fields["contact_name"].widget.attrs.setdefault("placeholder", "例如：李四")
+    if "remark" in form.fields:
+        form.fields["remark"].widget.attrs.update({"rows": 3})
+    return form
 
 
 class MaterialListView(ErpListView):
@@ -1060,7 +1076,7 @@ class SupplierCreateView(LoginRequiredMixin, CreateView):
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
-        return form
+        return configure_supplier_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1088,7 +1104,7 @@ class SupplierUpdateView(LoginRequiredMixin, UpdateView):
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
-        return form
+        return configure_supplier_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

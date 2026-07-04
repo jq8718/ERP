@@ -1,6 +1,70 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+  .supplier-form {
+    padding: 14px;
+  }
+  .supplier-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) minmax(260px, 1fr) minmax(160px, 220px) minmax(160px, 220px);
+    gap: 14px;
+    align-items: start;
+    max-width: 1060px;
+  }
+  .supplier-field {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    min-width: 0;
+  }
+  .supplier-field input,
+  .supplier-field select,
+  .supplier-field textarea {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font: inherit;
+    background: #fff;
+  }
+  .supplier-field textarea {
+    min-height: 86px;
+    resize: vertical;
+  }
+  .supplier-field.name {
+    grid-column: span 2;
+  }
+  .supplier-field.medium {
+    max-width: 240px;
+  }
+  .supplier-field.short {
+    max-width: 170px;
+  }
+  .supplier-field.full {
+    grid-column: 1 / -1;
+    max-width: 760px;
+  }
+  .supplier-field .error {
+    margin: 0;
+  }
+  @media (max-width: 900px) {
+    .supplier-grid {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+    .supplier-field,
+    .supplier-field.name,
+    .supplier-field.medium,
+    .supplier-field.short,
+    .supplier-field.full {
+      grid-column: auto;
+      max-width: none;
+    }
+  }
+</style>
+
 <h1>{{ page_title|default:"新建供应商" }}</h1>
 
 <div class="form-actions" style="margin-bottom: 16px;">
@@ -9,16 +73,54 @@
 
 <section class="panel">
   <h2>供应商信息</h2>
-  <form method="post" style="padding: 14px;">
+  <form class="supplier-form" method="post">
     {% csrf_token %}
-    <div class="form-grid">
-      {% for field in form %}
-        <label class="form-row">{{ field.label }}
-          {{ field }}
-          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+    <div class="supplier-grid">
+      <label class="supplier-field">{{ form.supplier_no.label }}
+        {{ form.supplier_no }}
+        {% if form.supplier_no.errors %}<span class="error">{{ form.supplier_no.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="supplier-field name">{{ form.supplier_name.label }}
+        {{ form.supplier_name }}
+        {% if form.supplier_name.errors %}<span class="error">{{ form.supplier_name.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if form.status %}
+        <label class="supplier-field short">{{ form.status.label }}
+          {{ form.status }}
+          {% if form.status.errors %}<span class="error">{{ form.status.errors|join:", " }}</span>{% endif %}
         </label>
-      {% endfor %}
-      {% include "common/operation_reason_field.html" %}
+      {% endif %}
+
+      {% if form.contact_name %}
+        <label class="supplier-field medium">{{ form.contact_name.label }}
+          {{ form.contact_name }}
+          {% if form.contact_name.errors %}<span class="error">{{ form.contact_name.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endif %}
+      {% if form.contact_phone_encrypted %}
+        <label class="supplier-field medium">{{ form.contact_phone_encrypted.label }}
+          {{ form.contact_phone_encrypted }}
+          {% if form.contact_phone_encrypted.errors %}<span class="error">{{ form.contact_phone_encrypted.errors|join:", " }}</span>{% endif %}
+        </label>
+      {% endif %}
+      <label class="supplier-field medium">{{ form.supplier_type.label }}
+        {{ form.supplier_type }}
+        {% if form.supplier_type.errors %}<span class="error">{{ form.supplier_type.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="supplier-field medium">{{ form.payment_method.label }}
+        {{ form.payment_method }}
+        {% if form.payment_method.errors %}<span class="error">{{ form.payment_method.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="supplier-field full">{{ form.remark.label }}
+        {{ form.remark }}
+        {% if form.remark.errors %}<span class="error">{{ form.remark.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if is_edit %}
+        <label class="supplier-field full" for="operation_reason">修改原因
+          <input id="operation_reason" type="text" name="operation_reason" value="">
+        </label>
+      {% endif %}
     </div>
     <div class="form-actions">
       <button class="button primary" type="submit">保存</button>

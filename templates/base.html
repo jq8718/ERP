@@ -49,6 +49,39 @@
       letter-spacing: 0;
       padding: 8px 10px 6px;
     }
+    .nav-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav-toggle:hover,
+    .nav-toggle:focus-visible {
+      background: rgba(255, 255, 255, .08);
+      outline: none;
+    }
+    .nav-chevron {
+      width: 8px;
+      height: 8px;
+      margin-left: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform .16s ease;
+      flex: 0 0 auto;
+    }
+    .nav-section.is-collapsed .nav-items {
+      display: none;
+    }
+    .nav-section.is-collapsed .nav-chevron {
+      transform: rotate(-45deg);
+    }
     .nav-link {
       display: block;
       margin: 1px 0;
@@ -140,6 +173,32 @@
     .message.error { border-color: #f3b3ae; background: #fff1f0; }
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px; }
     .form-row { display: grid; gap: 6px; margin-bottom: 12px; }
+    .form-row input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    .form-row select,
+    .form-row textarea,
+    .field input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    .field select,
+    .field textarea {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+      background: #fff;
+    }
+    .form-row textarea,
+    .field textarea {
+      min-height: 86px;
+      resize: vertical;
+    }
+    .form-row input[type="checkbox"],
+    .form-row input[type="radio"],
+    .field input[type="checkbox"],
+    .field input[type="radio"] {
+      width: auto;
+      min-height: 0;
+    }
     .form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
     .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .detail-cell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
@@ -182,99 +241,119 @@
       {% has_erp_perm request.user "production.process" as can_production_process %}
       {% has_erp_perm request.user "finance.view_amount" as can_finance_view_amount %}
       {% has_erp_perm request.user "finance.payment_process" as can_finance_payment_process %}
-      <div class="nav-section">
-        <div class="nav-title">工作</div>
-        <a class="nav-link" href="{% url 'system:dashboard' %}">工作台</a>
-        <a class="nav-link" href="{% url 'notifications:message_list' %}">系统消息</a>
-        <a class="nav-link" href="{% url 'approvals:approval_list' %}">审批</a>
-        {% if can_manage_permissions %}
-          <a class="nav-link" href="{% url 'approvals:approval_rule_list' %}">审批规则</a>
-        {% endif %}
+      <div class="nav-section" data-nav-section="work">
+        <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-work">
+          <span>工作</span><span class="nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="nav-items" id="nav-items-work">
+          <a class="nav-link" href="{% url 'system:dashboard' %}">工作台</a>
+          <a class="nav-link" href="{% url 'notifications:message_list' %}">系统消息</a>
+          <a class="nav-link" href="{% url 'approvals:approval_list' %}">审批</a>
+          {% if can_manage_permissions %}
+            <a class="nav-link" href="{% url 'approvals:approval_rule_list' %}">审批规则</a>
+          {% endif %}
+        </div>
       </div>
       {% if can_sales_view or can_sales_process or can_sales_view_all %}
-        <div class="nav-section">
-          <div class="nav-title">销售</div>
-          <a class="nav-link" href="{% url 'sales:sales_order_list' %}">销售订单</a>
-          <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
-          <a class="nav-link" href="{% url 'sales:sales_shipment_list' %}">销售出库</a>
-          <a class="nav-link" href="{% url 'sales:sample_loan_list' %}">借样</a>
-          <a class="nav-link" href="{% url 'sales:sample_loan_return_list' %}">借样归还</a>
-          <a class="nav-link" href="{% url 'sales:customer_return_list' %}">客户退货</a>
+        <div class="nav-section" data-nav-section="sales">
+          <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-sales">
+            <span>销售</span><span class="nav-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="nav-items" id="nav-items-sales">
+            <a class="nav-link" href="{% url 'sales:sales_order_list' %}">销售订单</a>
+            <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
+            <a class="nav-link" href="{% url 'sales:sales_shipment_list' %}">销售出库</a>
+            <a class="nav-link" href="{% url 'sales:sample_loan_list' %}">借样</a>
+            <a class="nav-link" href="{% url 'sales:sample_loan_return_list' %}">借样归还</a>
+            <a class="nav-link" href="{% url 'sales:customer_return_list' %}">客户退货</a>
+          </div>
         </div>
       {% endif %}
       {% if can_purchase_view or can_purchase_process or can_production_view or can_production_process %}
-        <div class="nav-section">
-          <div class="nav-title">采购与生产</div>
-          {% if can_purchase_view or can_purchase_process %}
-            <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
-            <a class="nav-link" href="{% url 'purchase:purchase_request_list' %}">采购需求</a>
-            <a class="nav-link" href="{% url 'purchase:purchase_order_list' %}">采购单</a>
-            <a class="nav-link" href="{% url 'purchase:purchase_receipt_list' %}">进货单</a>
-            <a class="nav-link" href="{% url 'purchase:supplier_return_list' %}">供应商退货</a>
-          {% endif %}
-          {% if can_production_view or can_production_process %}
-            <a class="nav-link" href="{% url 'production:production_order_list' %}">生产指令</a>
-            <a class="nav-link" href="{% url 'production:material_requisition_list' %}">生产领料</a>
-            <a class="nav-link" href="{% url 'production:production_receipt_list' %}">生产入库</a>
-          {% endif %}
+        <div class="nav-section" data-nav-section="purchase-production">
+          <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-purchase-production">
+            <span>采购与生产</span><span class="nav-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="nav-items" id="nav-items-purchase-production">
+            {% if can_purchase_view or can_purchase_process %}
+              <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
+              <a class="nav-link" href="{% url 'purchase:purchase_request_list' %}">采购需求</a>
+              <a class="nav-link" href="{% url 'purchase:purchase_order_list' %}">采购单</a>
+              <a class="nav-link" href="{% url 'purchase:purchase_receipt_list' %}">进货单</a>
+              <a class="nav-link" href="{% url 'purchase:supplier_return_list' %}">供应商退货</a>
+            {% endif %}
+            {% if can_production_view or can_production_process %}
+              <a class="nav-link" href="{% url 'production:production_order_list' %}">生产指令</a>
+              <a class="nav-link" href="{% url 'production:material_requisition_list' %}">生产领料</a>
+              <a class="nav-link" href="{% url 'production:production_receipt_list' %}">生产入库</a>
+            {% endif %}
+          </div>
         </div>
       {% endif %}
       {% if can_inventory_view or can_inventory_process or can_finance_view_amount or can_finance_payment_process %}
-        <div class="nav-section">
-          <div class="nav-title">库存与财务</div>
-          {% if can_inventory_view or can_inventory_process %}
-            <a class="nav-link" href="{% url 'inventory:inventory_list' %}">库存汇总</a>
-            <a class="nav-link" href="{% url 'inventory:warehouse_location_list' %}">库位</a>
-            <a class="nav-link" href="{% url 'inventory:inventory_batch_list' %}">库存批次</a>
-            <a class="nav-link" href="{% url 'inventory:inventory_transaction_list' %}">库存流水</a>
-            <a class="nav-link" href="{% url 'inventory:location_transfer_list' %}">库位移库</a>
-            <a class="nav-link" href="{% url 'inventory:stock_count_list' %}">盘点</a>
-          {% endif %}
-          {% if can_finance_view_amount or can_finance_payment_process %}
-            <a class="nav-link" href="{% url 'finance:operations_dashboard' %}">经营看板</a>
-            <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
-            <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
-            <a class="nav-link" href="{% url 'finance:opening_receivable_list' %}">期初应收</a>
-            <a class="nav-link" href="{% url 'finance:opening_payable_list' %}">期初应付</a>
-            <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
-            <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
-            <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
-            <a class="nav-link" href="{% url 'finance:expense_record_list' %}">管理费用</a>
-          {% endif %}
+        <div class="nav-section" data-nav-section="inventory-finance">
+          <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-inventory-finance">
+            <span>库存与财务</span><span class="nav-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="nav-items" id="nav-items-inventory-finance">
+            {% if can_inventory_view or can_inventory_process %}
+              <a class="nav-link" href="{% url 'inventory:inventory_list' %}">库存汇总</a>
+              <a class="nav-link" href="{% url 'inventory:warehouse_location_list' %}">库位</a>
+              <a class="nav-link" href="{% url 'inventory:inventory_batch_list' %}">库存批次</a>
+              <a class="nav-link" href="{% url 'inventory:inventory_transaction_list' %}">库存流水</a>
+              <a class="nav-link" href="{% url 'inventory:location_transfer_list' %}">库位移库</a>
+              <a class="nav-link" href="{% url 'inventory:stock_count_list' %}">盘点</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process %}
+              <a class="nav-link" href="{% url 'finance:operations_dashboard' %}">经营看板</a>
+              <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
+              <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
+              <a class="nav-link" href="{% url 'finance:opening_receivable_list' %}">期初应收</a>
+              <a class="nav-link" href="{% url 'finance:opening_payable_list' %}">期初应付</a>
+              <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
+              <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
+              <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
+              <a class="nav-link" href="{% url 'finance:expense_record_list' %}">管理费用</a>
+            {% endif %}
+          </div>
         </div>
       {% endif %}
       {% if can_sales_view or can_sales_process or can_sales_view_all or can_bom_view or can_bom_process or can_purchase_view or can_purchase_process or can_inventory_view or can_inventory_process or can_production_view or can_production_process or can_finance_view_amount or can_finance_payment_process or can_manage_permissions %}
-        <div class="nav-section">
-          <div class="nav-title">基础资料</div>
-          {% if can_bom_view or can_bom_process or can_purchase_view or can_purchase_process or can_inventory_view or can_inventory_process or can_production_view or can_production_process %}
-            <a class="nav-link" href="{% url 'masterdata:material_list' %}">物料</a>
+        <div class="nav-section" data-nav-section="masterdata">
+          <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-masterdata">
+            <span>基础资料</span><span class="nav-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="nav-items" id="nav-items-masterdata">
+            {% if can_bom_view or can_bom_process or can_purchase_view or can_purchase_process or can_inventory_view or can_inventory_process or can_production_view or can_production_process %}
+              <a class="nav-link" href="{% url 'masterdata:material_list' %}">物料</a>
+            {% endif %}
+            {% if can_bom_view or can_bom_process %}
+              <a class="nav-link" href="{% url 'bom:bom_list' %}">产品组成清单</a>
+            {% endif %}
+            {% if can_sales_view or can_sales_process or can_sales_view_all or can_finance_view_amount or can_finance_payment_process %}
+              <a class="nav-link" href="{% url 'masterdata:customer_list' %}">客户</a>
+            {% endif %}
+            {% if can_purchase_view or can_purchase_process or can_finance_payment_process %}
+              <a class="nav-link" href="{% url 'masterdata:supplier_list' %}">供应商</a>
+            {% endif %}
+            <a class="nav-link" href="{% url 'files:attachment_list' %}">附件</a>
+          {% if can_manage_permissions %}
+            <a class="nav-link" href="{% url 'account_user_list' %}">用户管理</a>
+            <a class="nav-link" href="{% url 'role_list' %}">角色管理</a>
+            <a class="nav-link" href="{% url 'permission_list' %}">权限清单</a>
+            <a class="nav-link" href="{% url 'files:attachment_access_log_list' %}">附件访问日志</a>
+            <a class="nav-link" href="{% url 'files:import_job_list' %}">导入任务</a>
+            <a class="nav-link" href="{% url 'files:initialization_job_list' %}">初始化任务</a>
+            <a class="nav-link" href="{% url 'files:export_log_list' %}">导出日志</a>
+            <a class="nav-link" href="{% url 'files:print_log_list' %}">打印日志</a>
+            <a class="nav-link" href="{% url 'user_session_list' %}">登录会话</a>
+            <a class="nav-link" href="{% url 'system:backup_list' %}">备份记录</a>
+            <a class="nav-link" href="{% url 'system:background_job_list' %}">后台任务</a>
+            <a class="nav-link" href="{% url 'system:release_record_list' %}">发布记录</a>
+            <a class="nav-link" href="{% url 'system:audit_log_list' %}">审计日志</a>
+            <a class="nav-link" href="{% url 'system:health_check' %}">系统健康检查</a>
           {% endif %}
-          {% if can_bom_view or can_bom_process %}
-            <a class="nav-link" href="{% url 'bom:bom_list' %}">产品组成清单</a>
-          {% endif %}
-          {% if can_sales_view or can_sales_process or can_sales_view_all or can_finance_view_amount or can_finance_payment_process %}
-            <a class="nav-link" href="{% url 'masterdata:customer_list' %}">客户</a>
-          {% endif %}
-          {% if can_purchase_view or can_purchase_process or can_finance_payment_process %}
-            <a class="nav-link" href="{% url 'masterdata:supplier_list' %}">供应商</a>
-          {% endif %}
-          <a class="nav-link" href="{% url 'files:attachment_list' %}">附件</a>
-        {% if can_manage_permissions %}
-          <a class="nav-link" href="{% url 'account_user_list' %}">用户管理</a>
-          <a class="nav-link" href="{% url 'role_list' %}">角色管理</a>
-          <a class="nav-link" href="{% url 'permission_list' %}">权限清单</a>
-          <a class="nav-link" href="{% url 'files:attachment_access_log_list' %}">附件访问日志</a>
-          <a class="nav-link" href="{% url 'files:import_job_list' %}">导入任务</a>
-          <a class="nav-link" href="{% url 'files:initialization_job_list' %}">初始化任务</a>
-          <a class="nav-link" href="{% url 'files:export_log_list' %}">导出日志</a>
-          <a class="nav-link" href="{% url 'files:print_log_list' %}">打印日志</a>
-          <a class="nav-link" href="{% url 'user_session_list' %}">登录会话</a>
-          <a class="nav-link" href="{% url 'system:backup_list' %}">备份记录</a>
-          <a class="nav-link" href="{% url 'system:background_job_list' %}">后台任务</a>
-          <a class="nav-link" href="{% url 'system:release_record_list' %}">发布记录</a>
-          <a class="nav-link" href="{% url 'system:audit_log_list' %}">审计日志</a>
-          <a class="nav-link" href="{% url 'system:health_check' %}">系统健康检查</a>
-        {% endif %}
+          </div>
         </div>
       {% endif %}
     </aside>
@@ -302,6 +381,50 @@
   {% block auth_content %}{% endblock %}
 {% endif %}
 <script>
+(function () {
+  var storageKey = "erp.sidebar.collapsed";
+
+  function readState() {
+    try {
+      return JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function writeState(state) {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(state));
+    } catch (error) {
+      return;
+    }
+  }
+
+  function setCollapsed(section, collapsed) {
+    section.classList.toggle("is-collapsed", collapsed);
+    var button = section.querySelector(".nav-toggle");
+    if (button) {
+      button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+  }
+
+  var state = readState();
+  document.querySelectorAll("[data-nav-section]").forEach(function (section) {
+    var key = section.getAttribute("data-nav-section");
+    var button = section.querySelector(".nav-toggle");
+    setCollapsed(section, state[key] === true);
+    if (!button) {
+      return;
+    }
+    button.addEventListener("click", function () {
+      var collapsed = !section.classList.contains("is-collapsed");
+      state[key] = collapsed;
+      setCollapsed(section, collapsed);
+      writeState(state);
+    });
+  });
+})();
+
 (function () {
   function pad2(value) {
     return String(value).padStart(2, "0");
