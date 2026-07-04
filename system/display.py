@@ -1,3 +1,6 @@
+from .date_utils import apply_erp_date_inputs
+
+
 FORM_LABELS = {
     "username": "用户名",
     "display_name": "姓名",
@@ -312,6 +315,7 @@ def set_form_labels(form, labels: dict[str, str] | None = None) -> None:
     for field_name, label in merged_labels.items():
         if field_name in form.fields:
             form.fields[field_name].label = label
+    apply_erp_date_inputs(form)
 
 
 def code_label(value: object) -> str:

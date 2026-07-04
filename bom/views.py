@@ -27,7 +27,6 @@ EDITABLE_BOM_STATUSES = {
     Bom.BomStatus.REJECTED,
 }
 
-
 class BomListView(ErpListView):
     model = Bom
     page_title = "产品组成清单"
@@ -97,9 +96,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        set_form_labels(form)
-        form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
-        return form
+        return _prepare_bom_header_form(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -151,9 +148,7 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        set_form_labels(form)
-        form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
-        return form
+        return _prepare_bom_header_form(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -503,6 +498,12 @@ def _can_edit_bom_items(bom: Bom) -> bool:
 
 def _can_process_bom(user) -> bool:
     return user_has_permission(user, PermissionCode.BOM_PROCESS)
+
+
+def _prepare_bom_header_form(form):
+    set_form_labels(form)
+    form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
+    return form
 
 
 def _component_materials_for_bom(bom: Bom):

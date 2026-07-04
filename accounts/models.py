@@ -91,3 +91,6 @@ class UserSession(models.Model):
             models.Index(fields=["user", "status"]),
             models.Index(fields=["session_key"]),
         ]
+
+    def __str__(self):
+        return f"{self.user} - {self.ip_address or ''} - {self.get_status_display()}"

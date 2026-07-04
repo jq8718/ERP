@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -1353,7 +1354,7 @@ class PurchaseReceiptServiceTests(TestCase):
                 "material": self.raw.id,
                 "order_qty": "4",
                 "unit_price": "99.99",
-                "needed_date": "",
+                "needed_date": "2026/7/5",
             },
         )
 
@@ -1382,7 +1383,7 @@ class PurchaseReceiptServiceTests(TestCase):
                 "material": self.raw.id,
                 "order_qty": "5",
                 "unit_price": "2",
-                "needed_date": "",
+                "needed_date": "2026/7/5",
             },
         )
 
@@ -1391,6 +1392,7 @@ class PurchaseReceiptServiceTests(TestCase):
         order.refresh_from_db()
         item = order.items.get()
         self.assertEqual(item.line_no, 1)
+        self.assertEqual(item.needed_date, date(2026, 7, 5))
         self.assertEqual(item.line_amount, Decimal("10.00"))
         self.assertEqual(order.total_amount, Decimal("10.00"))
 
@@ -1420,7 +1422,7 @@ class PurchaseReceiptServiceTests(TestCase):
         response = self.client.post(
             f"/purchase/orders/{order.id}/create-receipt/",
             {
-                "receipt_date": timezone.localdate().isoformat(),
+                "receipt_date": "2026.07.04",
                 "location": self.location.id,
                 "remark": "本次到货",
             },
@@ -1431,6 +1433,7 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/purchase/receipts/{receipt.id}/")
         self.assertEqual(receipt.purchase_order, order)
+        self.assertEqual(receipt.receipt_date, date(2026, 7, 4))
         self.assertEqual(receipt.status, PurchaseReceipt.Status.PENDING_RECEIVE)
         self.assertEqual(receipt.created_by, self.user)
         self.assertEqual(receipt_item.purchase_order_item, order_item)

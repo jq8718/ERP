@@ -10,11 +10,11 @@ from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.http import FileResponse, Http404
 from django.shortcuts import redirect
-from django.utils.dateparse import parse_date
 from django.views import View
 from django.views.generic import DetailView, TemplateView
 
 from accounts.permissions import ErpPermissionRequiredMixin, PermissionCode, user_has_permission
+from system.date_utils import parse_user_date
 from system.view_helpers import ErpListView
 
 from .models import Attachment, AttachmentAccessLog, ExportLog, ImportJob, InitializationJob, PrintLog
@@ -98,8 +98,8 @@ class AttachmentAccessLogListView(ErpPermissionRequiredMixin, ErpListView):
             queryset = queryset.filter(action=action)
         if operator:
             queryset = queryset.filter(operator__username__icontains=operator)
-        parsed_date_from = parse_date(date_from)
-        parsed_date_to = parse_date(date_to)
+        parsed_date_from = parse_user_date(date_from)
+        parsed_date_to = parse_user_date(date_to)
         if parsed_date_from:
             queryset = queryset.filter(created_at__date__gte=parsed_date_from)
         if parsed_date_to:
@@ -108,12 +108,14 @@ class AttachmentAccessLogListView(ErpPermissionRequiredMixin, ErpListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        parsed_date_from = parse_user_date(self.request.GET.get("date_from", "").strip())
+        parsed_date_to = parse_user_date(self.request.GET.get("date_to", "").strip())
         context["filters"] = {
             "q": self.request.GET.get("q", "").strip(),
             "action": self.request.GET.get("action", "").strip(),
             "operator": self.request.GET.get("operator", "").strip(),
-            "date_from": self.request.GET.get("date_from", "").strip(),
-            "date_to": self.request.GET.get("date_to", "").strip(),
+            "date_from": parsed_date_from.isoformat() if parsed_date_from else self.request.GET.get("date_from", "").strip(),
+            "date_to": parsed_date_to.isoformat() if parsed_date_to else self.request.GET.get("date_to", "").strip(),
         }
         context["action_options"] = (
             ("download", "下载"),

@@ -21,7 +21,7 @@
         </select>
       </label>
       <label class="form-row">付款日期
-        <input type="text" name="payment_date" value="{% if payment %}{{ payment.payment_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}">
+        <input type="date" name="payment_date" value="{% if payment %}{{ payment.payment_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
       </label>
       <label class="form-row">付款金额
         <input type="text" name="payment_amount" value="{{ payment.payment_amount|default:'' }}">

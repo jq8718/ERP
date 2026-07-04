@@ -21,7 +21,7 @@
         </select>
       </label>
       <label class="form-row">收款日期
-        <input type="text" name="receipt_date" value="{% if receipt %}{{ receipt.receipt_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}">
+        <input type="date" name="receipt_date" value="{% if receipt %}{{ receipt.receipt_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
       </label>
       <label class="form-row">收款金额
         <input type="text" name="receipt_amount" value="{{ receipt.receipt_amount|default:'' }}">

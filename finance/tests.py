@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -897,7 +898,7 @@ class FinanceServiceTests(TestCase):
             "/finance/customer-receipts/new/",
             {
                 "customer": self.customer.id,
-                "receipt_date": timezone.localdate().isoformat(),
+                "receipt_date": "2026/7/4",
                 "receipt_amount": "120.00",
                 "receipt_method": CustomerReceipt.ReceiptMethod.TRANSFER,
                 "remark": "页面创建",
@@ -908,6 +909,7 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/finance/customer-receipts/{receipt.id}/")
         self.assertEqual(receipt.status, CustomerReceipt.Status.PENDING_APPROVAL)
+        self.assertEqual(receipt.receipt_date, date(2026, 7, 4))
         self.assertEqual(receipt.receipt_amount, Decimal("120.00"))
         self.assertEqual(receipt.unallocated_amount, Decimal("120.00"))
         self.assertEqual(receipt.created_by, self.user)
@@ -1403,8 +1405,8 @@ class FinanceServiceTests(TestCase):
             {
                 "party_type": Reconciliation.PartyType.CUSTOMER,
                 "customer": self.customer.id,
-                "period_start": timezone.localdate().isoformat(),
-                "period_end": timezone.localdate().isoformat(),
+                "period_start": "2026年07月04日",
+                "period_end": "2026年07月04日",
                 "remark": "本月客户对账",
             },
         )
@@ -1625,7 +1627,7 @@ class FinanceServiceTests(TestCase):
             "/finance/supplier-payments/new/",
             {
                 "supplier": self.supplier.id,
-                "payment_date": timezone.localdate().isoformat(),
+                "payment_date": "2026.07.04",
                 "payment_amount": "100.00",
                 "payment_method": SupplierPayment.PaymentMethod.TRANSFER,
                 "remark": "页面创建",
@@ -1636,6 +1638,7 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/finance/supplier-payments/{payment.id}/")
         self.assertEqual(payment.status, SupplierPayment.Status.PENDING_APPROVAL)
+        self.assertEqual(payment.payment_date, date(2026, 7, 4))
         self.assertEqual(payment.payment_amount, Decimal("100.00"))
         self.assertEqual(payment.unallocated_amount, Decimal("100.00"))
         self.assertEqual(payment.created_by, self.user)

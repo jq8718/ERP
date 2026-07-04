@@ -125,7 +125,7 @@
     .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
     .auth-box { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
     .field { display: grid; gap: 6px; margin-bottom: 14px; }
-    input[type="text"], input[type="password"] {
+    input[type="text"], input[type="password"], input[type="date"] {
       width: 100%;
       min-height: 38px;
       border: 1px solid var(--line);
@@ -301,5 +301,66 @@
 {% else %}
   {% block auth_content %}{% endblock %}
 {% endif %}
+<script>
+(function () {
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function normalizedDate(value) {
+    if (!value) {
+      return "";
+    }
+    var text = String(value).trim()
+      .replace(/／/g, "/")
+      .replace(/[．。]/g, ".")
+      .replace(/[－—–]/g, "-")
+      .replace(/\s+/g, "");
+    var match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (!match) {
+      match = text.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?$/);
+    }
+    if (!match) {
+      return "";
+    }
+    var year = Number(match[1]);
+    var month = Number(match[2]);
+    var day = Number(match[3]);
+    if (!year || month < 1 || month > 12 || day < 1 || day > 31) {
+      return "";
+    }
+    var candidate = new Date(year, month - 1, day);
+    if (
+      candidate.getFullYear() !== year ||
+      candidate.getMonth() !== month - 1 ||
+      candidate.getDate() !== day
+    ) {
+      return "";
+    }
+    return year + "-" + pad2(month) + "-" + pad2(day);
+  }
+
+  function normalizeInput(input) {
+    var normalized = normalizedDate(input.value);
+    if (normalized) {
+      input.value = normalized;
+    }
+  }
+
+  document.addEventListener("blur", function (event) {
+    if (!event.target || !event.target.matches || !event.target.matches("input[data-erp-date]")) {
+      return;
+    }
+    normalizeInput(event.target);
+  }, true);
+
+  document.addEventListener("submit", function (event) {
+    if (!event.target || !event.target.querySelectorAll) {
+      return;
+    }
+    event.target.querySelectorAll("input[data-erp-date]").forEach(normalizeInput);
+  }, true);
+})();
+</script>
 </body>
 </html>

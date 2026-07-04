@@ -18,7 +18,7 @@ class WarehouseLocation(models.Model):
         db_table = "warehouse_locations"
 
     def __str__(self):
-        return self.location_code
+        return f"{self.location_code} {self.location_name}".strip()
 
 
 class InventoryBatch(models.Model):
@@ -51,6 +51,9 @@ class InventoryBatch(models.Model):
             models.Index(fields=["batch_status", "inventory_type"]),
         ]
 
+    def __str__(self):
+        return f"{self.batch_no} - {self.material} - {self.location} - 余量:{self.remaining_qty}"
+
 
 class Inventory(models.Model):
     material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name="inventory_summaries")
@@ -64,6 +67,9 @@ class Inventory(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["material", "location", "inventory_type"], name="uq_inventory_material_location_type"),
         ]
+
+    def __str__(self):
+        return f"{self.material} - {self.location} - {self.get_inventory_type_display()} - {self.qty}"
 
 
 class InventoryTransaction(models.Model):
@@ -100,6 +106,9 @@ class InventoryTransaction(models.Model):
             models.Index(fields=["source_doc_type", "source_doc_id"]),
         ]
 
+    def __str__(self):
+        return f"{self.transaction_no} - {self.get_transaction_type_display()} - {self.material} - {self.qty_delta}"
+
 
 class LocationTransfer(models.Model):
     class TransferStatus(models.TextChoices):
@@ -118,6 +127,9 @@ class LocationTransfer(models.Model):
 
     class Meta:
         db_table = "location_transfers"
+
+    def __str__(self):
+        return f"{self.transfer_no} - {self.material} - {self.from_location} -> {self.to_location}"
 
 
 class StockCount(models.Model):
@@ -140,6 +152,9 @@ class StockCount(models.Model):
     class Meta:
         db_table = "stock_counts"
 
+    def __str__(self):
+        return f"{self.stock_count_no} - {self.get_status_display()}"
+
 
 class StockCountItem(models.Model):
     stock_count = models.ForeignKey(StockCount, on_delete=models.CASCADE, related_name="items")
@@ -156,3 +171,6 @@ class StockCountItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["stock_count", "material", "batch", "location"], name="uq_stock_count_item_scope"),
         ]
+
+    def __str__(self):
+        return f"{self.stock_count.stock_count_no} - {self.material} - {self.location}"

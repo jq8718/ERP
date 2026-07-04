@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
+from django.utils import timezone
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -723,11 +725,16 @@ class FileViewTests(TestCase):
             file_size=100,
             uploaded_by=self.user,
         )
-        AttachmentAccessLog.objects.create(attachment=attachment, operator=self.user, action="download", ip_address="127.0.0.1")
-        AttachmentAccessLog.objects.create(attachment=other_attachment, operator=self.user, action="delete", ip_address="127.0.0.2")
+        keep_log = AttachmentAccessLog.objects.create(attachment=attachment, operator=self.user, action="download", ip_address="127.0.0.1")
+        hide_log = AttachmentAccessLog.objects.create(attachment=other_attachment, operator=self.user, action="delete", ip_address="127.0.0.2")
+        AttachmentAccessLog.objects.filter(id=keep_log.id).update(created_at=datetime(2026, 7, 4, 9, 0, tzinfo=timezone.get_current_timezone()))
+        AttachmentAccessLog.objects.filter(id=hide_log.id).update(created_at=timezone.now() - timedelta(days=30))
         self.client.force_login(self.user)
 
-        response = self.client.get("/files/access-logs/", {"q": "SO001", "action": "download", "operator": "fileview"})
+        response = self.client.get(
+            "/files/access-logs/",
+            {"q": "SO001", "action": "download", "operator": "fileview", "date_from": "2026/7/4", "date_to": "2026/7/4"},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "contract.pdf")

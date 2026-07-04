@@ -20,6 +20,7 @@ from files.view_helpers import build_attachment_panel, export_file_response
 from masterdata.models import Customer, Supplier
 from purchase.models import PurchaseReceipt, SupplierReturn
 from sales.models import CustomerReturn, SalesOrder
+from system.date_utils import parse_user_date
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
@@ -1890,13 +1891,7 @@ def _decimal_from_post(request, field_name: str):
 
 
 def _date_from_post(request, field_name: str) -> date | None:
-    value = request.POST.get(field_name, "")
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+    return parse_user_date(request.POST.get(field_name, ""))
 
 
 def _allocation_rows_from_post(request, target_key: str, amount_key: str = "allocated_amount") -> list[dict]:

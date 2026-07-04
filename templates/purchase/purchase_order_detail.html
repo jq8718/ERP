@@ -91,7 +91,7 @@
       {% csrf_token %}
       <div class="form-grid">
         <label class="form-row">入库日期
-          <input type="date" name="receipt_date" value="{{ today }}">
+          <input type="date" name="receipt_date" value="{{ today|date:'Y-m-d' }}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
         </label>
         <label class="form-row">入库库位
           <select name="location">
@@ -135,7 +135,7 @@
           </label>
         {% endif %}
         <label class="form-row">需求日期
-          <input type="date" name="needed_date">
+          <input type="date" name="needed_date" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
         </label>
       </div>
       <div class="form-actions">

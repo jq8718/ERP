@@ -38,6 +38,10 @@ class Reconciliation(models.Model):
             models.Index(fields=["period_start", "period_end"]),
         ]
 
+    def __str__(self):
+        party = self.customer if self.party_type == self.PartyType.CUSTOMER else self.supplier
+        return f"{self.reconciliation_no} - {party} - {self.get_status_display()}"
+
 
 class ReconciliationItem(models.Model):
     class SourceType(models.TextChoices):
@@ -66,6 +70,9 @@ class ReconciliationItem(models.Model):
             models.Index(fields=["reconciliation", "line_no"]),
             models.Index(fields=["source_type", "source_doc_id"]),
         ]
+
+    def __str__(self):
+        return f"{self.reconciliation.reconciliation_no} 第{self.line_no}行 - {self.source_no}"
 
 
 class CustomerReceipt(models.Model):
@@ -116,6 +123,9 @@ class CustomerReceipt(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.receipt_no} - {self.customer} - {self.receipt_amount} - {self.get_status_display()}"
+
 
 class OpeningReceivable(models.Model):
     class Status(models.TextChoices):
@@ -143,6 +153,10 @@ class OpeningReceivable(models.Model):
             models.Index(fields=["customer", "status", "opening_date"]),
             models.Index(fields=["status", "remaining_amount"]),
         ]
+
+    def __str__(self):
+        source = f" - {self.source_doc_no}" if self.source_doc_no else ""
+        return f"{self.opening_no}{source} - {self.customer} - 余额:{self.remaining_amount}"
 
 
 class CustomerReceiptAllocation(models.Model):
@@ -178,6 +192,10 @@ class CustomerReceiptAllocation(models.Model):
             models.Index(fields=["reconciliation"]),
             models.Index(fields=["opening_receivable"]),
         ]
+
+    def __str__(self):
+        target = self.sales_order or self.reconciliation or self.opening_receivable or self.allocation_type
+        return f"{self.customer_receipt.receipt_no} - {target} - {self.allocated_amount}"
 
     def save(self, *args, **kwargs):
         if not transaction.get_connection().in_atomic_block:
@@ -277,6 +295,9 @@ class CustomerReceiptReversal(models.Model):
             models.Index(fields=["source_receipt", "status"]),
         ]
 
+    def __str__(self):
+        return f"{self.reversal_no} - {self.source_receipt.receipt_no} - {self.reversal_amount}"
+
 
 class CustomerCreditBalance(models.Model):
     class Status(models.TextChoices):
@@ -305,6 +326,9 @@ class CustomerCreditBalance(models.Model):
             models.Index(fields=["customer", "status", "remaining_amount"]),
             models.Index(fields=["source_doc_type", "source_doc_id"]),
         ]
+
+    def __str__(self):
+        return f"{self.customer} - {self.source_doc_no} - 余额:{self.remaining_amount}"
 
 
 class CustomerCreditBalanceTransaction(models.Model):
@@ -335,6 +359,9 @@ class CustomerCreditBalanceTransaction(models.Model):
             models.Index(fields=["credit_balance", "action_type"]),
             models.Index(fields=["target_doc_type", "target_doc_id"]),
         ]
+
+    def __str__(self):
+        return f"{self.transaction_no} - {self.get_action_type_display()} - {self.amount}"
 
 
 class SupplierPayment(models.Model):
@@ -385,6 +412,9 @@ class SupplierPayment(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.payment_no} - {self.supplier} - {self.payment_amount} - {self.get_status_display()}"
+
 
 class OpeningPayable(models.Model):
     class Status(models.TextChoices):
@@ -412,6 +442,10 @@ class OpeningPayable(models.Model):
             models.Index(fields=["supplier", "status", "opening_date"]),
             models.Index(fields=["status", "remaining_amount"]),
         ]
+
+    def __str__(self):
+        source = f" - {self.source_doc_no}" if self.source_doc_no else ""
+        return f"{self.opening_no}{source} - {self.supplier} - 余额:{self.remaining_amount}"
 
 
 class SupplierPaymentAllocation(models.Model):
@@ -451,6 +485,10 @@ class SupplierPaymentAllocation(models.Model):
             models.Index(fields=["reconciliation"]),
             models.Index(fields=["opening_payable"]),
         ]
+
+    def __str__(self):
+        target = self.purchase_receipt or self.reconciliation or self.opening_payable or self.allocation_type
+        return f"{self.supplier_payment.payment_no} - {target} - {self.allocated_amount}"
 
     def save(self, *args, **kwargs):
         if not transaction.get_connection().in_atomic_block:
@@ -569,6 +607,9 @@ class ExpenseRecord(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.expense_no} - {self.get_category_display()} - {self.amount} - {self.get_status_display()}"
+
 
 class SupplierPaymentReversal(models.Model):
     class Status(models.TextChoices):
@@ -603,6 +644,9 @@ class SupplierPaymentReversal(models.Model):
             models.Index(fields=["source_payment", "status"]),
         ]
 
+    def __str__(self):
+        return f"{self.reversal_no} - {self.source_payment.payment_no} - {self.reversal_amount}"
+
 
 class SupplierCreditBalance(models.Model):
     class Status(models.TextChoices):
@@ -631,6 +675,9 @@ class SupplierCreditBalance(models.Model):
             models.Index(fields=["supplier", "status", "remaining_amount"]),
             models.Index(fields=["source_doc_type", "source_doc_id"]),
         ]
+
+    def __str__(self):
+        return f"{self.supplier} - {self.source_doc_no} - 余额:{self.remaining_amount}"
 
 
 class SupplierCreditBalanceTransaction(models.Model):
@@ -661,3 +708,6 @@ class SupplierCreditBalanceTransaction(models.Model):
             models.Index(fields=["credit_balance", "action_type"]),
             models.Index(fields=["target_doc_type", "target_doc_id"]),
         ]
+
+    def __str__(self):
+        return f"{self.transaction_no} - {self.get_action_type_display()} - {self.amount}"

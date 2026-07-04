@@ -45,6 +45,9 @@ class SalesOrder(models.Model):
             models.Index(fields=["created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.sales_order_no} - {self.customer} - {self.get_status_display()}"
+
 
 class SalesOrderItem(models.Model):
     class LineStatus(models.TextChoices):
@@ -90,6 +93,9 @@ class SalesOrderItem(models.Model):
             models.Index(fields=["finished_material"]),
         ]
 
+    def __str__(self):
+        return f"{self.sales_order.sales_order_no} 第{self.line_no}行 - {self.customer_product}"
+
 
 class SalesOrderChangeLog(models.Model):
     sales_order = models.ForeignKey(SalesOrder, on_delete=models.CASCADE, related_name="change_logs")
@@ -103,6 +109,9 @@ class SalesOrderChangeLog(models.Model):
     class Meta:
         db_table = "sales_order_change_logs"
         indexes = [models.Index(fields=["sales_order", "changed_at"])]
+
+    def __str__(self):
+        return f"{self.sales_order.sales_order_no} - {self.changed_at:%Y-%m-%d %H:%M:%S}"
 
 
 class CustomerReturn(models.Model):
@@ -125,6 +134,9 @@ class CustomerReturn(models.Model):
     class Meta:
         db_table = "customer_returns"
 
+    def __str__(self):
+        return f"{self.return_no} - {self.customer} - {self.get_status_display()}"
+
 
 class CustomerReturnItem(models.Model):
     customer_return = models.ForeignKey(CustomerReturn, on_delete=models.CASCADE, related_name="items")
@@ -142,6 +154,9 @@ class CustomerReturnItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["customer_return", "sales_order_item", "material"], name="uq_customer_return_item"),
         ]
+
+    def __str__(self):
+        return f"{self.customer_return.return_no} - {self.material} - {self.return_qty}"
 
 
 class SampleLoan(models.Model):
@@ -179,6 +194,9 @@ class SampleLoan(models.Model):
             models.Index(fields=["overdue_status", "expected_return_date"]),
         ]
 
+    def __str__(self):
+        return f"{self.sample_loan_no} - {self.customer} - {self.get_status_display()}"
+
 
 class SampleLoanItem(models.Model):
     class LineStatus(models.TextChoices):
@@ -206,6 +224,9 @@ class SampleLoanItem(models.Model):
             models.UniqueConstraint(fields=["sample_loan", "line_no"], name="uq_sample_loan_line"),
         ]
 
+    def __str__(self):
+        return f"{self.sample_loan.sample_loan_no} 第{self.line_no}行 - {self.material}"
+
 
 class SampleLoanReturn(models.Model):
     class Status(models.TextChoices):
@@ -223,6 +244,9 @@ class SampleLoanReturn(models.Model):
 
     class Meta:
         db_table = "sample_loan_returns"
+
+    def __str__(self):
+        return f"{self.sample_return_no} - {self.customer} - {self.get_status_display()}"
 
 
 class SampleLoanReturnItem(models.Model):
@@ -247,6 +271,9 @@ class SampleLoanReturnItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["sample_return", "sample_loan_item", "location"], name="uq_sample_return_item"),
         ]
+
+    def __str__(self):
+        return f"{self.sample_return.sample_return_no} - {self.material} - {self.return_qty}"
 
 
 class SalesShipment(models.Model):
@@ -273,6 +300,9 @@ class SalesShipment(models.Model):
     class Meta:
         db_table = "sales_shipments"
 
+    def __str__(self):
+        return f"{self.shipment_no} - {self.customer} - {self.get_status_display()}"
+
 
 class SalesShipmentItem(models.Model):
     shipment = models.ForeignKey(SalesShipment, on_delete=models.CASCADE, related_name="items")
@@ -288,6 +318,9 @@ class SalesShipmentItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["shipment", "sales_order_item", "batch"], name="uq_sales_shipment_item"),
         ]
+
+    def __str__(self):
+        return f"{self.shipment.shipment_no} - {self.material} - {self.shipment_qty}"
 
 
 class ShortageAlert(models.Model):
@@ -324,3 +357,6 @@ class ShortageAlert(models.Model):
             models.Index(fields=["status", "material"]),
             models.Index(fields=["sales_order_item", "status"]),
         ]
+
+    def __str__(self):
+        return f"{self.shortage_no} - {self.material} - 欠料:{self.shortage_qty}"

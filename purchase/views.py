@@ -1,5 +1,4 @@
 import csv
-from datetime import date
 from io import StringIO
 
 from django.contrib import messages
@@ -20,6 +19,7 @@ from files.services import csv_upload_validation_error, export_queryset_to_csv, 
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material, Supplier
+from system.date_utils import parse_user_date
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
@@ -821,7 +821,7 @@ class PurchaseOrderItemCreateView(LoginRequiredMixin, View):
             order_qty=order_qty,
             unit_price=unit_price,
             line_amount=(order_qty * unit_price).quantize(Decimal("0.01")),
-            needed_date=request.POST.get("needed_date") or None,
+            needed_date=parse_user_date(request.POST.get("needed_date")),
         )
         recalculate_purchase_order_total(order)
         messages.success(request, "采购明细已新增")
@@ -839,10 +839,7 @@ class PurchaseOrderCreateReceiptView(LoginRequiredMixin, View):
             messages.error(request, "请选择有效入库库位")
             return redirect("purchase:purchase_order_detail", pk=pk)
 
-        try:
-            receipt_date = date.fromisoformat(request.POST.get("receipt_date", ""))
-        except ValueError:
-            receipt_date = timezone.localdate()
+        receipt_date = parse_user_date(request.POST.get("receipt_date"), default=timezone.localdate())
 
         with transaction.atomic():
             try:

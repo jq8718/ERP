@@ -36,6 +36,32 @@ class SettlementMethod(models.TextChoices):
     AFTER_RECONCILIATION = "对账后付款", "对账后付款"
 
 
+class SupplierType(models.TextChoices):
+    RAW = "原料", "原料"
+    AUXILIARY = "辅料", "辅料"
+    PART = "配件", "配件"
+    PACKAGING = "包装", "包装"
+    OUTSOURCING = "外协加工", "外协加工"
+    TRANSPORT = "运输", "运输"
+    EQUIPMENT = "设备", "设备"
+    SERVICE = "服务", "服务"
+    OTHER = "其他", "其他"
+
+
+class SupplierPaymentMethod(models.TextChoices):
+    CASH = "现金", "现金"
+    TRANSFER = "转账", "转账"
+    CHECK = "支票", "支票"
+    PAY_NOW = "现付", "现付"
+    MONTHLY = "月结", "月结"
+    MONTHLY_30 = "月结30天", "月结30天"
+    MONTHLY_60 = "月结60天", "月结60天"
+    PREPAID = "预付", "预付"
+    CASH_ON_DELIVERY = "货到付款", "货到付款"
+    AFTER_RECONCILIATION = "对账后付款", "对账后付款"
+    OTHER = "其他", "其他"
+
+
 class Material(TimeStampedModel):
     class MaterialType(models.TextChoices):
         FINISHED = "finished", "成品"
@@ -86,6 +112,9 @@ class MaterialUnitConversion(TimeStampedModel):
         constraints = [
             models.UniqueConstraint(fields=["material", "source_unit", "target_unit"], name="uq_material_unit_conversion"),
         ]
+
+    def __str__(self):
+        return f"{self.material} - {self.source_unit}->{self.target_unit} = {self.ratio}"
 
 
 class Customer(TimeStampedModel):
@@ -142,6 +171,16 @@ class CustomerProduct(TimeStampedModel):
     def packaging_requirements_display(self):
         return _requirements_display(self.packaging_requirements)
 
+    def __str__(self):
+        parts = [
+            self.customer.customer_name if self.customer_id else "",
+            self.customer_product_no,
+            self.customer_product_name,
+        ]
+        if self.finished_material_id:
+            parts.append(f"成品:{self.finished_material}")
+        return " - ".join(part for part in parts if part)
+
 
 def _requirements_display(value):
     if not value:
@@ -182,6 +221,18 @@ class CustomerAddress(TimeStampedModel):
             models.Index(fields=["customer", "address_type", "status"]),
         ]
 
+    def __str__(self):
+        parts = [
+            self.customer.customer_name if self.customer_id else "",
+            self.get_address_type_display(),
+            self.receiver_name,
+            self.address_encrypted,
+        ]
+        label = " - ".join(part for part in parts if part)
+        if self.is_default:
+            label = f"{label}（默认）"
+        return label
+
 
 class Supplier(TimeStampedModel):
     class SupplierStatus(models.TextChoices):
@@ -193,8 +244,8 @@ class Supplier(TimeStampedModel):
     supplier_name = models.CharField(max_length=200)
     contact_name = models.CharField(max_length=120, blank=True)
     contact_phone_encrypted = models.TextField(blank=True)
-    supplier_type = models.CharField(max_length=80, blank=True)
-    payment_method = models.CharField(max_length=80, blank=True)
+    supplier_type = models.CharField(max_length=80, choices=SupplierType.choices, blank=True)
+    payment_method = models.CharField(max_length=80, choices=SupplierPaymentMethod.choices, blank=True)
     status = models.CharField(max_length=16, choices=SupplierStatus.choices, default=SupplierStatus.ACTIVE)
     remark = models.TextField(blank=True)
 
@@ -229,3 +280,6 @@ class MaterialSupplierPrice(TimeStampedModel):
             models.Index(fields=["material", "supplier", "status"]),
             models.Index(fields=["is_default", "status"]),
         ]
+
+    def __str__(self):
+        return f"{self.material} - {self.supplier} - {self.purchase_price}"

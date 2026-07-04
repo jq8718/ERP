@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 
@@ -626,6 +627,26 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(order.settlement_method, "月结")
         self.assertEqual(order.total_amount, Decimal("37.50"))
         self.assertEqual(order.items.get().line_status, SalesOrderItem.LineStatus.DRAFT)
+
+    def test_sales_order_form_uses_human_readable_address_and_product_options(self):
+        CustomerAddress.objects.create(
+            customer=self.customer,
+            address_type=CustomerAddress.AddressType.SHIPPING,
+            receiver_name="王五",
+            receiver_phone_encrypted="13900000000",
+            address_encrypted="深圳市测试路 1 号",
+            is_default=True,
+        )
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/sales/orders/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "测试客户 - 收货地址 - 王五 - 深圳市测试路 1 号（默认）")
+        self.assertContains(response, "测试客户 - CP001 - 客户产品 1 - 成品:FG001 成品 1")
+        self.assertNotContains(response, "CustomerAddress object")
+        self.assertNotContains(response, "CustomerProduct object")
 
     def test_create_sales_order_submit_requires_sales_process_permission(self):
         self.client.force_login(self.user)
@@ -2737,11 +2758,11 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.post(
             f"/sales/sample-loans/{loan.id}/items/new/",
             {
-                "material": self.finished.id,
-                "loan_qty": "3",
-                "expected_return_date": "",
-                "batch": "",
-                "location": "",
+                "items-0-material": self.finished.id,
+                "items-0-loan_qty": "3",
+                "items-0-expected_return_date": "2026/7/8",
+                "items-0-batch": "",
+                "items-0-location": "",
             },
         )
 
@@ -2751,6 +2772,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(item.line_no, 1)
         self.assertEqual(item.material, self.finished)
         self.assertEqual(item.loan_qty, Decimal("3"))
+        self.assertEqual(item.expected_return_date, date(2026, 7, 8))
 
     def test_sample_loan_confirm_out_view_deducts_inventory(self):
         self.client.force_login(self.user)

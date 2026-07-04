@@ -55,6 +55,9 @@ class Approval(models.Model):
             models.Index(fields=["approval_type", "status"]),
         ]
 
+    def __str__(self):
+        return f"{self.approval_no} - {self.source_title} - {self.get_status_display()}"
+
 
 class ApprovalRule(models.Model):
     class RuleStatus(models.TextChoices):
@@ -86,6 +89,10 @@ class ApprovalRule(models.Model):
             models.Index(fields=["approver_user", "status"]),
             models.Index(fields=["approver_role", "status"]),
         ]
+
+    def __str__(self):
+        approver = self.approver_user or self.approver_role or "未指定审批人"
+        return f"{self.doc_type} 第{self.level_no}级 - {approver} - {self.get_status_display()}"
 
 
 class ApprovalLog(models.Model):
@@ -128,3 +135,6 @@ class ApprovalLog(models.Model):
             models.Index(fields=["operator", "created_at"]),
             models.Index(fields=["action", "created_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.approval.approval_no} - {self.get_action_display()} - {self.created_at:%Y-%m-%d %H:%M:%S}"

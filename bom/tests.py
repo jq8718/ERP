@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
@@ -122,6 +124,55 @@ class BomViewTests(TestCase):
         detail_response = self.client.get(f"/bom/{bom.id}/")
         self.assertContains(detail_response, "BOM001")
         self.assertContains(detail_response, self.finished.material_code)
+
+    def test_bom_date_fields_use_calendar_inputs(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+
+        create_response = self.client.get("/bom/new/")
+
+        self.assertEqual(create_response.status_code, 200)
+        self.assertContains(create_response, 'type="date" name="effective_date"')
+        self.assertContains(create_response, 'type="date" name="expiry_date"')
+
+        bom = Bom.objects.create(
+            bom_no="BOM-DATE",
+            finished_material=self.finished,
+            bom_version="V1",
+            base_qty="1",
+            effective_date=date(2026, 7, 1),
+            expiry_date=date(2026, 12, 31),
+            status=Bom.BomStatus.DRAFT,
+            created_by=self.user,
+        )
+
+        edit_response = self.client.get(f"/bom/{bom.id}/edit/")
+
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertContains(edit_response, 'type="date" name="effective_date" value="2026-07-01"')
+        self.assertContains(edit_response, 'type="date" name="expiry_date" value="2026-12-31"')
+
+    def test_bom_date_fields_accept_common_manual_formats(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+
+        response = self.client.post(
+            "/bom/new/",
+            {
+                "bom_no": "BOM-DATE-MANUAL",
+                "finished_material": self.finished.id,
+                "bom_version": "V1",
+                "base_qty": "1",
+                "effective_date": "2026/7/4",
+                "expiry_date": "2026年12月31日",
+                "remark": "兼容手工日期",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        bom = Bom.objects.get(bom_no="BOM-DATE-MANUAL")
+        self.assertEqual(bom.effective_date, date(2026, 7, 4))
+        self.assertEqual(bom.expiry_date, date(2026, 12, 31))
 
     def test_bom_edit_updates_draft_header(self):
         self.client.force_login(self.user)

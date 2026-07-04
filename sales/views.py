@@ -18,6 +18,7 @@ from accounts.permissions import PermissionCode, can_view_amount, require_any_er
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch
+from system.date_utils import parse_user_date
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
@@ -1654,11 +1655,15 @@ class SampleLoanItemCreateView(LoginRequiredMixin, View):
             messages.error(request, "只有待审核借样单可以新增明细")
             return redirect("sales:sample_loan_detail", pk=pk)
 
-        material_id = request.POST.get("material")
-        batch_id = request.POST.get("batch") or None
-        location_id = request.POST.get("location") or None
+        material_id = request.POST.get("material") or request.POST.get("items-0-material")
+        batch_id = request.POST.get("batch") or request.POST.get("items-0-batch") or None
+        location_id = request.POST.get("location") or request.POST.get("items-0-location") or None
+        expected_return_date = parse_user_date(
+            request.POST.get("expected_return_date") or request.POST.get("items-0-expected_return_date"),
+            default=loan.expected_return_date,
+        )
         try:
-            loan_qty = Decimal(request.POST.get("loan_qty", ""))
+            loan_qty = Decimal(request.POST.get("loan_qty") or request.POST.get("items-0-loan_qty") or "")
         except (InvalidOperation, TypeError):
             messages.error(request, "借出数量必须正确填写")
             return redirect("sales:sample_loan_detail", pk=pk)
@@ -1687,7 +1692,7 @@ class SampleLoanItemCreateView(LoginRequiredMixin, View):
             line_no=existing_line_no + 1,
             material_id=material_id,
             loan_qty=loan_qty,
-            expected_return_date=request.POST.get("expected_return_date") or loan.expected_return_date,
+            expected_return_date=expected_return_date,
             batch_id=batch_id,
             location_id=location_id,
             line_status=SampleLoanItem.LineStatus.OUT,

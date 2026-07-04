@@ -37,10 +37,10 @@
         </select>
       </label>
       <label class="form-row">开始日期
-        <input type="text" name="period_start" value="{{ today|date:'Y-m-01' }}">
+        <input type="date" name="period_start" value="{{ today|date:'Y-m-01' }}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
       </label>
       <label class="form-row">结束日期
-        <input type="text" name="period_end" value="{{ today|date:'Y-m-d' }}">
+        <input type="date" name="period_end" value="{{ today|date:'Y-m-d' }}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
       </label>
       <label class="form-row">备注
         <input type="text" name="remark">

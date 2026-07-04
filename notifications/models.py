@@ -39,3 +39,6 @@ class SystemMessage(models.Model):
             models.Index(fields=["source_doc_type", "source_doc_id"]),
             models.Index(fields=["remind_at", "status"]),
         ]
+
+    def __str__(self):
+        return f"{self.message_no} - {self.title} - {self.get_status_display()}"

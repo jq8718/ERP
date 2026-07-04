@@ -2,15 +2,17 @@ import tempfile
 import os
 import subprocess
 import sys
-from datetime import timedelta
+from datetime import date, timedelta
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.apps import apps
 from django.core import management
 from django.core.management import CommandError
+from django.db import models
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -37,6 +39,7 @@ from purchase.models import PurchaseOrder, PurchaseRequest
 from sales.models import SalesOrder, SalesOrderItem, ShortageAlert
 from sales.models import SampleLoan, SampleLoanReturn
 from .backup_services import backup_daily, cleanup_backups, restore_drill, verify_backups
+from .date_utils import parse_user_date
 from .management.commands.deployment_runbook import build_deployment_runbook
 from .management.commands.check_templates import check_templates
 from .management.commands.check_route_protection import check_route_protection, collect_unprotected_routes
@@ -53,6 +56,51 @@ from .models import AuditLog, BackgroundJob, Backup, PendingEvent, ReleaseRecord
 from .release_gate_status import get_release_gate_report_status
 from .services import process_pending_events, record_audit_log
 from .views import bad_request_view, server_error_view
+
+
+class SystemDateUtilsTests(TestCase):
+    def test_parse_user_date_normalizes_common_manual_formats(self):
+        cases = {
+            "2026-07-04": date(2026, 7, 4),
+            "2026/7/4": date(2026, 7, 4),
+            "2026.07.04": date(2026, 7, 4),
+            "2026年07月04日": date(2026, 7, 4),
+        }
+
+        for raw_value, expected in cases.items():
+            with self.subTest(raw_value=raw_value):
+                self.assertEqual(parse_user_date(raw_value), expected)
+
+    def test_parse_user_date_uses_default_for_blank_or_invalid_values(self):
+        default = date(2026, 1, 1)
+
+        self.assertEqual(parse_user_date("", default=default), default)
+        self.assertEqual(parse_user_date("2026/2/31", default=default), default)
+
+
+class ModelDisplayTests(TestCase):
+    def test_project_models_define_human_readable_string_display(self):
+        project_app_labels = {
+            "accounts",
+            "approvals",
+            "bom",
+            "files",
+            "finance",
+            "inventory",
+            "masterdata",
+            "notifications",
+            "production",
+            "purchase",
+            "sales",
+            "system",
+        }
+        missing = [
+            model._meta.label
+            for model in apps.get_models()
+            if model._meta.app_label in project_app_labels and model.__str__ is models.Model.__str__
+        ]
+
+        self.assertEqual(missing, [])
 
 
 class SystemDashboardTests(TestCase):

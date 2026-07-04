@@ -31,6 +31,9 @@ class PurchaseRequest(models.Model):
     class Meta:
         db_table = "purchase_requests"
 
+    def __str__(self):
+        return f"{self.purchase_request_no} - {self.get_status_display()}"
+
 
 class PurchaseRequestItem(models.Model):
     class LineStatus(models.TextChoices):
@@ -59,6 +62,9 @@ class PurchaseRequestItem(models.Model):
             models.Index(fields=["source_shortage_alert"]),
         ]
 
+    def __str__(self):
+        return f"{self.purchase_request.purchase_request_no} 第{self.line_no}行 - {self.material}"
+
 
 class PurchaseOrder(models.Model):
     class Status(models.TextChoices):
@@ -86,6 +92,9 @@ class PurchaseOrder(models.Model):
             models.Index(fields=["supplier", "status"]),
             models.Index(fields=["order_date"]),
         ]
+
+    def __str__(self):
+        return f"{self.purchase_order_no} - {self.supplier} - {self.get_status_display()}"
 
 
 class PurchaseOrderItem(models.Model):
@@ -116,6 +125,9 @@ class PurchaseOrderItem(models.Model):
             models.Index(fields=["material"]),
         ]
 
+    def __str__(self):
+        return f"{self.purchase_order.purchase_order_no} 第{self.line_no}行 - {self.material}"
+
 
 class PurchaseReceipt(models.Model):
     class Status(models.TextChoices):
@@ -142,6 +154,9 @@ class PurchaseReceipt(models.Model):
             models.Index(fields=["receipt_date"]),
         ]
 
+    def __str__(self):
+        return f"{self.purchase_receipt_no} - {self.supplier} - {self.get_status_display()}"
+
 
 class PurchaseReceiptItem(models.Model):
     purchase_receipt = models.ForeignKey(PurchaseReceipt, on_delete=models.CASCADE, related_name="items")
@@ -162,6 +177,9 @@ class PurchaseReceiptItem(models.Model):
                 name="uq_purchase_receipt_item",
             ),
         ]
+
+    def __str__(self):
+        return f"{self.purchase_receipt.purchase_receipt_no} - {self.material} - 合格:{self.accepted_qty}"
 
 
 class SupplierReturn(models.Model):
@@ -186,6 +204,9 @@ class SupplierReturn(models.Model):
     class Meta:
         db_table = "supplier_returns"
 
+    def __str__(self):
+        return f"{self.supplier_return_no} - {self.supplier} - {self.get_status_display()}"
+
 
 class SupplierReturnItem(models.Model):
     supplier_return = models.ForeignKey(SupplierReturn, on_delete=models.CASCADE, related_name="items")
@@ -206,3 +227,6 @@ class SupplierReturnItem(models.Model):
                 name="uq_supplier_return_item",
             ),
         ]
+
+    def __str__(self):
+        return f"{self.supplier_return.supplier_return_no} - {self.material} - {self.return_qty}"

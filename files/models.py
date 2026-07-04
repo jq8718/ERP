@@ -52,6 +52,9 @@ class Attachment(models.Model):
             models.Index(fields=["checksum_sha256"]),
         ]
 
+    def __str__(self):
+        return f"{self.attachment_no} - {self.original_filename}"
+
 
 class AttachmentAccessLog(models.Model):
     attachment = models.ForeignKey(Attachment, on_delete=models.CASCADE, related_name="access_logs")
@@ -67,6 +70,9 @@ class AttachmentAccessLog(models.Model):
             models.Index(fields=["attachment", "created_at"]),
             models.Index(fields=["operator", "created_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.attachment.attachment_no} - {self.action} - {self.created_at:%Y-%m-%d %H:%M:%S}"
 
 
 class ImportJob(models.Model):
@@ -97,6 +103,9 @@ class ImportJob(models.Model):
             models.Index(fields=["template_type", "status"]),
             models.Index(fields=["status", "created_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.job_no} - {self.template_type} - {self.get_status_display()}"
 
 
 class InitializationJob(models.Model):
@@ -134,6 +143,9 @@ class InitializationJob(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.job_no} - {self.template_type} - {self.get_status_display()}"
+
 
 class ExportLog(models.Model):
     export_no = models.CharField(max_length=100, unique=True)
@@ -150,6 +162,9 @@ class ExportLog(models.Model):
             models.Index(fields=["module", "created_at"]),
             models.Index(fields=["exported_by", "created_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.export_no} - {self.module} - {self.row_count}行"
 
 
 class PrintLog(models.Model):
@@ -168,3 +183,6 @@ class PrintLog(models.Model):
             models.Index(fields=["source_doc_type", "source_doc_id"]),
             models.Index(fields=["printed_by", "created_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.print_no} - {self.template_type} - {self.source_doc_no}"

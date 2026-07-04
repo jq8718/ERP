@@ -723,6 +723,8 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         supplier = Supplier.objects.get(supplier_no="S-IMP")
         self.assertEqual(supplier.contact_name, "李四")
+        self.assertEqual(supplier.supplier_type, "原料")
+        self.assertEqual(supplier.payment_method, "月结")
         self.assertEqual(supplier.created_by, self.user)
         job = ImportJob.objects.get(template_type="suppliers")
         self.assertEqual(job.status, ImportJob.JobStatus.SUCCESS)
@@ -735,7 +737,7 @@ class MasterdataViewTests(TestCase):
             "suppliers.csv",
             (
                 "供应商编号,供应商名称,联系人,联系电话,供应商类型,付款方式,状态,备注\n"
-                "S-DUP,重复供应商,李四,13900000000,原料,月结,bad_status,备注\n"
+                "S-DUP,重复供应商,李四,13900000000,乱填类型,乱填付款,bad_status,备注\n"
             ).encode("utf-8"),
             content_type="text/csv",
         )
@@ -745,6 +747,8 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "供应商编号已存在")
         self.assertContains(response, "状态不合法")
+        self.assertContains(response, "供应商类型不合法")
+        self.assertContains(response, "付款方式不合法")
         job = ImportJob.objects.get(template_type="suppliers")
         self.assertEqual(job.status, ImportJob.JobStatus.FAILED)
 
@@ -1389,6 +1393,21 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(supplier.contact_phone_encrypted, "")
         detail_response = self.client.get(f"/masterdata/suppliers/{supplier.id}/")
         self.assertContains(detail_response, "测试供应商")
+
+    def test_supplier_type_and_payment_method_use_select_options(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get("/masterdata/suppliers/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'select name="supplier_type"')
+        self.assertContains(response, '<option value="原料">原料</option>', html=True)
+        self.assertContains(response, '<option value="外协加工">外协加工</option>', html=True)
+        self.assertContains(response, '<option value="运输">运输</option>', html=True)
+        self.assertContains(response, 'select name="payment_method"')
+        self.assertContains(response, '<option value="转账">转账</option>', html=True)
+        self.assertContains(response, '<option value="月结30天">月结30天</option>', html=True)
+        self.assertContains(response, '<option value="货到付款">货到付款</option>', html=True)
 
     def test_supplier_edit_without_personal_info_permission_preserves_contact(self):
         supplier = Supplier.objects.create(

@@ -70,3 +70,6 @@ class BomItem(models.Model):
         indexes = [
             models.Index(fields=["component_material"]),
         ]
+
+    def __str__(self):
+        return f"{self.bom.bom_no} 第{self.line_no}行 - {self.component_material}"

@@ -12,7 +12,7 @@ from files.models import ImportJob
 from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from system.services import ServiceResult, next_document_no
 
-from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, SettlementMethod, Supplier
+from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, SettlementMethod, Supplier, SupplierPaymentMethod, SupplierType
 
 
 MATERIAL_IMPORT_COLUMNS = (
@@ -405,6 +405,8 @@ def _validate_supplier_rows(rows: list[dict[str, str]]) -> list[dict]:
     seen_nos = set()
     existing_nos = set(Supplier.objects.filter(supplier_no__in=[_clean(row.get("supplier_no")) for row in rows]).values_list("supplier_no", flat=True))
     valid_statuses = set(Supplier.SupplierStatus.values)
+    valid_supplier_types = set(SupplierType.values)
+    valid_payment_methods = set(SupplierPaymentMethod.values)
 
     for row_no, row in enumerate(rows, start=2):
         for field in ("supplier_no", "supplier_name"):
@@ -422,6 +424,26 @@ def _validate_supplier_rows(rows: list[dict[str, str]]) -> list[dict]:
         status = _clean(row.get("status")) or Supplier.SupplierStatus.ACTIVE
         if status not in valid_statuses:
             errors.append({"row": row_no, "field": "status", "message": "状态不合法"})
+
+        supplier_type = _clean(row.get("supplier_type"))
+        if supplier_type and supplier_type not in valid_supplier_types:
+            errors.append(
+                {
+                    "row": row_no,
+                    "field": "supplier_type",
+                    "message": f"供应商类型不合法，请填写：{', '.join(SupplierType.values)}",
+                }
+            )
+
+        payment_method = _clean(row.get("payment_method"))
+        if payment_method and payment_method not in valid_payment_methods:
+            errors.append(
+                {
+                    "row": row_no,
+                    "field": "payment_method",
+                    "message": f"付款方式不合法，请填写：{', '.join(SupplierPaymentMethod.values)}",
+                }
+            )
 
     return errors
 

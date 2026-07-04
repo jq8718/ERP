@@ -13,6 +13,9 @@ class DocumentSequence(models.Model):
             models.UniqueConstraint(fields=["prefix", "sequence_date"], name="uq_document_sequence_prefix_date"),
         ]
 
+    def __str__(self):
+        return f"{self.prefix} - {self.sequence_date} - {self.current_value}"
+
 
 class PendingEvent(models.Model):
     class EventStatus(models.TextChoices):
@@ -37,6 +40,9 @@ class PendingEvent(models.Model):
         indexes = [
             models.Index(fields=["status", "event_type", "next_retry_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.event_type} - {self.idempotency_key} - {self.get_status_display()}"
 
 
 class BackgroundJob(models.Model):
@@ -66,6 +72,9 @@ class BackgroundJob(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.job_no} - {self.job_type} - {self.get_status_display()}"
+
 
 class SystemSetting(models.Model):
     setting_key = models.CharField(max_length=120, unique=True)
@@ -76,6 +85,9 @@ class SystemSetting(models.Model):
 
     class Meta:
         db_table = "system_settings"
+
+    def __str__(self):
+        return self.setting_key
 
 
 class SavedFilter(models.Model):
@@ -90,6 +102,9 @@ class SavedFilter(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["user", "module", "filter_name"], name="uq_saved_filter_name"),
         ]
+
+    def __str__(self):
+        return f"{self.user} - {self.module} - {self.filter_name}"
 
 
 class AuditLog(models.Model):
@@ -113,6 +128,9 @@ class AuditLog(models.Model):
             models.Index(fields=["action", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.log_no} - {self.action} - {self.source_doc_no}"
+
 
 class Backup(models.Model):
     class BackupStatus(models.TextChoices):
@@ -131,6 +149,9 @@ class Backup(models.Model):
     class Meta:
         db_table = "backups"
 
+    def __str__(self):
+        return f"{self.backup_no} - {self.backup_type} - {self.get_status_display()}"
+
 
 class ReleaseRecord(models.Model):
     version_no = models.CharField(max_length=80, unique=True)
@@ -140,3 +161,6 @@ class ReleaseRecord(models.Model):
 
     class Meta:
         db_table = "release_records"
+
+    def __str__(self):
+        return f"{self.version_no} - {self.released_at:%Y-%m-%d %H:%M:%S}"

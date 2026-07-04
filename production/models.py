@@ -53,6 +53,9 @@ class ProductionOrder(models.Model):
             models.Index(fields=["status", "created_at"]),
         ]
 
+    def __str__(self):
+        return f"{self.production_order_no} - {self.finished_material} - {self.get_status_display()}"
+
 
 class ProductionMaterialRequisition(models.Model):
     class Status(models.TextChoices):
@@ -80,6 +83,9 @@ class ProductionMaterialRequisition(models.Model):
             models.Index(fields=["requisition_date"]),
         ]
 
+    def __str__(self):
+        return f"{self.requisition_no} - {self.production_order.production_order_no} - {self.get_status_display()}"
+
 
 class ProductionMaterialRequisitionItem(models.Model):
     requisition = models.ForeignKey(ProductionMaterialRequisition, on_delete=models.CASCADE, related_name="items")
@@ -101,6 +107,9 @@ class ProductionMaterialRequisitionItem(models.Model):
             models.Index(fields=["production_order", "material"]),
             models.Index(fields=["batch", "location"]),
         ]
+
+    def __str__(self):
+        return f"{self.requisition.requisition_no} 第{self.line_no}行 - {self.material}"
 
 
 class ProductionReceipt(models.Model):
@@ -124,6 +133,9 @@ class ProductionReceipt(models.Model):
             models.Index(fields=["production_order", "status"]),
             models.Index(fields=["receipt_date"]),
         ]
+
+    def __str__(self):
+        return f"{self.production_receipt_no} - {self.production_order.production_order_no} - {self.get_status_display()}"
 
 
 class ProductionReceiptItem(models.Model):
@@ -155,3 +167,6 @@ class ProductionReceiptItem(models.Model):
             models.Index(fields=["production_order", "finished_material"]),
             models.Index(fields=["batch"]),
         ]
+
+    def __str__(self):
+        return f"{self.production_receipt.production_receipt_no} 第{self.line_no}行 - {self.finished_material}"
