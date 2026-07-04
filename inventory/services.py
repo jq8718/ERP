@@ -192,7 +192,7 @@ def confirm_stock_count_adjustment(
             items = list(
                 StockCountItem.objects.select_for_update()
                 .filter(stock_count=stock_count)
-                .select_related("material", "batch", "location")
+                .select_related("material", "location")
                 .order_by("material_id", "location_id", "batch_id")
             )
             if not items:

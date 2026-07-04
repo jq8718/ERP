@@ -77,7 +77,9 @@ def confirm_sales_order(
 
             _enqueue_sales_events(sales_order, line_results)
     except UnitConversionMissing as exc:
-        return ServiceResult(False, "BOM_UNIT_CONVERSION_MISSING", str(exc))
+        return ServiceResult(False, "BOM_UNIT_CONVERSION_MISSING", f"BOM 单位换算缺失：{exc}")
+    except ValueError as exc:
+        return ServiceResult(False, "BOM_CALC_INVALID", str(exc))
 
     return ServiceResult(
         True,
@@ -102,7 +104,9 @@ def recheck_sales_order_inventory(
             items = list(
                 SalesOrderItem.objects.select_for_update()
                 .filter(id__in=sales_order_item_ids)
-                .select_related("sales_order", "finished_material", "locked_bom")
+                # locked_bom is nullable. Joining it in a SELECT ... FOR UPDATE query
+                # breaks on PostgreSQL when pending-BOM rows have no locked BOM yet.
+                .select_related("sales_order", "finished_material")
                 .order_by("id")
             )
             if not items:
@@ -126,7 +130,9 @@ def recheck_sales_order_inventory(
                         {"sales_order_item_id": result["item_id"], "trigger": trigger},
                     )
     except UnitConversionMissing as exc:
-        return ServiceResult(False, "BOM_UNIT_CONVERSION_MISSING", str(exc))
+        return ServiceResult(False, "BOM_UNIT_CONVERSION_MISSING", f"BOM 单位换算缺失：{exc}")
+    except ValueError as exc:
+        return ServiceResult(False, "BOM_CALC_INVALID", str(exc))
 
     return ServiceResult(
         True,
@@ -275,7 +281,7 @@ def confirm_sample_loan_out(
             items = list(
                 SampleLoanItem.objects.select_for_update()
                 .filter(sample_loan=sample_loan)
-                .select_related("material", "batch", "location")
+                .select_related("material")
                 .order_by("material_id", "location_id", "batch_id")
             )
             if not items:
@@ -486,7 +492,7 @@ def confirm_customer_return_receipt(
 
             customer_return = (
                 CustomerReturn.objects.select_for_update()
-                .select_related("customer", "sales_order")
+                .select_related("customer")
                 .get(id=customer_return_id)
             )
             if customer_return.status != CustomerReturn.Status.CONFIRMED:
@@ -495,7 +501,7 @@ def confirm_customer_return_receipt(
             items = list(
                 CustomerReturnItem.objects.select_for_update()
                 .filter(customer_return=customer_return)
-                .select_related("material", "location", "sales_order_item")
+                .select_related("material")
                 .order_by("material_id", "location_id", "id")
             )
             if not items:

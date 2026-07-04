@@ -218,7 +218,7 @@ def confirm_supplier_return_shipment(
 
             supplier_return = (
                 SupplierReturn.objects.select_for_update()
-                .select_related("supplier", "purchase_receipt")
+                .select_related("supplier")
                 .get(id=supplier_return_id)
             )
             if supplier_return.status != SupplierReturn.Status.CONFIRMED:
@@ -227,7 +227,7 @@ def confirm_supplier_return_shipment(
             items = list(
                 SupplierReturnItem.objects.select_for_update()
                 .filter(supplier_return=supplier_return)
-                .select_related("material", "batch", "location", "purchase_receipt_item")
+                .select_related("material")
                 .order_by("material_id", "location_id", "batch_id")
             )
             if not items:

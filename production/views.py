@@ -668,7 +668,7 @@ class ProductionMaterialRequisitionUpdateView(LoginRequiredMixin, View):
         with transaction.atomic():
             requisition = (
                 ProductionMaterialRequisition.objects.select_for_update()
-                .select_related("production_order", "created_by")
+                .select_related("production_order")
                 .prefetch_related("items__material", "items__batch", "items__location")
                 .get(pk=pk)
             )
@@ -922,7 +922,7 @@ class ProductionReceiptUpdateView(LoginRequiredMixin, View):
         with transaction.atomic():
             receipt = (
                 ProductionReceipt.objects.select_for_update()
-                .select_related("production_order", "created_by")
+                .select_related("production_order")
                 .prefetch_related("items__finished_material", "items__location", "items__batch")
                 .get(pk=pk)
             )

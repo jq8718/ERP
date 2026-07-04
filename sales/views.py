@@ -581,7 +581,7 @@ class SalesOrderCreateShipmentView(LoginRequiredMixin, View):
             with transaction.atomic():
                 order = (
                     SalesOrder.objects.select_for_update()
-                    .select_related("customer", "customer_address")
+                    .select_related("customer")
                     .prefetch_related("items__finished_material")
                     .get(pk=pk)
                 )
@@ -905,9 +905,10 @@ class SalesShipmentUpdateView(LoginRequiredMixin, View):
         return redirect("sales:sales_shipment_detail", pk=shipment.pk)
 
     def _get_shipment(self, request, pk, for_update=False):
+        select_related = ("sales_order", "customer") if for_update else ("sales_order", "customer", "created_by")
         queryset = (
             _filter_sales_shipment_queryset_for_user(SalesShipment.objects.all(), request.user)
-            .select_related("sales_order", "customer", "created_by")
+            .select_related(*select_related)
             .prefetch_related("items__sales_order_item", "items__material", "items__batch", "items__location")
         )
         if for_update:
@@ -1341,9 +1342,10 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
         return redirect("sales:customer_return_detail", pk=customer_return.pk)
 
     def _get_customer_return(self, request, pk, for_update=False):
+        select_related = ("customer",) if for_update else ("customer", "sales_order")
         queryset = (
             _filter_customer_return_queryset_for_user(CustomerReturn.objects.all(), request.user)
-            .select_related("customer", "sales_order")
+            .select_related(*select_related)
             .prefetch_related("items__sales_order_item", "items__material", "items__location")
         )
         if for_update:

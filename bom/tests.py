@@ -125,6 +125,27 @@ class BomViewTests(TestCase):
         self.assertContains(detail_response, "BOM001")
         self.assertContains(detail_response, self.finished.material_code)
 
+    def test_bom_create_rejects_non_positive_base_qty(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+
+        response = self.client.post(
+            "/bom/new/",
+            {
+                "bom_no": "BOM-ZERO",
+                "finished_material": self.finished.id,
+                "bom_version": "V1",
+                "base_qty": "0",
+                "effective_date": "",
+                "expiry_date": "",
+                "remark": "错误基准数量",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "BOM 基准数量必须大于 0")
+        self.assertFalse(Bom.objects.filter(bom_no="BOM-ZERO").exists())
+
     def test_bom_date_fields_use_calendar_inputs(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.BOM_PROCESS)
@@ -286,6 +307,31 @@ class BomViewTests(TestCase):
         bom.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/bom/{bom.id}/")
+        self.assertEqual(bom.status, Bom.BomStatus.DRAFT)
+
+    def test_bom_enable_rejects_invalid_base_qty(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+        bom = Bom.objects.create(
+            bom_no="BOM-BAD-BASE",
+            finished_material=self.finished,
+            bom_version="V1",
+            base_qty="0",
+            status=Bom.BomStatus.DRAFT,
+            created_by=self.user,
+        )
+        BomItem.objects.create(
+            bom=bom,
+            line_no=1,
+            component_material=self.raw,
+            usage_qty="1",
+            usage_unit="pcs",
+        )
+
+        response = self.client.post(f"/bom/{bom.id}/enable/", {"current_password": "x", "reason": "启用测试"})
+
+        bom.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(bom.status, Bom.BomStatus.DRAFT)
 
     def test_bom_enable_and_disable_actions(self):

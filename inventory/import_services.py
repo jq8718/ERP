@@ -164,7 +164,6 @@ def cancel_initial_inventory_import(job_id: int, operator_id: int | None = None)
 
             transactions = list(
                 InventoryTransaction.objects.select_for_update()
-                .select_related("batch")
                 .filter(
                     transaction_type=InventoryTransaction.TransactionType.INITIAL_STOCK,
                     source_doc_type="initial_inventory_import",

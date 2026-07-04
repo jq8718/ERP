@@ -4,8 +4,9 @@ from tempfile import TemporaryDirectory
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TestCase
-from django.test.utils import override_settings
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.utils import timezone
 
 from accounts.models import Permission, Role
@@ -1547,10 +1548,21 @@ class SalesOrderViewTests(SalesServiceTests):
         self.bom.enabled_at = timezone.now()
         self.bom.save(update_fields=["status", "enabled_at"])
         self._batch(self.raw, Decimal("5"))
-        response = self.client.post(f"/sales/orders/{order.id}/recheck-shortage/")
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.post(f"/sales/orders/{order.id}/recheck-shortage/")
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/sales/orders/{order.id}/")
+        sales_item_queries = [
+            query["sql"]
+            for query in queries.captured_queries
+            if 'FROM "sales_order_items"' in query["sql"]
+        ]
+        self.assertTrue(sales_item_queries)
+        self.assertFalse(
+            any('JOIN "boms"' in query for query in sales_item_queries),
+            "待 BOM 重检的行锁查询不能 join 可空 locked_bom，否则 PostgreSQL 会拒绝 FOR UPDATE",
+        )
         order.refresh_from_db()
         item.refresh_from_db()
         self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
@@ -1561,6 +1573,28 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(alert.shortage_qty, Decimal("15.0000"))
         audit_log = AuditLog.objects.get(action="sales_order_recheck_shortage", source_doc_id=order.id)
         self.assertEqual(audit_log.source_doc_no, order.sales_order_no)
+
+    def test_pending_bom_recheck_handles_invalid_bom_without_server_error(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.bom.status = Bom.BomStatus.DRAFT
+        self.bom.enabled_at = None
+        self.bom.save(update_fields=["status", "enabled_at"])
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+
+        self.bom.status = Bom.BomStatus.ENABLED
+        self.bom.base_qty = Decimal("0")
+        self.bom.enabled_at = timezone.now()
+        self.bom.save(update_fields=["status", "base_qty", "enabled_at"])
+        response = self.client.post(f"/sales/orders/{order.id}/recheck-shortage/", follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "BOM 基准数量必须大于 0")
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.PENDING_BOM)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.PENDING_BOM)
 
     def test_recheck_shortage_button_hidden_without_sales_process_permission(self):
         self.bom.status = Bom.BomStatus.DRAFT

@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.validators import MinValueValidator
 from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.shortcuts import redirect, render
@@ -503,6 +504,9 @@ def _can_process_bom(user) -> bool:
 def _prepare_bom_header_form(form):
     set_form_labels(form)
     form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
+    form.fields["base_qty"].validators.append(MinValueValidator(Decimal("0.0001"), message="BOM 基准数量必须大于 0"))
+    form.fields["base_qty"].error_messages["min_value"] = "BOM 基准数量必须大于 0"
+    form.fields["base_qty"].help_text = "例如：1 表示下面明细用量按生产 1 个成品计算。"
     return form
 
 

@@ -21,6 +21,8 @@ def enable_bom(bom_id: int, operator_id: int, make_default: bool = True) -> Serv
                 return ServiceResult(False, "STATE_ALREADY_PROCESSED", "BOM 已经启用")
             if bom.status == Bom.BomStatus.VOIDED:
                 return ServiceResult(False, "STATE_INVALID_TRANSITION", "已作废 BOM 不能启用")
+            if bom.base_qty is None or bom.base_qty <= 0:
+                return ServiceResult(False, "BOM_BASE_QTY_INVALID", "BOM 基准数量必须大于 0")
             if not bom.items.exists():
                 return ServiceResult(False, "DOC_NOT_FOUND", "BOM 启用前必须至少有一条明细")
 
@@ -85,9 +87,13 @@ def disable_bom(bom_id: int, operator_id: int) -> ServiceResult:
 
 def required_component_qty_base(bom_item: BomItem, production_qty: Decimal) -> Decimal:
     material = bom_item.component_material
-    base_qty = bom_item.bom.base_qty or Decimal("1")
+    base_qty = bom_item.bom.base_qty if bom_item.bom.base_qty is not None else Decimal("1")
     if base_qty <= 0:
         raise ValueError("BOM 基准数量必须大于 0")
+    if bom_item.usage_qty <= 0:
+        raise ValueError(f"{material.material_code} 的 BOM 用量必须大于 0")
+    if bom_item.loss_rate < 0:
+        raise ValueError(f"{material.material_code} 的 BOM 损耗率不能小于 0")
     required_in_bom_unit = (bom_item.usage_qty / base_qty) * production_qty * (Decimal("1") + bom_item.loss_rate)
     required_in_base_unit = convert_qty(required_in_bom_unit, material, bom_item.usage_unit, material.base_unit)
     return round_qty(required_in_base_unit, material.qty_precision)

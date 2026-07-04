@@ -1476,8 +1476,9 @@ class SupplierReturnUpdateView(LoginRequiredMixin, View):
         return redirect("purchase:supplier_return_detail", pk=supplier_return.pk)
 
     def _get_supplier_return(self, request, pk, for_update=False):
+        select_related = ("supplier",) if for_update else ("supplier", "purchase_receipt", "created_by")
         queryset = (
-            SupplierReturn.objects.select_related("supplier", "purchase_receipt", "created_by")
+            SupplierReturn.objects.select_related(*select_related)
             .prefetch_related("items__material", "items__batch", "items__location", "items__purchase_receipt_item")
         )
         if for_update:
