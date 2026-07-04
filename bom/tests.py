@@ -195,6 +195,27 @@ class BomViewTests(TestCase):
         self.assertEqual(bom.effective_date, date(2026, 7, 4))
         self.assertEqual(bom.expiry_date, date(2026, 12, 31))
 
+    def test_bom_create_rejects_expiry_before_effective_date(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+
+        response = self.client.post(
+            "/bom/new/",
+            {
+                "bom_no": "BOM-DATE-RANGE",
+                "finished_material": self.finished.id,
+                "bom_version": "V1",
+                "base_qty": "1",
+                "effective_date": "2026-07-05",
+                "expiry_date": "2026-07-04",
+                "remark": "日期倒挂",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "失效日期不能早于生效日期")
+        self.assertFalse(Bom.objects.filter(bom_no="BOM-DATE-RANGE").exists())
+
     def test_bom_edit_updates_draft_header(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.BOM_PROCESS)

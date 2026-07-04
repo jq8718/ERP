@@ -1510,14 +1510,15 @@ class FinanceServiceTests(TestCase):
             allocated_amount=Decimal("30.00"),
             allocation_type=CustomerReceiptAllocation.AllocationType.SALES_ORDER,
         )
+        period_text = timezone.localdate().strftime("%Y年%m月%d日")
 
         create_response = self.client.post(
             "/finance/reconciliations/new/",
             {
                 "party_type": Reconciliation.PartyType.CUSTOMER,
                 "customer": self.customer.id,
-                "period_start": "2026年07月04日",
-                "period_end": "2026年07月04日",
+                "period_start": period_text,
+                "period_end": period_text,
                 "remark": "本月客户对账",
             },
         )

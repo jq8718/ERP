@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django import forms
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.validators import MinValueValidator
@@ -27,6 +28,30 @@ EDITABLE_BOM_STATUSES = {
     Bom.BomStatus.PENDING_APPROVAL,
     Bom.BomStatus.REJECTED,
 }
+
+
+class BomForm(forms.ModelForm):
+    class Meta:
+        model = Bom
+        fields = [
+            "bom_no",
+            "finished_material",
+            "bom_version",
+            "base_qty",
+            "effective_date",
+            "expiry_date",
+            "remark",
+        ]
+        widgets = {"remark": forms.Textarea(attrs={"rows": 3})}
+
+    def clean(self):
+        cleaned = super().clean()
+        effective_date = cleaned.get("effective_date")
+        expiry_date = cleaned.get("expiry_date")
+        if effective_date and expiry_date and expiry_date < effective_date:
+            self.add_error("expiry_date", "失效日期不能早于生效日期")
+        return cleaned
+
 
 class BomListView(ErpListView):
     model = Bom
@@ -81,15 +106,7 @@ class BomExportView(LoginRequiredMixin, View):
 class BomCreateView(LoginRequiredMixin, CreateView):
     model = Bom
     template_name = "bom/bom_form.html"
-    fields = [
-        "bom_no",
-        "finished_material",
-        "bom_version",
-        "base_qty",
-        "effective_date",
-        "expiry_date",
-        "remark",
-    ]
+    form_class = BomForm
 
     def dispatch(self, request, *args, **kwargs):
         require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
@@ -129,15 +146,7 @@ class BomCreateView(LoginRequiredMixin, CreateView):
 class BomUpdateView(LoginRequiredMixin, UpdateView):
     model = Bom
     template_name = "bom/bom_form.html"
-    fields = [
-        "bom_no",
-        "finished_material",
-        "bom_version",
-        "base_qty",
-        "effective_date",
-        "expiry_date",
-        "remark",
-    ]
+    form_class = BomForm
 
     def dispatch(self, request, *args, **kwargs):
         require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
@@ -503,7 +512,10 @@ def _can_process_bom(user) -> bool:
 
 def _prepare_bom_header_form(form):
     set_form_labels(form)
-    form.fields["finished_material"].queryset = Material.objects.filter(material_type=Material.MaterialType.FINISHED).order_by("material_code")
+    form.fields["finished_material"].queryset = Material.objects.filter(
+        material_type=Material.MaterialType.FINISHED,
+        status=Material.MaterialStatus.ACTIVE,
+    ).order_by("material_code")
     form.fields["base_qty"].validators.append(MinValueValidator(Decimal("0.0001"), message="BOM 基准数量必须大于 0"))
     form.fields["base_qty"].error_messages["min_value"] = "BOM 基准数量必须大于 0"
     form.fields["base_qty"].help_text = "例如：1 表示下面明细用量按生产 1 个成品计算。"

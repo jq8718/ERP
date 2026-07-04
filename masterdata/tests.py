@@ -137,6 +137,31 @@ class MasterdataViewTests(TestCase):
         detail_response = self.client.get(f"/masterdata/materials/{material.id}/")
         self.assertContains(detail_response, "RM001")
 
+    def test_material_create_rejects_negative_stock_and_purchase_price(self):
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            "/masterdata/materials/new/",
+            {
+                "material_code": "RM-NEGATIVE",
+                "material_name": "负数物料",
+                "material_type": Material.MaterialType.RAW,
+                "spec": "",
+                "base_unit": "pcs",
+                "qty_precision": "0",
+                "min_stock_qty": "-1",
+                "latest_purchase_price": "-0.01",
+                "status": Material.MaterialStatus.ACTIVE,
+                "remark": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "最低库存不能小于 0")
+        self.assertContains(response, "最近采购价不能小于 0")
+        self.assertFalse(Material.objects.filter(material_code="RM-NEGATIVE").exists())
+
     def test_material_form_uses_compact_record_layout(self):
         self.client.force_login(self.user)
 
@@ -1196,6 +1221,29 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(product.packaging_requirements, "塑料包装")
         self.assertEqual(product.created_by, self.user)
 
+    def test_customer_product_create_rejects_missing_finished_material_and_negative_price(self):
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        customer = Customer.objects.create(customer_no="C-CP-INVALID", customer_name="客户", sales_owner=self.user)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/masterdata/customers/{customer.id}/products/new/",
+            {
+                "customer_product_no": "CP-INVALID",
+                "customer_product_name": "页面客户产品",
+                "finished_material": "",
+                "default_sale_price": "-1",
+                "label_requirements": "无要求",
+                "packaging_requirements": "塑料包装",
+                "status": CustomerProduct.ProductStatus.ACTIVE,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "生产成品不能为空")
+        self.assertContains(response, "默认销售价不能小于 0")
+        self.assertFalse(CustomerProduct.objects.filter(customer=customer, customer_product_no="CP-INVALID").exists())
+
     def test_customer_product_edit_updates_product_and_preserves_price_without_permission(self):
         customer = Customer.objects.create(customer_no="C-CP-EDIT", customer_name="客户", sales_owner=self.user)
         material = Material.objects.create(
@@ -1599,6 +1647,30 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(conversion.version, 2)
         self.assertEqual(conversion.updated_by, self.user)
 
+    def test_material_unit_conversion_page_rejects_invalid_ratio_and_same_unit(self):
+        material = Material.objects.create(
+            material_code="RM-CONV-INVALID",
+            material_name="原料",
+            material_type=Material.MaterialType.RAW,
+            base_unit="kg",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/masterdata/materials/{material.id}/unit-conversions/new/",
+            {
+                "source_unit": "kg",
+                "target_unit": "kg",
+                "ratio": "0",
+                "status": MaterialUnitConversion.ConversionStatus.ACTIVE,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "源单位和目标单位不能相同")
+        self.assertContains(response, "换算比例必须大于 0")
+        self.assertFalse(material.unit_conversions.exists())
+
     def test_material_supplier_price_create_view_requires_finance_permission(self):
         material = Material.objects.create(
             material_code="RM-PRICE",
@@ -1634,6 +1706,34 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(price.purchase_price, Decimal("9.876543"))
         self.assertTrue(price.is_default)
         self.assertEqual(price.created_by, self.user)
+
+    def test_material_supplier_price_page_rejects_negative_price_and_date_range(self):
+        material = Material.objects.create(
+            material_code="RM-PRICE-INVALID",
+            material_name="原料",
+            material_type=Material.MaterialType.RAW,
+            base_unit="kg",
+        )
+        supplier = Supplier.objects.create(supplier_no="S-PRICE-INVALID", supplier_name="供应商")
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/masterdata/materials/{material.id}/supplier-prices/new/",
+            {
+                "supplier": supplier.id,
+                "purchase_price": "-0.01",
+                "currency": "CNY",
+                "effective_from": "2026-07-05",
+                "effective_to": "2026-07-04",
+                "status": MaterialSupplierPrice.PriceStatus.ACTIVE,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "采购价格不能小于 0")
+        self.assertContains(response, "失效日期不能早于生效日期")
+        self.assertFalse(MaterialSupplierPrice.objects.filter(material=material, supplier=supplier).exists())
 
     def test_material_supplier_price_edit_requires_permission_and_switches_default(self):
         material = Material.objects.create(

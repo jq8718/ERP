@@ -20,7 +20,7 @@ from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason
 
-from .forms import CustomerProductForm
+from .forms import CustomerProductForm, MaterialForm, MaterialSupplierPriceForm, MaterialUnitConversionForm
 from .import_services import (
     CUSTOMER_IMPORT_TEMPLATE_ROWS,
     CUSTOMER_ADDRESS_IMPORT_TEMPLATE_ROWS,
@@ -292,18 +292,7 @@ class MaterialSupplierPriceImportView(CsvImportView):
 class MaterialCreateView(LoginRequiredMixin, CreateView):
     model = Material
     template_name = "masterdata/material_form.html"
-    fields = [
-        "material_code",
-        "material_name",
-        "material_type",
-        "spec",
-        "base_unit",
-        "qty_precision",
-        "min_stock_qty",
-        "latest_purchase_price",
-        "status",
-        "remark",
-    ]
+    form_class = MaterialForm
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -330,7 +319,7 @@ class MaterialCreateView(LoginRequiredMixin, CreateView):
 class MaterialUpdateView(LoginRequiredMixin, UpdateView):
     model = Material
     template_name = "masterdata/material_form.html"
-    fields = MaterialCreateView.fields
+    form_class = MaterialForm
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -393,7 +382,7 @@ class MaterialDetailView(LoginRequiredMixin, DetailView):
 class MaterialUnitConversionCreateView(LoginRequiredMixin, CreateView):
     model = MaterialUnitConversion
     template_name = "masterdata/material_unit_conversion_form.html"
-    fields = ["source_unit", "target_unit", "ratio", "status"]
+    form_class = MaterialUnitConversionForm
 
     def dispatch(self, request, *args, **kwargs):
         self.material = Material.objects.get(pk=kwargs["material_pk"])
@@ -424,7 +413,7 @@ class MaterialUnitConversionCreateView(LoginRequiredMixin, CreateView):
 class MaterialUnitConversionUpdateView(LoginRequiredMixin, UpdateView):
     model = MaterialUnitConversion
     template_name = "masterdata/material_unit_conversion_form.html"
-    fields = MaterialUnitConversionCreateView.fields
+    form_class = MaterialUnitConversionForm
 
     def get_queryset(self):
         return super().get_queryset().select_related("material")
@@ -470,7 +459,7 @@ class MaterialUnitConversionUpdateView(LoginRequiredMixin, UpdateView):
 class MaterialSupplierPriceCreateView(LoginRequiredMixin, CreateView):
     model = MaterialSupplierPrice
     template_name = "masterdata/material_supplier_price_form.html"
-    fields = ["supplier", "purchase_price", "currency", "effective_from", "effective_to", "is_default", "status"]
+    form_class = MaterialSupplierPriceForm
 
     def dispatch(self, request, *args, **kwargs):
         if not can_view_amount(request.user):
@@ -505,7 +494,7 @@ class MaterialSupplierPriceCreateView(LoginRequiredMixin, CreateView):
 class MaterialSupplierPriceUpdateView(LoginRequiredMixin, UpdateView):
     model = MaterialSupplierPrice
     template_name = "masterdata/material_supplier_price_form.html"
-    fields = MaterialSupplierPriceCreateView.fields
+    form_class = MaterialSupplierPriceForm
 
     def dispatch(self, request, *args, **kwargs):
         if not can_view_amount(request.user):
