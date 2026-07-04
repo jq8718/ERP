@@ -49,7 +49,28 @@
 <section class="panel">
   <h2>筛选条件</h2>
   <div style="padding: 14px;">
-    <pre style="margin: 0; white-space: pre-wrap;">{{ export_log.filter_json }}</pre>
+    {% if filter_entries %}
+      <div class="table-wrap" style="border: 0; border-radius: 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>条件</th>
+              <th>内容</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in filter_entries %}
+              <tr>
+                <td>{{ entry.label }}</td>
+                <td>{{ entry.value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">无筛选条件</div>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

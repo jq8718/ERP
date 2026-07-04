@@ -46,6 +46,16 @@
     <div class="detail-label">BOM</div>
     <div class="detail-value">{{ production_order.locked_bom.bom_no }} {{ production_order.locked_bom_version }}</div>
   </div>
+  {% if production_order.sales_order_item %}
+    <div class="detail-cell">
+      <div class="detail-label">来源销售订单</div>
+      <div class="detail-value">
+        <a href="{% url 'sales:sales_order_detail' production_order.sales_order_item.sales_order.pk %}">
+          {{ production_order.sales_order_item.sales_order.sales_order_no }}
+        </a>
+      </div>
+    </div>
+  {% endif %}
   <div class="detail-cell">
     <div class="detail-label">创建人</div>
     <div class="detail-value">{{ production_order.created_by|default:"" }}</div>

@@ -87,7 +87,13 @@
             <td>{{ item.suggested_supplier|default:"" }}</td>
             <td>{{ item.needed_date|default:"" }}</td>
             <td>{{ item.source_shortage_alert.shortage_no|default:"" }}</td>
-            <td>{{ item.source_sales_order_item.sales_order.sales_order_no|default:"" }}</td>
+            <td>
+              {% if item.source_sales_order_item %}
+                <a href="{% url 'sales:sales_order_detail' item.source_sales_order_item.sales_order.pk %}">
+                  {{ item.source_sales_order_item.sales_order.sales_order_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{{ item.get_line_status_display }}</td>
           </tr>
         {% empty %}

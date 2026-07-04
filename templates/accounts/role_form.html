@@ -16,10 +16,18 @@
     {% endif %}
     <div class="form-grid">
       {% for field in form %}
-        <label class="form-row">{{ field.label }}
+        {% if field.name == "permissions" or field.name == "remark" %}
+        <div class="form-row full{% if field.name == 'permissions' %} checkbox-list{% endif %}">
+          <div>{{ field.label }}</div>
+          {% if field.name == "permissions" %}<div class="checkbox-options">{{ field }}</div>{% else %}{{ field }}{% endif %}
+          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+        </div>
+        {% else %}
+        <label class="form-row{% if field.name == 'status' %} short{% endif %}">{{ field.label }}
           {{ field }}
           {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
         </label>
+        {% endif %}
       {% endfor %}
     </div>
     <div class="form-actions">

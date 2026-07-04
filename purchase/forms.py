@@ -132,7 +132,7 @@ PurchaseRequestItemFormSet = inlineformset_factory(
     form=PurchaseRequestItemForm,
     formset=BasePurchaseRequestItemFormSet,
     fields=["material", "request_qty", "suggested_supplier", "needed_date"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 
@@ -268,7 +268,7 @@ PurchaseOrderItemFormSet = inlineformset_factory(
     form=PurchaseOrderItemForm,
     formset=BasePurchaseOrderItemFormSet,
     fields=["material", "order_qty", "unit_price", "needed_date"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 
@@ -602,7 +602,7 @@ SupplierReturnItemFormSet = inlineformset_factory(
     form=SupplierReturnItemForm,
     formset=BaseSupplierReturnItemFormSet,
     fields=["purchase_receipt_item", "material", "return_qty", "unit_price", "batch", "location", "return_reason"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 

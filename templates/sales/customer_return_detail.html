@@ -5,6 +5,9 @@
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'sales:customer_return_list' %}">返回列表</a>
+  {% if customer_return.sales_order %}
+    <a class="button" href="{% url 'sales:sales_order_detail' customer_return.sales_order.pk %}">返回销售订单</a>
+  {% endif %}
   {% if can_edit %}
     <a class="button primary" href="{% url 'sales:customer_return_edit' customer_return.pk %}">编辑</a>
   {% endif %}
@@ -33,7 +36,11 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源销售订单</div>
-    <div class="detail-value">{{ customer_return.sales_order.sales_order_no|default:"" }}</div>
+    <div class="detail-value">
+      {% if customer_return.sales_order %}
+        <a href="{% url 'sales:sales_order_detail' customer_return.sales_order.pk %}">{{ customer_return.sales_order.sales_order_no }}</a>
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">退货日期</div>
@@ -78,7 +85,13 @@
             <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
             <td>{{ item.location.location_code|default:"" }}</td>
             <td>{{ item.inventory_type }}</td>
-            <td>{{ item.sales_order_item.sales_order.sales_order_no|default:"" }}</td>
+            <td>
+              {% if item.sales_order_item %}
+                <a href="{% url 'sales:sales_order_detail' item.sales_order_item.sales_order.pk %}">
+                  {{ item.sales_order_item.sales_order.sales_order_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{{ item.return_reason }}</td>
           </tr>
         {% empty %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ payment.payment_no }}</h1>
@@ -76,10 +77,22 @@
           {% for target in allocation_targets %}
             <tr>
               <td>
-                {{ target.receipt.purchase_receipt_no }}
+                {% source_doc_url request.user "purchase_receipt" target.receipt.pk as receipt_url %}
+                {% if receipt_url %}
+                  <a href="{{ receipt_url }}">{{ target.receipt.purchase_receipt_no }}</a>
+                {% else %}
+                  {{ target.receipt.purchase_receipt_no }}
+                {% endif %}
                 <input type="hidden" name="purchase_receipt_id" value="{{ target.receipt.pk }}">
               </td>
-              <td>{{ target.receipt.purchase_order.purchase_order_no }}</td>
+              <td>
+                {% source_doc_url request.user "purchase_order" target.receipt.purchase_order.pk as order_url %}
+                {% if order_url %}
+                  <a href="{{ order_url }}">{{ target.receipt.purchase_order.purchase_order_no }}</a>
+                {% else %}
+                  {{ target.receipt.purchase_order.purchase_order_no }}
+                {% endif %}
+              </td>
               <td>{{ target.receipt.receipt_date }}</td>
               <td>{{ target.receipt.get_status_display }}</td>
               <td>{% if can_view_amount %}{{ target.available_amount|floatformat:2 }}{% else %}******{% endif %}</td>
@@ -108,7 +121,9 @@
           {% for target in reconciliation_allocation_targets %}
             <tr>
               <td>
-                {{ target.reconciliation.reconciliation_no }}
+                <a href="{% url 'finance:reconciliation_detail' target.reconciliation.pk %}">
+                  {{ target.reconciliation.reconciliation_no }}
+                </a>
                 <input type="hidden" name="reconciliation_id" value="{{ target.reconciliation.pk }}">
               </td>
               <td>{{ target.reconciliation.period_start }} 至 {{ target.reconciliation.period_end }}</td>
@@ -140,7 +155,7 @@
           {% for target in opening_allocation_targets %}
             <tr>
               <td>
-                {{ target.opening.opening_no }}
+                <a href="{% url 'finance:opening_payable_detail' target.opening.pk %}">{{ target.opening.opening_no }}</a>
                 <input type="hidden" name="opening_payable_id" value="{{ target.opening.pk }}">
               </td>
               <td>{{ target.opening.source_doc_no|default:"" }}</td>
@@ -203,9 +218,30 @@
         {% for allocation in payment.allocations.all %}
           <tr>
             <td>{{ allocation.get_allocation_type_display }}</td>
-            <td>{{ allocation.purchase_receipt.purchase_receipt_no|default:"" }}</td>
-            <td>{{ allocation.reconciliation.reconciliation_no|default:"" }}</td>
-            <td>{{ allocation.opening_payable.opening_no|default:"" }}</td>
+            <td>
+              {% if allocation.purchase_receipt %}
+                {% source_doc_url request.user "purchase_receipt" allocation.purchase_receipt.pk as receipt_url %}
+                {% if receipt_url %}
+                  <a href="{{ receipt_url }}">{{ allocation.purchase_receipt.purchase_receipt_no }}</a>
+                {% else %}
+                  {{ allocation.purchase_receipt.purchase_receipt_no }}
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if allocation.reconciliation %}
+                <a href="{% url 'finance:reconciliation_detail' allocation.reconciliation.pk %}">
+                  {{ allocation.reconciliation.reconciliation_no }}
+                </a>
+              {% endif %}
+            </td>
+            <td>
+              {% if allocation.opening_payable %}
+                <a href="{% url 'finance:opening_payable_detail' allocation.opening_payable.pk %}">
+                  {{ allocation.opening_payable.opening_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
             <td>{{ allocation.created_at }}</td>
             <td>{{ allocation.remark }}</td>

@@ -36,7 +36,7 @@
     {{ item_formset.management_form }}
     {{ item_formset.non_form_errors }}
     <div class="table-wrap" style="border: 0; border-radius: 0;">
-      <table class="inline-table">
+      <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
             <th>样品物料</th>
@@ -49,7 +49,7 @@
         </thead>
         <tbody>
           {% for item_form in item_formset.forms %}
-            <tr>
+            <tr data-formset-row>
               <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
               <td>{{ item_form.loan_qty }}{{ item_form.loan_qty.errors }}</td>
               <td>{{ item_form.expected_return_date }}{{ item_form.expected_return_date.errors }}</td>
@@ -58,11 +58,29 @@
               <td>
                 {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
                 {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                <button class="button" type="button" data-formset-delete>删除</button>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    <template data-formset-empty>
+      <tr data-formset-row>
+        <td>{{ item_formset.empty_form.material }}</td>
+        <td>{{ item_formset.empty_form.loan_qty }}</td>
+        <td>{{ item_formset.empty_form.expected_return_date }}</td>
+        <td>{{ item_formset.empty_form.batch }}</td>
+        <td>{{ item_formset.empty_form.location }}</td>
+        <td>
+          {% if item_formset.empty_form.DELETE %}{{ item_formset.empty_form.DELETE }}{% endif %}
+          {% for hidden in item_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+          <button class="button" type="button" data-formset-delete>删除</button>
+        </td>
+      </tr>
+    </template>
+    <div class="form-actions" style="justify-content: flex-start; margin-top: 12px;">
+      <button class="button" type="button" data-formset-add>新增一行</button>
     </div>
   </section>
 

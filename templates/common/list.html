@@ -14,13 +14,13 @@
   </p>
 {% endif %}
 {% if has_search or status_choices or extra_filters %}
-  <form method="get" class="panel" style="padding: 12px; margin-bottom: 14px;">
-    <div class="form-actions" style="margin: 0;">
+  <form method="get" class="panel filter-panel">
+    <div class="filter-controls">
       {% if has_search %}
-        <input type="text" name="q" value="{{ search_query }}" placeholder="搜索" style="min-width: 220px;">
+        <input class="filter-input" type="text" name="q" value="{{ search_query }}" placeholder="搜索">
       {% endif %}
       {% if status_choices %}
-        <select name="status" style="min-width: 160px; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;">
+        <select class="filter-select" name="status">
           <option value="">全部状态</option>
           {% for value, label in status_choices %}
             <option value="{{ value }}" {% if status_value == value %}selected{% endif %}>{{ label }}</option>
@@ -28,7 +28,7 @@
         </select>
       {% endif %}
       {% for filter in extra_filters %}
-        <select name="{{ filter.param_name }}" style="min-width: 160px; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;">
+        <select class="filter-select" name="{{ filter.param_name }}">
           <option value="">全部{{ filter.label }}</option>
           {% for value, label in filter.choices %}
             <option value="{{ value }}" {% if filter.value == value %}selected{% endif %}>{{ label }}</option>
@@ -43,20 +43,20 @@
   </form>
 {% endif %}
 {% if has_search or status_choices or extra_filters or saved_filters %}
-  <section class="panel" style="padding: 12px; margin-bottom: 14px;">
-    <form method="post" action="{% url 'system:saved_filter_save' %}" class="form-actions" style="margin: 0 0 10px;">
+  <section class="panel saved-filter-panel">
+    <form method="post" action="{% url 'system:saved_filter_save' %}" class="saved-filter-controls" style="margin-bottom: 10px;">
       {% csrf_token %}
       <input type="hidden" name="module" value="{{ saved_filter_module }}">
       <input type="hidden" name="query_string" value="{{ active_query_string }}">
       <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
-      <input type="text" name="filter_name" placeholder="筛选名称" style="min-width: 180px;">
+      <input class="filter-name-input" type="text" name="filter_name" placeholder="筛选名称">
       <label class="button" style="gap: 6px;">
         <input type="checkbox" name="is_default"> 设为默认
       </label>
       <button class="button" type="submit">保存筛选</button>
     </form>
     {% if saved_filters %}
-      <div class="form-actions" style="margin: 0;">
+      <div class="saved-filter-controls">
         {% for saved_filter in saved_filters %}
           <a class="button" href="{{ request.path }}{% if saved_filter.query_string %}?{{ saved_filter.query_string }}{% endif %}">
             {{ saved_filter.filter_name }}{% if saved_filter.is_default %}（默认）{% endif %}
@@ -86,7 +86,7 @@
         <thead>
           <tr>
             {% if bulk_actions and bulk_action_url_name %}
-              <th style="width: 42px;"><input type="checkbox" onclick="document.querySelectorAll('[data-row-check]').forEach(function(el){ el.checked = event.target.checked; })"></th>
+              <th class="table-check-col"><input type="checkbox" onclick="document.querySelectorAll('[data-row-check]').forEach(function(el){ el.checked = event.target.checked; })"></th>
             {% endif %}
             {% for label, field in columns %}
               <th>
@@ -125,7 +125,7 @@
         </tbody>
       </table>
     {% if bulk_actions and bulk_action_url_name %}
-        <div class="form-actions" style="padding: 12px; margin: 0;">
+        <div class="form-actions bulk-actions-bar">
           {% for action_value, label in bulk_actions %}
             <button class="button" type="submit" name="action" value="{{ action_value }}">{{ label }}</button>
           {% endfor %}

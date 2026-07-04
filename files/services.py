@@ -6,6 +6,7 @@ import shlex
 import subprocess
 from io import StringIO
 from pathlib import Path, PurePosixPath
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -410,7 +411,8 @@ def export_queryset_to_csv(
     export_no = next_document_no("EXP")
     export_dir = Path(settings.MEDIA_ROOT) / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    file_path = export_dir / f"{export_no}.csv"
+    download_filename = f"{export_no}.csv"
+    file_path = export_dir / f"{export_no}-{uuid4().hex[:8]}.csv"
     row_count = 0
 
     try:
@@ -441,7 +443,7 @@ def export_queryset_to_csv(
             "export_no": export_no,
             "file_path": str(file_path),
             "row_count": row_count,
-            "filename": file_path.name,
+            "filename": download_filename,
         },
     )
 
@@ -460,8 +462,11 @@ def resolve_export_file_path(file_path: str, export_no: str = "") -> Path | None
     except (OSError, ValueError):
         return None
 
-    if export_no and resolved_path.name != f"{export_no}.csv":
-        return None
+    if export_no:
+        expected_name = f"{export_no}.csv"
+        expected_prefix = f"{export_no}-"
+        if resolved_path.name != expected_name and not resolved_path.name.startswith(expected_prefix):
+            return None
     if resolved_path.suffix.lower() != ".csv":
         return None
     if not resolved_path.is_file():

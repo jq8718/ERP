@@ -137,6 +137,18 @@ class MasterdataViewTests(TestCase):
         detail_response = self.client.get(f"/masterdata/materials/{material.id}/")
         self.assertContains(detail_response, "RM001")
 
+    def test_material_form_uses_compact_record_layout(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get("/masterdata/materials/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="record-grid"')
+        self.assertContains(response, 'class="record-field medium"')
+        self.assertContains(response, 'class="record-field short"')
+        self.assertContains(response, 'select name="material_type"')
+        self.assertContains(response, 'select name="status"')
+
     def test_material_edit_updates_material_and_increments_version(self):
         material = Material.objects.create(
             material_code="RM-EDIT",
@@ -1051,6 +1063,19 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(customer.contact_phone_encrypted, "")
         detail_response = self.client.get(f"/masterdata/customers/{customer.id}/")
         self.assertContains(detail_response, "测试客户")
+
+    def test_customer_form_uses_compact_record_layout_and_phone_input(self):
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/masterdata/customers/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="record-grid"')
+        self.assertContains(response, 'class="record-field medium"')
+        self.assertContains(response, 'select name="settlement_method"')
+        self.assertContains(response, 'name="contact_phone_encrypted"')
+        self.assertNotContains(response, '<textarea name="contact_phone_encrypted"')
 
     def test_customer_edit_without_personal_info_permission_preserves_phone(self):
         customer = Customer.objects.create(

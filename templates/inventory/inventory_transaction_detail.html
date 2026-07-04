@@ -46,16 +46,16 @@
     <div class="detail-value">{{ transaction.qty_delta }}</div>
   </div>
   <div class="detail-cell">
-    <div class="detail-label">来源类型</div>
-    <div class="detail-value">{{ transaction.source_doc_type|code_name }}</div>
-  </div>
-  <div class="detail-cell">
-    <div class="detail-label">来源 ID</div>
-    <div class="detail-value">{{ transaction.source_doc_id }}</div>
-  </div>
-  <div class="detail-cell">
-    <div class="detail-label">来源单号</div>
-    <div class="detail-value">{{ transaction.source_doc_no|default:"-" }}</div>
+    <div class="detail-label">来源单据</div>
+    <div class="detail-value">
+      {% source_doc_url request.user transaction.source_doc_type transaction.source_doc_id as source_url %}
+      {{ transaction.source_doc_type|code_name }}
+      {% if source_url %}
+        <a href="{{ source_url }}">{{ transaction.source_doc_no|default:"-" }}</a>
+      {% else %}
+        {{ transaction.source_doc_no|default:"-" }}
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">操作人</div>

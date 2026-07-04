@@ -688,6 +688,8 @@ class ProductionServiceTests(TestCase):
         self.assertContains(response, "打印")
         self.assertContains(response, "确认领料出库")
         self.assertContains(response, self.raw.material_code)
+        self.assertContains(response, "返回生产单")
+        self.assertContains(response, f'href="/production/orders/{self.production_order.id}/"')
 
     def test_material_requisition_edit_updates_pending_requisition_and_writes_audit_log(self):
         self.client.force_login(self.user)
@@ -967,6 +969,8 @@ class ProductionServiceTests(TestCase):
         self.assertContains(response, "打印")
         self.assertContains(response, "确认生产入库")
         self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "返回生产单")
+        self.assertContains(response, f'href="/production/orders/{self.production_order.id}/"')
 
     def test_production_receipt_edit_updates_pending_receipt_and_writes_audit_log(self):
         self.client.force_login(self.user)

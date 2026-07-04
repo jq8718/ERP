@@ -5,6 +5,9 @@
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'purchase:supplier_return_list' %}">返回列表</a>
+  {% if supplier_return.purchase_receipt %}
+    <a class="button" href="{% url 'purchase:purchase_receipt_detail' supplier_return.purchase_receipt.pk %}">返回进货单</a>
+  {% endif %}
   {% if can_edit %}
     <a class="button primary" href="{% url 'purchase:supplier_return_edit' supplier_return.pk %}">编辑</a>
   {% endif %}
@@ -33,7 +36,13 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源进货单</div>
-    <div class="detail-value">{{ supplier_return.purchase_receipt.purchase_receipt_no|default:"" }}</div>
+    <div class="detail-value">
+      {% if supplier_return.purchase_receipt %}
+        <a href="{% url 'purchase:purchase_receipt_detail' supplier_return.purchase_receipt.pk %}">
+          {{ supplier_return.purchase_receipt.purchase_receipt_no }}
+        </a>
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">退货日期</div>
@@ -82,7 +91,13 @@
             <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
             <td>{{ item.batch.batch_no|default:"" }}</td>
             <td>{{ item.location.location_code|default:"" }}</td>
-            <td>{{ item.purchase_receipt_item.purchase_receipt.purchase_receipt_no|default:"" }}</td>
+            <td>
+              {% if item.purchase_receipt_item %}
+                <a href="{% url 'purchase:purchase_receipt_detail' item.purchase_receipt_item.purchase_receipt.pk %}">
+                  {{ item.purchase_receipt_item.purchase_receipt.purchase_receipt_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{{ item.return_reason }}</td>
           </tr>
         {% empty %}

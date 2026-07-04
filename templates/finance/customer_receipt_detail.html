@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ receipt.receipt_no }}</h1>
@@ -76,7 +77,12 @@
           {% for target in allocation_targets %}
             <tr>
               <td>
-                {{ target.order.sales_order_no }}
+                {% source_doc_url request.user "sales_order" target.order.pk as order_url %}
+                {% if order_url %}
+                  <a href="{{ order_url }}">{{ target.order.sales_order_no }}</a>
+                {% else %}
+                  {{ target.order.sales_order_no }}
+                {% endif %}
                 <input type="hidden" name="sales_order_id" value="{{ target.order.pk }}">
               </td>
               <td>{{ target.order.order_date }}</td>
@@ -108,7 +114,9 @@
           {% for target in reconciliation_allocation_targets %}
             <tr>
               <td>
-                {{ target.reconciliation.reconciliation_no }}
+                <a href="{% url 'finance:reconciliation_detail' target.reconciliation.pk %}">
+                  {{ target.reconciliation.reconciliation_no }}
+                </a>
                 <input type="hidden" name="reconciliation_id" value="{{ target.reconciliation.pk }}">
               </td>
               <td>{{ target.reconciliation.period_start }} 至 {{ target.reconciliation.period_end }}</td>
@@ -140,7 +148,7 @@
           {% for target in opening_allocation_targets %}
             <tr>
               <td>
-                {{ target.opening.opening_no }}
+                <a href="{% url 'finance:opening_receivable_detail' target.opening.pk %}">{{ target.opening.opening_no }}</a>
                 <input type="hidden" name="opening_receivable_id" value="{{ target.opening.pk }}">
               </td>
               <td>{{ target.opening.source_doc_no|default:"" }}</td>
@@ -203,9 +211,30 @@
         {% for allocation in receipt.allocations.all %}
           <tr>
             <td>{{ allocation.get_allocation_type_display }}</td>
-            <td>{{ allocation.sales_order.sales_order_no|default:"" }}</td>
-            <td>{{ allocation.reconciliation.reconciliation_no|default:"" }}</td>
-            <td>{{ allocation.opening_receivable.opening_no|default:"" }}</td>
+            <td>
+              {% if allocation.sales_order %}
+                {% source_doc_url request.user "sales_order" allocation.sales_order.pk as order_url %}
+                {% if order_url %}
+                  <a href="{{ order_url }}">{{ allocation.sales_order.sales_order_no }}</a>
+                {% else %}
+                  {{ allocation.sales_order.sales_order_no }}
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if allocation.reconciliation %}
+                <a href="{% url 'finance:reconciliation_detail' allocation.reconciliation.pk %}">
+                  {{ allocation.reconciliation.reconciliation_no }}
+                </a>
+              {% endif %}
+            </td>
+            <td>
+              {% if allocation.opening_receivable %}
+                <a href="{% url 'finance:opening_receivable_detail' allocation.opening_receivable.pk %}">
+                  {{ allocation.opening_receivable.opening_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{% if can_view_amount %}{{ allocation.allocated_amount }}{% else %}******{% endif %}</td>
             <td>{{ allocation.created_at }}</td>
             <td>{{ allocation.remark }}</td>

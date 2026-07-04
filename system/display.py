@@ -9,6 +9,19 @@ FORM_LABELS = {
     "position": "职位",
     "security_level": "安全级别",
     "status": "状态",
+    "q": "关键词",
+    "query": "查询条件",
+    "module": "模块",
+    "template_type": "模板类型",
+    "source_doc_type": "来源类型",
+    "source_doc_id": "来源单据",
+    "source_type": "来源类型",
+    "target_doc_type": "目标类型",
+    "target_doc_id": "目标单据",
+    "sort": "排序字段",
+    "dir": "排序方向",
+    "date_from": "开始日期",
+    "date_to": "结束日期",
     "is_active": "允许登录",
     "is_deleted": "逻辑删除",
     "roles": "角色",
@@ -118,6 +131,7 @@ FORM_LABELS = {
     "expense_date": "费用日期",
     "category": "费用类别",
     "amount": "金额",
+    "min_amount": "最低金额",
     "payee": "收款方",
     "invoice_no": "发票号",
     "bom_no": "BOM 编号",
@@ -323,3 +337,10 @@ def code_label(value: object) -> str:
         return ""
     text = str(value)
     return CODE_LABELS.get(text, text)
+
+
+def field_label(value: object) -> str:
+    if value in [None, ""]:
+        return ""
+    text = str(value)
+    return FORM_LABELS.get(text, CODE_LABELS.get(text, text))

@@ -236,9 +236,26 @@ def apply_customer_credit_balance(
             target_doc_no = ""
             if action_type == CustomerCreditBalanceTransaction.ActionType.ALLOCATE_TO_ORDER:
                 order = SalesOrder.objects.select_for_update().get(id=target_sales_order_id, customer=balance.customer)
+                if amount > customer_order_available_allocation_amount(order):
+                    return ServiceResult(False, "PAYMENT_ALLOCATION_OVER", "核销金额超过订单可核销余额")
+                if balance.source_doc_type != "customer_receipt":
+                    return ServiceResult(False, "STATE_INVALID_TRANSITION", "只有来源为客户收款的余额可以核销订单")
+                source_receipt = CustomerReceipt.objects.select_for_update().get(id=balance.source_doc_id, customer=balance.customer)
+                if amount > source_receipt.unallocated_amount:
+                    return ServiceResult(False, "PAYMENT_CREDIT_BALANCE_NOT_ENOUGH", "来源收款单未分配金额不足")
                 target_doc_type = "sales_order"
                 target_doc_id = order.id
                 target_doc_no = order.sales_order_no
+                CustomerReceiptAllocation.objects.create(
+                    customer_receipt=source_receipt,
+                    sales_order=order,
+                    allocated_amount=amount,
+                    allocation_type=CustomerReceiptAllocation.AllocationType.CREDIT_BALANCE,
+                    created_by_id=operator_id,
+                    remark=reason,
+                )
+                source_receipt.unallocated_amount -= amount
+                source_receipt.save(update_fields=["unallocated_amount"])
             elif action_type not in CustomerCreditBalanceTransaction.ActionType.values:
                 return ServiceResult(False, "STATE_INVALID_TRANSITION", "不支持的余额处理动作")
 
@@ -259,7 +276,7 @@ def apply_customer_credit_balance(
             balance.status = _customer_balance_status_after_action(balance, action_type)
             balance.process_reason = reason
             balance.save(update_fields=["used_amount", "remaining_amount", "status", "process_reason"])
-    except (CustomerCreditBalance.DoesNotExist, SalesOrder.DoesNotExist):
+    except (CustomerCreditBalance.DoesNotExist, CustomerReceipt.DoesNotExist, SalesOrder.DoesNotExist):
         return ServiceResult(False, "DOC_NOT_FOUND", "客户余额或目标订单不存在")
 
     return ServiceResult(True, message="客户余额已处理", data={"transaction_id": transaction_row.id, "balance_status": balance.status})
@@ -472,9 +489,26 @@ def apply_supplier_credit_balance(
             target_doc_no = ""
             if action_type == SupplierCreditBalanceTransaction.ActionType.ALLOCATE_TO_RECEIPT:
                 receipt = PurchaseReceipt.objects.select_for_update().get(id=target_purchase_receipt_id, supplier=balance.supplier)
+                if amount > supplier_receipt_available_allocation_amount(receipt):
+                    return ServiceResult(False, "PAYMENT_ALLOCATION_OVER", "核销金额超过进货单可核销余额")
+                if balance.source_doc_type != "supplier_payment":
+                    return ServiceResult(False, "STATE_INVALID_TRANSITION", "只有来源为供应商付款的余额可以核销进货单")
+                source_payment = SupplierPayment.objects.select_for_update().get(id=balance.source_doc_id, supplier=balance.supplier)
+                if amount > source_payment.unallocated_amount:
+                    return ServiceResult(False, "PAYMENT_CREDIT_BALANCE_NOT_ENOUGH", "来源付款单未分配金额不足")
                 target_doc_type = "purchase_receipt"
                 target_doc_id = receipt.id
                 target_doc_no = receipt.purchase_receipt_no
+                SupplierPaymentAllocation.objects.create(
+                    supplier_payment=source_payment,
+                    purchase_receipt=receipt,
+                    allocated_amount=amount,
+                    allocation_type=SupplierPaymentAllocation.AllocationType.CREDIT_BALANCE,
+                    created_by_id=operator_id,
+                    remark=reason,
+                )
+                source_payment.unallocated_amount -= amount
+                source_payment.save(update_fields=["unallocated_amount"])
             elif action_type not in SupplierCreditBalanceTransaction.ActionType.values:
                 return ServiceResult(False, "STATE_INVALID_TRANSITION", "不支持的余额处理动作")
 
@@ -495,7 +529,7 @@ def apply_supplier_credit_balance(
             balance.status = _supplier_balance_status_after_action(balance, action_type)
             balance.process_reason = reason
             balance.save(update_fields=["used_amount", "remaining_amount", "status", "process_reason"])
-    except (SupplierCreditBalance.DoesNotExist, PurchaseReceipt.DoesNotExist):
+    except (SupplierCreditBalance.DoesNotExist, SupplierPayment.DoesNotExist, PurchaseReceipt.DoesNotExist):
         return ServiceResult(False, "DOC_NOT_FOUND", "供应商余额或目标进货单不存在")
 
     return ServiceResult(True, message="供应商余额已处理", data={"transaction_id": transaction_row.id, "balance_status": balance.status})

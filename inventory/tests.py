@@ -573,7 +573,7 @@ class StockCountAdjustmentServiceTests(TestCase):
             location=self.location,
             qty_delta=Decimal("-2.0000"),
             source_doc_type="stock_count",
-            source_doc_id=7,
+            source_doc_id=self._stock_count().id,
             source_doc_no="SC007",
             created_by=self.user,
         )
@@ -591,6 +591,7 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertContains(detail_response, batch.batch_no)
         self.assertContains(detail_response, reverse("inventory:inventory_batch_detail", kwargs={"pk": batch.pk}))
         self.assertContains(detail_response, reverse("inventory:inventory_detail", kwargs={"pk": inventory.pk}))
+        self.assertContains(detail_response, reverse("inventory:stock_count_detail", kwargs={"pk": transaction.source_doc_id}))
 
     def test_warehouse_location_list_and_detail_render(self):
         self.client.force_login(self.user)

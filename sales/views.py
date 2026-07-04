@@ -66,6 +66,7 @@ from .services import (
     confirm_sample_loan_out,
     confirm_sample_return,
     convert_sample_loan_item_to_sales_order,
+    recheck_sales_order_inventory,
 )
 
 
@@ -389,6 +390,7 @@ class SalesOrderDetailView(LoginRequiredMixin, DetailView):
         ]
         context["can_process_sales"] = can_process_sales
         context["can_confirm"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_APPROVAL
+        context["can_recheck_bom"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_BOM
         context["can_create_shipment"] = can_process_sales and _sales_order_has_shippable_items(self.object)
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
@@ -528,6 +530,43 @@ class SalesOrderConfirmView(LoginRequiredMixin, View):
             messages.success(request, result.message)
         else:
             messages.error(request, result.message or result.error_code or "销售订单审核失败")
+        return redirect("sales:sales_order_detail", pk=pk)
+
+
+class SalesOrderRecheckShortageView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        try:
+            order = (
+                _filter_sales_order_queryset_for_user(SalesOrder.objects.prefetch_related("items"), request.user)
+                .get(pk=pk)
+            )
+        except SalesOrder.DoesNotExist:
+            messages.error(request, "销售订单不存在或无权限操作")
+            return redirect("sales:sales_order_list")
+
+        if order.status != SalesOrder.Status.PENDING_BOM:
+            messages.error(request, "只有待 BOM 处理的销售订单需要重新检查欠料")
+            return redirect("sales:sales_order_detail", pk=pk)
+
+        item_ids = list(order.items.values_list("id", flat=True))
+        result = recheck_sales_order_inventory(
+            item_ids,
+            trigger=f"manual-bom-recheck:{order.id}",
+            operator_id=request.user.id,
+        )
+        if result.success:
+            record_audit_log_from_request(
+                request,
+                "sales_order_recheck_shortage",
+                "sales_order",
+                order.id,
+                order.sales_order_no,
+                after_snapshot=result.data,
+            )
+            messages.success(request, result.message)
+        else:
+            messages.error(request, result.message or result.error_code or "欠料重新检查失败")
         return redirect("sales:sales_order_detail", pk=pk)
 
 

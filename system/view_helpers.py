@@ -237,7 +237,11 @@ def row_value(obj, attr_path: str):
         "job_type",
         "trigger_type",
         "module",
+        "approval_type",
+        "doc_type",
         "source_doc_type",
+        "source_type",
+        "target_doc_type",
         "template_type",
         "scope_type",
     }:

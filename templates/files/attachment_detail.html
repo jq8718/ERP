@@ -6,6 +6,9 @@
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'files:attachment_list' %}">返回列表</a>
+  {% if source_doc_url %}
+    <a class="button" href="{{ source_doc_url }}">返回来源单据</a>
+  {% endif %}
   {% if can_download %}
     <a class="button primary" href="{% url 'files:attachment_download' attachment.pk %}">下载</a>
   {% endif %}

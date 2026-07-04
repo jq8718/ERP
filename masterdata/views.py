@@ -55,6 +55,29 @@ def configure_supplier_form_widgets(form):
     return form
 
 
+def configure_customer_form_widgets(form):
+    if "contact_phone_encrypted" in form.fields:
+        form.fields["contact_phone_encrypted"].widget = forms.TextInput(
+            attrs={
+                "autocomplete": "tel",
+                "placeholder": "例如：13800000000",
+            }
+        )
+    if "remark" in form.fields:
+        form.fields["remark"].widget.attrs.update({"rows": 3})
+    return form
+
+
+def configure_material_form_widgets(form):
+    if "spec" in form.fields:
+        form.fields["spec"].widget.attrs.setdefault("placeholder", "规格、型号或尺寸")
+    if "base_unit" in form.fields:
+        form.fields["base_unit"].widget.attrs.setdefault("placeholder", "例如：pcs、kg、米")
+    if "remark" in form.fields:
+        form.fields["remark"].widget.attrs.update({"rows": 3})
+    return form
+
+
 class MaterialListView(ErpListView):
     model = Material
     page_title = "物料"
@@ -287,7 +310,7 @@ class MaterialCreateView(LoginRequiredMixin, CreateView):
         set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("latest_purchase_price", None)
-        return form
+        return configure_material_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -314,7 +337,7 @@ class MaterialUpdateView(LoginRequiredMixin, UpdateView):
         set_form_labels(form)
         if not can_view_amount(self.request.user):
             form.fields.pop("latest_purchase_price", None)
-        return form
+        return configure_material_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -638,7 +661,7 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
         set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_phone_encrypted", None)
-        return form
+        return configure_customer_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -668,7 +691,7 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
         set_form_labels(form)
         if not can_view_personal_info(self.request.user):
             form.fields.pop("contact_phone_encrypted", None)
-        return form
+        return configure_customer_form_widgets(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

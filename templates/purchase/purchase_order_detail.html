@@ -73,7 +73,13 @@
             <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
             <td>{% if can_view_amount %}{{ item.line_amount }}{% else %}******{% endif %}</td>
             <td>{{ item.needed_date|default:"" }}</td>
-            <td>{{ item.purchase_request_item.purchase_request.purchase_request_no|default:"" }}</td>
+            <td>
+              {% if item.purchase_request_item %}
+                <a href="{% url 'purchase:purchase_request_detail' item.purchase_request_item.purchase_request.pk %}">
+                  {{ item.purchase_request_item.purchase_request.purchase_request_no }}
+                </a>
+              {% endif %}
+            </td>
             <td>{{ item.get_line_status_display }}</td>
           </tr>
         {% empty %}

@@ -9,16 +9,59 @@
 
 <section class="panel">
   <h2>物料信息</h2>
-  <form method="post" style="padding: 14px;">
+  <form class="record-form" method="post">
     {% csrf_token %}
-    <div class="form-grid">
-      {% for field in form %}
-        <label class="form-row">{{ field.label }}
-          {{ field }}
-          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+    <div class="record-grid">
+      <label class="record-field">{{ form.material_code.label }}
+        {{ form.material_code }}
+        {% if form.material_code.errors %}<span class="error">{{ form.material_code.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field name">{{ form.material_name.label }}
+        {{ form.material_name }}
+        {% if form.material_name.errors %}<span class="error">{{ form.material_name.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field short">{{ form.status.label }}
+        {{ form.status }}
+        {% if form.status.errors %}<span class="error">{{ form.status.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="record-field medium">{{ form.material_type.label }}
+        {{ form.material_type }}
+        {% if form.material_type.errors %}<span class="error">{{ form.material_type.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field wide">{{ form.spec.label }}
+        {{ form.spec }}
+        {% if form.spec.errors %}<span class="error">{{ form.spec.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field short">{{ form.base_unit.label }}
+        {{ form.base_unit }}
+        {% if form.base_unit.errors %}<span class="error">{{ form.base_unit.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field short">{{ form.qty_precision.label }}
+        {{ form.qty_precision }}
+        {% if form.qty_precision.errors %}<span class="error">{{ form.qty_precision.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="record-field medium">{{ form.min_stock_qty.label }}
+        {{ form.min_stock_qty }}
+        {% if form.min_stock_qty.errors %}<span class="error">{{ form.min_stock_qty.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if form.latest_purchase_price %}
+        <label class="record-field medium">{{ form.latest_purchase_price.label }}
+          {{ form.latest_purchase_price }}
+          {% if form.latest_purchase_price.errors %}<span class="error">{{ form.latest_purchase_price.errors|join:", " }}</span>{% endif %}
         </label>
-      {% endfor %}
-      {% include "common/operation_reason_field.html" %}
+      {% endif %}
+
+      <label class="record-field full">{{ form.remark.label }}
+        {{ form.remark }}
+        {% if form.remark.errors %}<span class="error">{{ form.remark.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if is_edit %}
+        <label class="record-field full" for="operation_reason">修改原因
+          <input id="operation_reason" type="text" name="operation_reason" value="">
+        </label>
+      {% endif %}
     </div>
     <div class="form-actions">
       <button class="button primary" type="submit">保存</button>

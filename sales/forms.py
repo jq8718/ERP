@@ -181,7 +181,7 @@ SalesOrderItemFormSet = inlineformset_factory(
     form=SalesOrderItemForm,
     formset=BaseSalesOrderItemFormSet,
     fields=["customer_product", "order_qty", "unit_price"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 
@@ -422,7 +422,7 @@ CustomerReturnItemFormSet = inlineformset_factory(
     form=CustomerReturnItemForm,
     formset=BaseCustomerReturnItemFormSet,
     fields=["sales_order_item", "material", "return_qty", "unit_price", "location", "inventory_type", "return_reason"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 
@@ -665,7 +665,7 @@ SampleLoanItemFormSet = inlineformset_factory(
     form=SampleLoanItemForm,
     formset=BaseSampleLoanItemFormSet,
     fields=["material", "loan_qty", "expected_return_date", "batch", "location"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 
@@ -820,7 +820,7 @@ SampleLoanReturnItemFormSet = inlineformset_factory(
     form=SampleLoanReturnItemForm,
     formset=BaseSampleLoanReturnItemFormSet,
     fields=["sample_loan_item", "return_qty", "location", "sample_condition", "remark"],
-    extra=3,
+    extra=1,
     can_delete=True,
 )
 

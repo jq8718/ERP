@@ -9,16 +9,50 @@
 
 <section class="panel">
   <h2>客户信息</h2>
-  <form method="post" style="padding: 14px;">
+  <form class="record-form" method="post">
     {% csrf_token %}
-    <div class="form-grid">
-      {% for field in form %}
-        <label class="form-row">{{ field.label }}
-          {{ field }}
-          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
+    <div class="record-grid">
+      <label class="record-field">{{ form.customer_no.label }}
+        {{ form.customer_no }}
+        {% if form.customer_no.errors %}<span class="error">{{ form.customer_no.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field name">{{ form.customer_name.label }}
+        {{ form.customer_name }}
+        {% if form.customer_name.errors %}<span class="error">{{ form.customer_name.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field short">{{ form.status.label }}
+        {{ form.status }}
+        {% if form.status.errors %}<span class="error">{{ form.status.errors|join:", " }}</span>{% endif %}
+      </label>
+
+      <label class="record-field medium">{{ form.short_name.label }}
+        {{ form.short_name }}
+        {% if form.short_name.errors %}<span class="error">{{ form.short_name.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field medium">{{ form.sales_owner.label }}
+        {{ form.sales_owner }}
+        {% if form.sales_owner.errors %}<span class="error">{{ form.sales_owner.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="record-field medium">{{ form.settlement_method.label }}
+        {{ form.settlement_method }}
+        {% if form.settlement_method.errors %}<span class="error">{{ form.settlement_method.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if form.contact_phone_encrypted %}
+        <label class="record-field medium">{{ form.contact_phone_encrypted.label }}
+          {{ form.contact_phone_encrypted }}
+          {% if form.contact_phone_encrypted.errors %}<span class="error">{{ form.contact_phone_encrypted.errors|join:", " }}</span>{% endif %}
         </label>
-      {% endfor %}
-      {% include "common/operation_reason_field.html" %}
+      {% endif %}
+
+      <label class="record-field full">{{ form.remark.label }}
+        {{ form.remark }}
+        {% if form.remark.errors %}<span class="error">{{ form.remark.errors|join:", " }}</span>{% endif %}
+      </label>
+      {% if is_edit %}
+        <label class="record-field full" for="operation_reason">修改原因
+          <input id="operation_reason" type="text" name="operation_reason" value="">
+        </label>
+      {% endif %}
     </div>
     <div class="form-actions">
       <button class="button primary" type="submit">保存</button>

@@ -16,7 +16,15 @@
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源单据</div>
-    <div class="detail-value">{{ balance.source_doc_type|code_name }} {{ balance.source_doc_no }}</div>
+    <div class="detail-value">
+      {% source_doc_url request.user balance.source_doc_type balance.source_doc_id as source_url %}
+      {{ balance.source_doc_type|code_name }}
+      {% if source_url %}
+        <a href="{{ source_url }}">{{ balance.source_doc_no }}</a>
+      {% else %}
+        {{ balance.source_doc_no }}
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">余额金额</div>
@@ -60,8 +68,18 @@
       <label class="form-row">金额
         <input type="text" name="amount" value="{{ balance.remaining_amount }}">
       </label>
-      <label class="form-row">目标进货单 ID
-        <input type="text" name="target_purchase_receipt_id">
+      <label class="form-row">目标进货单
+        <select name="target_purchase_receipt_id">
+          <option value="">仅“核销其他进货单”时选择</option>
+          {% for target in target_purchase_receipts %}
+            <option value="{{ target.receipt.pk }}">
+              {{ target.receipt.purchase_receipt_no }} / {{ target.receipt.receipt_date }} / 可核销 {{ target.available_amount }}
+            </option>
+          {% endfor %}
+        </select>
+        {% if not target_purchase_receipts %}
+          <span class="muted">当前供应商暂无可核销进货单。</span>
+        {% endif %}
       </label>
       <label class="form-row">原因
         <input type="text" name="reason">
@@ -97,7 +115,14 @@
             <td>{{ row.transaction_no }}</td>
             <td>{{ row.get_action_type_display }}</td>
             <td>{% if can_view_amount %}{{ row.amount }}{% else %}******{% endif %}</td>
-            <td>{{ row.target_doc_no }}</td>
+            <td>
+              {% source_doc_url request.user row.target_doc_type row.target_doc_id as target_url %}
+              {% if target_url %}
+                <a href="{{ target_url }}">{{ row.target_doc_no }}</a>
+              {% else %}
+                {{ row.target_doc_no }}
+              {% endif %}
+            </td>
             <td>{{ row.reason }}</td>
             <td>{{ row.created_at }}</td>
           </tr>

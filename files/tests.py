@@ -22,9 +22,10 @@ from files.services import (
     read_csv_dict_rows,
     record_attachment_access,
     register_attachment,
+    resolve_export_file_path,
     uploaded_csv_text_file,
 )
-from finance.models import CustomerReceipt, Reconciliation
+from finance.models import CustomerReceipt, ExpenseRecord, Reconciliation
 from inventory.models import StockCount
 from masterdata.models import Customer, Material, Supplier
 from production.models import ProductionOrder
@@ -197,6 +198,45 @@ class FileServiceTests(TestCase):
             self.assertIn("'=HYPERLINK", content)
             self.assertIn("'  +cmd", content)
 
+    def test_export_queryset_to_csv_stores_unique_file_but_keeps_download_filename(self):
+        class Row:
+            material_code = "RM001"
+            material_name = "原料"
+
+        with TemporaryDirectory() as temp_dir:
+            with override_settings(MEDIA_ROOT=temp_dir):
+                result = export_queryset_to_csv(
+                    "materials",
+                    [Row()],
+                    (("编码", "material_code"), ("名称", "material_name")),
+                    self.user.id,
+                )
+
+                export_no = result.data["export_no"]
+                stored_path = Path(result.data["file_path"])
+
+                self.assertTrue(result.success)
+                self.assertTrue(stored_path.name.startswith(f"{export_no}-"))
+                self.assertTrue(stored_path.name.endswith(".csv"))
+                self.assertEqual(result.data["filename"], f"{export_no}.csv")
+                self.assertEqual(resolve_export_file_path(str(stored_path), export_no), stored_path.resolve())
+
+    def test_resolve_export_file_path_accepts_legacy_and_randomized_export_names(self):
+        with TemporaryDirectory() as temp_dir:
+            export_dir = Path(temp_dir) / "exports"
+            export_dir.mkdir(parents=True)
+            legacy_path = export_dir / "EXP-TEST.csv"
+            randomized_path = export_dir / "EXP-TEST-a1b2c3d4.csv"
+            wrong_path = export_dir / "EXP-OTHER-a1b2c3d4.csv"
+            legacy_path.write_text("legacy", encoding="utf-8")
+            randomized_path.write_text("randomized", encoding="utf-8")
+            wrong_path.write_text("wrong", encoding="utf-8")
+
+            with override_settings(MEDIA_ROOT=temp_dir):
+                self.assertEqual(resolve_export_file_path(str(legacy_path), "EXP-TEST"), legacy_path.resolve())
+                self.assertEqual(resolve_export_file_path(str(randomized_path), "EXP-TEST"), randomized_path.resolve())
+                self.assertIsNone(resolve_export_file_path(str(wrong_path), "EXP-TEST"))
+
     @override_settings(ERP_MAX_CSV_IMPORT_ROWS=1)
     def test_read_csv_dict_rows_rejects_too_many_rows(self):
         with self.assertRaises(CsvImportReadError) as context:
@@ -268,6 +308,17 @@ class FileViewTests(TestCase):
             status=Reconciliation.Status.DRAFT,
             created_by=self.user,
         )
+        self.expense_record = ExpenseRecord.objects.create(
+            expense_no="EX-FILE-001",
+            expense_date="2026-06-08",
+            category=ExpenseRecord.ExpenseCategory.FREIGHT,
+            amount="12.30",
+            payment_method=ExpenseRecord.PaymentMethod.CASH,
+            payee="物流公司",
+            status=ExpenseRecord.Status.DRAFT,
+            handled_by=self.user,
+            created_by=self.user,
+        )
         self.temp_dir = TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
@@ -297,6 +348,87 @@ class FileViewTests(TestCase):
         self.assertEqual(attachment.original_filename, "contract.pdf")
         self.assertTrue(attachment.is_sensitive)
         self.assertEqual(attachment.source_doc_no, self.sales_order.sales_order_no)
+
+    def test_attachment_upload_from_source_doc_redirects_back_to_source_doc(self):
+        self.client.force_login(self.user)
+        return_to = f"/sales/orders/{self.sales_order.id}/"
+
+        response = self.client.post(
+            "/files/upload/",
+            {
+                "source_doc_type": "sales_order",
+                "source_doc_id": str(self.sales_order.id),
+                "file": SimpleUploadedFile("contract.pdf", b"pdf-content", content_type="application/pdf"),
+                "return_to": return_to,
+            },
+        )
+
+        attachment = Attachment.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], return_to)
+        self.assertEqual(attachment.source_doc_type, "sales_order")
+        self.assertEqual(attachment.source_doc_id, self.sales_order.id)
+
+    def test_attachment_upload_accepts_readable_source_doc_no(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            "/files/upload/",
+            {
+                "source_doc_type": "sales_order",
+                "source_doc_no": self.sales_order.sales_order_no,
+                "file": SimpleUploadedFile("contract.pdf", b"pdf-content", content_type="application/pdf"),
+            },
+        )
+
+        attachment = Attachment.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(attachment.source_doc_id, self.sales_order.id)
+        self.assertEqual(attachment.source_doc_no, self.sales_order.sales_order_no)
+
+    def test_attachment_detail_links_back_to_source_doc(self):
+        attachment = Attachment.objects.create(
+            attachment_no="ATT-SOURCE-LINK",
+            source_doc_type="sales_order",
+            source_doc_id=self.sales_order.id,
+            source_doc_no=self.sales_order.sales_order_no,
+            original_filename="contract.pdf",
+            stored_filename="contract.pdf",
+            file_path="attachments/contract.pdf",
+            file_size=100,
+            uploaded_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"/files/{attachment.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "返回来源单据")
+        self.assertContains(response, f'href="/sales/orders/{self.sales_order.id}/"')
+
+    def test_expense_record_attachment_upload_and_detail_link_back_to_source_doc(self):
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+        return_to = f"/finance/expenses/{self.expense_record.id}/"
+
+        upload_response = self.client.post(
+            "/files/upload/",
+            {
+                "source_doc_type": "expense_record",
+                "source_doc_id": str(self.expense_record.id),
+                "file": SimpleUploadedFile("invoice.pdf", b"pdf-content", content_type="application/pdf"),
+                "return_to": return_to,
+            },
+        )
+
+        attachment = Attachment.objects.get(original_filename="invoice.pdf")
+        detail_response = self.client.get(f"/files/{attachment.id}/")
+
+        self.assertEqual(upload_response.status_code, 302)
+        self.assertEqual(upload_response["Location"], return_to)
+        self.assertEqual(attachment.source_doc_no, self.expense_record.expense_no)
+        self.assertContains(detail_response, "返回来源单据")
+        self.assertContains(detail_response, f'href="/finance/expenses/{self.expense_record.id}/"')
 
     def test_attachment_detail_download_and_delete_views(self):
         self.client.force_login(self.user)
@@ -797,7 +929,8 @@ class FileViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "IMP-DETAIL")
-        self.assertContains(response, "material_code")
+        self.assertContains(response, "物料编码")
+        self.assertNotContains(response, "material_code")
         self.assertContains(response, "物料编码已存在")
 
     def test_initialization_job_list_filters_jobs(self):
@@ -846,7 +979,8 @@ class FileViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "INI-DETAIL")
-        self.assertContains(response, "batch_no")
+        self.assertContains(response, "批次号")
+        self.assertNotContains(response, "batch_no")
         self.assertContains(response, "批次号已存在")
 
     def test_export_and_print_log_lists_filter_logs(self):

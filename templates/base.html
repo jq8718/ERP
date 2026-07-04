@@ -158,7 +158,12 @@
     .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
     .auth-box { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
     .field { display: grid; gap: 6px; margin-bottom: 14px; }
-    input[type="text"], input[type="password"], input[type="date"] {
+    input[type="text"],
+    input[type="password"],
+    input[type="date"],
+    input[type="email"],
+    input[type="number"],
+    input[type="tel"] {
       width: 100%;
       min-height: 38px;
       border: 1px solid var(--line);
@@ -171,8 +176,36 @@
     .message { border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; background: #fff; }
     .message.success { border-color: #9fd3bd; background: #eefaf3; }
     .message.error { border-color: #f3b3ae; background: #fff1f0; }
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px; }
-    .form-row { display: grid; gap: 6px; margin-bottom: 12px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
+      gap: 14px;
+      align-items: start;
+      max-width: 1080px;
+    }
+    .form-row {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+      min-width: 0;
+    }
+    .form-grid .form-row {
+      margin-bottom: 0;
+    }
+    .form-grid .form-row.full,
+    .form-row.full {
+      grid-column: 1 / -1;
+      max-width: 760px;
+    }
+    .form-grid .form-row.wide,
+    .form-row.wide {
+      grid-column: span 2;
+      max-width: 520px;
+    }
+    .form-grid .form-row.short,
+    .form-row.short {
+      max-width: 180px;
+    }
     .form-row input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
     .form-row select,
     .form-row textarea,
@@ -192,6 +225,16 @@
       min-height: 86px;
       resize: vertical;
     }
+    .form-grid .form-row:has(textarea),
+    .form-grid .form-row:has(input[type="file"]) {
+      grid-column: 1 / -1;
+      max-width: 760px;
+    }
+    .form-grid .form-row:has(input[type="checkbox"]),
+    .form-grid .form-row:has(input[type="radio"]) {
+      align-content: end;
+      min-height: 38px;
+    }
     .form-row input[type="checkbox"],
     .form-row input[type="radio"],
     .field input[type="checkbox"],
@@ -199,7 +242,139 @@
       width: auto;
       min-height: 0;
     }
+    .checkbox-options > div,
+    .checkbox-options > ul {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px 14px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .checkbox-list li {
+      list-style: none;
+    }
+    .checkbox-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 400;
+    }
+    .checkbox-options input[type="checkbox"],
+    .checkbox-options input[type="radio"] {
+      flex: 0 0 auto;
+    }
+    form > .form-row:not(:has(textarea)) {
+      max-width: 420px;
+    }
+    form > .form-row:has(textarea),
+    form > .form-row:has(input[type="file"]) {
+      max-width: 760px;
+    }
+    .record-form {
+      padding: 14px;
+    }
+    .record-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr) minmax(150px, 210px) minmax(150px, 210px);
+      gap: 14px;
+      align-items: start;
+      max-width: 1080px;
+    }
+    .record-field {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      min-width: 0;
+    }
+    .record-field input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    .record-field select,
+    .record-field textarea {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+      background: #fff;
+    }
+    .record-field textarea {
+      min-height: 86px;
+      resize: vertical;
+    }
+    .record-field.name {
+      grid-column: span 2;
+    }
+    .record-field.short {
+      max-width: 170px;
+    }
+    .record-field.medium {
+      max-width: 240px;
+    }
+    .record-field.wide {
+      max-width: 420px;
+    }
+    .record-field.full {
+      grid-column: 1 / -1;
+      max-width: 760px;
+    }
+    .record-field .error {
+      margin: 0;
+    }
     .form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .form-actions input[name="current_password"],
+    input[name="current_password"] {
+      border-color: var(--warn);
+      background: #fff8ed;
+    }
+    .form-actions form:has(input[name="current_password"]) {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 6px;
+      border: 1px solid #f3c17a;
+      border-radius: 8px;
+      background: #fffaf2;
+    }
+    .filter-panel,
+    .saved-filter-panel {
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .filter-controls,
+    .saved-filter-controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 0;
+    }
+    .filter-input {
+      width: min(260px, 100%);
+      min-width: 200px;
+    }
+    .filter-name-input {
+      width: min(220px, 100%);
+      min-width: 180px;
+    }
+    .filter-select {
+      width: auto;
+      min-width: 150px;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font: inherit;
+      background: #fff;
+    }
+    .table-check-col {
+      width: 42px;
+    }
+    .bulk-actions-bar {
+      padding: 12px;
+      margin: 0;
+    }
     .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .detail-cell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
     .detail-label { color: var(--muted); font-size: 13px; }
@@ -212,6 +387,9 @@
       padding: 5px 8px;
       font: inherit;
     }
+    .inline-table input[type="checkbox"][name$="-DELETE"] {
+      display: none;
+    }
     @media (max-width: 900px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar { position: static; }
@@ -219,6 +397,35 @@
       .grid-2 { grid-template-columns: 1fr; }
       .topbar { padding: 0 14px; }
       .page { padding: 16px 14px 28px; }
+      .form-grid {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
+      .form-grid .form-row,
+      .form-grid .form-row:has(textarea),
+      .form-grid .form-row:has(input[type="file"]),
+      .form-grid .form-row.full,
+      .form-grid .form-row.wide,
+      .form-grid .form-row.short,
+      form > .form-row,
+      form > .form-row:has(textarea),
+      form > .form-row:has(input[type="file"]) {
+        grid-column: auto;
+        max-width: none;
+      }
+      .record-grid {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
+      .record-field,
+      .record-field.name,
+      .record-field.short,
+      .record-field.medium,
+      .record-field.wide,
+      .record-field.full {
+        grid-column: auto;
+        max-width: none;
+      }
     }
   </style>
 </head>
@@ -380,7 +587,7 @@
 {% else %}
   {% block auth_content %}{% endblock %}
 {% endif %}
-<script>
+<script type="text/javascript">
 (function () {
   var storageKey = "erp.sidebar.collapsed";
 
@@ -483,6 +690,70 @@
     }
     event.target.querySelectorAll("input[data-erp-date]").forEach(normalizeInput);
   }, true);
+})();
+
+(function () {
+  document.querySelectorAll('input[name="current_password"]').forEach(function (input) {
+    if (!input.getAttribute("placeholder")) {
+      input.setAttribute("placeholder", "当前密码");
+    }
+    if (!input.getAttribute("aria-label")) {
+      input.setAttribute("aria-label", "当前密码");
+    }
+    if (!input.getAttribute("title")) {
+      input.setAttribute("title", "确认、作废、红冲等关键操作需要输入当前登录密码");
+    }
+    input.setAttribute("autocomplete", "current-password");
+  });
+})();
+
+(function () {
+  function bindDelete(row) {
+    if (!row || row.dataset.formsetDeleteBound === "1") {
+      return;
+    }
+    row.dataset.formsetDeleteBound = "1";
+    var button = row.querySelector("[data-formset-delete]");
+    if (!button) {
+      return;
+    }
+    button.addEventListener("click", function () {
+      var deleteInput = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+      if (deleteInput) {
+        deleteInput.checked = true;
+        row.style.display = "none";
+        return;
+      }
+      row.remove();
+    });
+  }
+
+  document.querySelectorAll("[data-formset-table]").forEach(function (table) {
+    var prefix = table.dataset.formsetPrefix;
+    var totalInput = document.querySelector("#id_" + prefix + "-TOTAL_FORMS");
+    var panel = table.closest(".panel") || document;
+    var template = panel.querySelector("[data-formset-empty]");
+    var addButton = panel.querySelector("[data-formset-add]");
+
+    table.querySelectorAll("[data-formset-row]").forEach(bindDelete);
+
+    if (!template || !addButton || !totalInput || addButton.dataset.formsetAddBound === "1") {
+      return;
+    }
+    addButton.dataset.formsetAddBound = "1";
+    addButton.addEventListener("click", function () {
+      var index = Number(totalInput.value || "0");
+      var wrapper = document.createElement("tbody");
+      wrapper.innerHTML = template.innerHTML.replace(/__prefix__/g, String(index)).trim();
+      var row = wrapper.firstElementChild;
+      if (!row) {
+        return;
+      }
+      table.querySelector("tbody").appendChild(row);
+      totalInput.value = String(index + 1);
+      bindDelete(row);
+    });
+  });
 })();
 </script>
 </body>

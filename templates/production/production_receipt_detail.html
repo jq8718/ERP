@@ -5,6 +5,7 @@
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'production:production_receipt_list' %}">返回列表</a>
+  <a class="button" href="{% url 'production:production_order_detail' receipt.production_order.pk %}">返回生产单</a>
   <a class="button" href="{% url 'production:production_receipt_print' receipt.pk %}" target="_blank">打印</a>
   {% if can_edit %}
     <a class="button primary" href="{% url 'production:production_receipt_edit' receipt.pk %}">编辑</a>
@@ -21,7 +22,9 @@
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">生产单</div>
-    <div class="detail-value">{{ receipt.production_order.production_order_no }}</div>
+    <div class="detail-value">
+      <a href="{% url 'production:production_order_detail' receipt.production_order.pk %}">{{ receipt.production_order.production_order_no }}</a>
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">入库日期</div>

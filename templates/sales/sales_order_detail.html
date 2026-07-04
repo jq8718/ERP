@@ -22,6 +22,12 @@
       <button class="button primary" type="submit">审核确认</button>
     </form>
   {% endif %}
+  {% if can_recheck_bom %}
+    <form method="post" action="{% url 'sales:sales_order_recheck_shortage' order.pk %}">
+      {% csrf_token %}
+      <button class="button primary" type="submit">BOM 已维护，重新检查欠料</button>
+    </form>
+  {% endif %}
   {% if can_create_shipment %}
     <form method="post" action="{% url 'sales:sales_order_create_shipment' order.pk %}">
       {% csrf_token %}

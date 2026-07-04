@@ -275,6 +275,8 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertContains(response, "打印")
         self.assertContains(response, "确认入库")
         self.assertContains(response, self.raw.material_code)
+        self.assertContains(response, "返回采购单")
+        self.assertContains(response, f'href="/purchase/orders/{order.id}/"')
 
     def test_purchase_receipt_print_masks_price_and_records_log(self):
         self.client.force_login(self.user)
@@ -1606,6 +1608,8 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response["Location"], f"/purchase/orders/{order.id}/")
         self.assertEqual(order.items.get().order_qty, Decimal("6.0000"))
         self.assertEqual(request.status, PurchaseRequest.Status.CLOSED)
+        detail_response = self.client.get(f"/purchase/orders/{order.id}/")
+        self.assertContains(detail_response, f'href="/purchase/requests/{request.id}/"')
 
     def test_purchase_request_detail_shows_attachment_panel(self):
         self.client.force_login(self.user)
@@ -1849,6 +1853,8 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertContains(page_response, supplier_return.supplier_return_no)
         self.assertContains(page_response, "确认退货出库")
         self.assertContains(page_response, self.raw.material_code)
+        self.assertContains(page_response, "返回进货单")
+        self.assertContains(page_response, f'href="/purchase/receipts/{supplier_return.purchase_receipt.id}/"')
         self.assertContains(page_response, 'name="source_doc_type" value="supplier_return"', html=False)
         self.assertContains(page_response, f'name="source_doc_id" value="{supplier_return.id}"', html=False)
         self.assertContains(page_response, f'name="source_doc_no" value="{supplier_return.supplier_return_no}"', html=False)

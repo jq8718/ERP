@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
-<h1>{{ rule.doc_type }}</h1>
+<h1>{{ rule.doc_type|code_name }}</h1>
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'approvals:approval_rule_list' %}">返回列表</a>
@@ -10,7 +11,7 @@
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">单据类型</div>
-    <div class="detail-value">{{ rule.doc_type }}</div>
+    <div class="detail-value">{{ rule.doc_type|code_name }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">审批级次</div>
@@ -57,7 +58,7 @@
           <tbody>
             {% for key, value in rule.condition_json.items %}
               <tr>
-                <td>{{ key }}</td>
+                <td>{{ key|field_name }}</td>
                 <td>{{ value }}</td>
               </tr>
             {% endfor %}

@@ -2,46 +2,39 @@ import json
 
 from django import forms
 
-from system.display import set_form_labels
+from system.display import code_label, set_form_labels
 
 from .models import ApprovalRule
 
 
-class JsonDictField(forms.CharField):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("required", False)
-        kwargs.setdefault("widget", forms.Textarea(attrs={"rows": 4}))
-        kwargs.setdefault("help_text", '可留空；如需条件，请填写 JSON 字典，例如 {"min_amount": "5000"}')
-        super().__init__(*args, **kwargs)
-
-    def prepare_value(self, value):
-        if value in self.empty_values:
-            return ""
-        if isinstance(value, str):
-            return value
-        return json.dumps(value, ensure_ascii=False, indent=2)
-
-    def to_python(self, value):
-        value = super().to_python(value)
-        if value in self.empty_values or not value.strip():
-            return {}
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            raise forms.ValidationError('条件配置格式不正确，请填写类似 {"min_amount": "5000"} 的 JSON，或留空。')
-        if not isinstance(parsed, dict):
-            raise forms.ValidationError('条件配置必须是 JSON 字典，例如 {"min_amount": "5000"}，不能只填普通文字。')
-        return parsed
+APPROVAL_DOC_TYPE_CHOICES = (
+    ("sales_order", code_label("sales_order")),
+    ("customer_return", code_label("customer_return")),
+    ("sample_loan", code_label("sample_loan")),
+    ("purchase_request", code_label("purchase_request")),
+    ("purchase_order", code_label("purchase_order")),
+    ("supplier_return", code_label("supplier_return")),
+    ("customer_receipt", code_label("customer_receipt")),
+    ("supplier_payment", code_label("supplier_payment")),
+)
 
 
 class ApprovalRuleForm(forms.ModelForm):
-    condition_json = JsonDictField()
+    doc_type = forms.ChoiceField(choices=APPROVAL_DOC_TYPE_CHOICES)
+    condition_min_amount = forms.DecimalField(
+        label="最低金额",
+        required=False,
+        min_value=0,
+        max_digits=14,
+        decimal_places=2,
+        help_text="留空表示所有金额都适用。",
+    )
 
     class Meta:
         model = ApprovalRule
         fields = [
             "doc_type",
-            "condition_json",
+            "condition_min_amount",
             "level_no",
             "approver_role",
             "approver_user",
@@ -57,6 +50,8 @@ class ApprovalRuleForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        if self.instance and isinstance(self.instance.condition_json, dict):
+            self.fields["condition_min_amount"].initial = self.instance.condition_json.get("min_amount", "")
 
     def clean(self):
         cleaned_data = super().clean()
@@ -64,4 +59,31 @@ class ApprovalRuleForm(forms.ModelForm):
         approver_user = cleaned_data.get("approver_user")
         if not approver_role and not approver_user:
             raise forms.ValidationError("审批角色和审批人员至少填写一个")
+        cleaned_data["condition_json"] = self._clean_condition_json(cleaned_data)
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.condition_json = self.cleaned_data.get("condition_json", {})
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+    def _clean_condition_json(self, cleaned_data):
+        min_amount = cleaned_data.get("condition_min_amount")
+        if min_amount not in [None, ""]:
+            return {"min_amount": str(min_amount)}
+
+        legacy_value = self.data.get("condition_json", "") if self.is_bound else ""
+        if not legacy_value:
+            return {}
+        try:
+            parsed = json.loads(legacy_value)
+        except json.JSONDecodeError:
+            self.add_error("condition_min_amount", "条件配置格式不正确，请直接填写最低金额，或留空。")
+            return {}
+        if not isinstance(parsed, dict):
+            self.add_error("condition_min_amount", "条件配置格式不正确，请直接填写最低金额，或留空。")
+            return {}
+        return parsed

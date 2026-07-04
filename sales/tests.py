@@ -1415,6 +1415,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, f'name="source_doc_type" value="sales_order"', html=False)
         self.assertContains(response, f'name="source_doc_id" value="{order.id}"', html=False)
         self.assertContains(response, f'name="source_doc_no" value="{order.sales_order_no}"', html=False)
+        self.assertContains(response, f'name="return_to" value="/sales/orders/{order.id}/"', html=False)
 
     def test_sales_order_detail_uploads_attachment_with_hidden_source(self):
         self.client.force_login(self.user)
@@ -1524,6 +1525,55 @@ class SalesOrderViewTests(SalesServiceTests):
         audit_log = AuditLog.objects.get(action="sales_order_confirm", source_doc_id=order.id)
         self.assertEqual(audit_log.operator, self.user)
         self.assertEqual(audit_log.source_doc_type, "sales_order")
+
+    def test_pending_bom_order_can_recheck_shortage_after_bom_enabled(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.bom.status = Bom.BomStatus.DRAFT
+        self.bom.enabled_at = None
+        self.bom.save(update_fields=["status", "enabled_at"])
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.PENDING_BOM)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.PENDING_BOM)
+        self.assertFalse(order.shortage_alerts.exists())
+
+        detail_response = self.client.get(f"/sales/orders/{order.id}/")
+        self.assertContains(detail_response, "BOM 已维护，重新检查欠料")
+
+        self.bom.status = Bom.BomStatus.ENABLED
+        self.bom.enabled_at = timezone.now()
+        self.bom.save(update_fields=["status", "enabled_at"])
+        self._batch(self.raw, Decimal("5"))
+        response = self.client.post(f"/sales/orders/{order.id}/recheck-shortage/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/sales/orders/{order.id}/")
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SHORTAGE)
+        alert = order.shortage_alerts.get()
+        self.assertEqual(alert.required_qty, Decimal("20.0000"))
+        self.assertEqual(alert.available_qty, Decimal("5.0000"))
+        self.assertEqual(alert.shortage_qty, Decimal("15.0000"))
+        audit_log = AuditLog.objects.get(action="sales_order_recheck_shortage", source_doc_id=order.id)
+        self.assertEqual(audit_log.source_doc_no, order.sales_order_no)
+
+    def test_recheck_shortage_button_hidden_without_sales_process_permission(self):
+        self.bom.status = Bom.BomStatus.DRAFT
+        self.bom.enabled_at = None
+        self.bom.save(update_fields=["status", "enabled_at"])
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"/sales/orders/{order.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "BOM 已维护，重新检查欠料")
 
     def test_sales_order_edit_updates_draft_order_and_writes_logs(self):
         self.client.force_login(self.user)
@@ -1714,6 +1764,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, request.purchase_request_no)
         self.assertContains(response, self.raw.material_code)
+        self.assertContains(response, f'href="/sales/orders/{order.id}/"')
 
     def test_sales_shipment_detail_renders_confirm_action(self):
         self.client.force_login(self.user)
@@ -1744,6 +1795,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, "打印")
         self.assertContains(response, "确认出库")
         self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "返回销售订单")
+        self.assertContains(response, f'href="/sales/orders/{order.id}/"')
 
     def test_sales_shipment_print_excludes_price_and_records_log(self):
         self.client.force_login(self.user)
@@ -2105,9 +2158,9 @@ class SalesOrderViewTests(SalesServiceTests):
         void_response = self.client.post(f"/sales/shipments/{shipment.id}/void/")
 
         self.assertEqual(detail_response.status_code, 200)
-        self.assertNotContains(detail_response, "确认出库")
-        self.assertNotContains(detail_response, "编辑")
-        self.assertNotContains(detail_response, "作废")
+        self.assertNotContains(detail_response, f'action="/sales/shipments/{shipment.id}/confirm/"', html=False)
+        self.assertNotContains(detail_response, f'href="/sales/shipments/{shipment.id}/edit/"', html=False)
+        self.assertNotContains(detail_response, f'action="/sales/shipments/{shipment.id}/void/"', html=False)
         self.assertEqual(edit_response.status_code, 403)
         self.assertEqual(void_response.status_code, 403)
         shipment.refresh_from_db()
@@ -2284,6 +2337,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(page_response, customer_return.return_no)
         self.assertContains(page_response, "确认退货入库")
         self.assertContains(page_response, self.finished.material_code)
+        self.assertContains(page_response, "返回销售订单")
+        self.assertContains(page_response, f'href="/sales/orders/{customer_return.sales_order.id}/"')
 
         response = self.client.post(f"/sales/returns/{customer_return.id}/confirm-receipt/", {"current_password": "x"})
 

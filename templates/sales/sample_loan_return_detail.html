@@ -29,7 +29,9 @@
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">借样单</div>
-    <div class="detail-value">{{ sample_return.sample_loan.sample_loan_no }}</div>
+    <div class="detail-value">
+      <a href="{% url 'sales:sample_loan_detail' sample_return.sample_loan.pk %}">{{ sample_return.sample_loan.sample_loan_no }}</a>
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">客户</div>

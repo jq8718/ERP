@@ -9,6 +9,7 @@ from django.views.generic.edit import CreateView
 
 from accounts.permissions import ErpPermissionRequiredMixin, PermissionCode, user_has_permission
 from files.view_helpers import build_attachment_panel
+from system.display import code_label
 from system.view_helpers import ErpListView
 
 from .forms import ApprovalRuleForm
@@ -173,7 +174,7 @@ class ApprovalRuleDetailView(ErpPermissionRequiredMixin, LoginRequiredMixin, Det
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["page_title"] = f"审批规则 {self.object.doc_type}"
+        context["page_title"] = f"审批规则 {code_label(self.object.doc_type)}"
         return context
 
 

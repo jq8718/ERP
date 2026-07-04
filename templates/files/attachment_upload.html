@@ -20,12 +20,11 @@
           {% endfor %}
         </select>
       </label>
-      <label class="form-row">来源 ID
-        <input type="text" name="source_doc_id">
-      </label>
       <label class="form-row">来源单号
-        <input type="text" name="source_doc_no">
+        <input type="text" name="source_doc_no" placeholder="填写销售订单号、采购单号等">
+        <span class="muted">也可以从具体单据详情页上传，系统会自动带入来源。</span>
       </label>
+      <input type="hidden" name="source_doc_id">
       <label class="form-row">附件文件
         <input type="file" name="file">
       </label>

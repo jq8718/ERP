@@ -18,16 +18,15 @@
     <div class="detail-value">{{ print_log.template_type|code_name }}</div>
   </div>
   <div class="detail-cell">
-    <div class="detail-label">来源类型</div>
-    <div class="detail-value">{{ print_log.source_doc_type|code_name }}</div>
-  </div>
-  <div class="detail-cell">
-    <div class="detail-label">来源 ID</div>
-    <div class="detail-value">{{ print_log.source_doc_id }}</div>
-  </div>
-  <div class="detail-cell">
-    <div class="detail-label">来源单号</div>
-    <div class="detail-value">{{ print_log.source_doc_no|default:"-" }}</div>
+    <div class="detail-label">来源单据</div>
+    <div class="detail-value">
+      {{ print_log.source_doc_type|code_name }}
+      {% if source_doc_url %}
+        <a href="{{ source_doc_url }}">{{ print_log.source_doc_no|default:"-" }}</a>
+      {% else %}
+        {{ print_log.source_doc_no|default:"-" }}
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">打印人</div>

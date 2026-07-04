@@ -42,6 +42,7 @@
     <input type="hidden" name="source_doc_type" value="{{ attachment_panel.source_doc_type }}">
     <input type="hidden" name="source_doc_id" value="{{ attachment_panel.source_doc_id }}">
     <input type="hidden" name="source_doc_no" value="{{ attachment_panel.source_doc_no }}">
+    <input type="hidden" name="return_to" value="{{ request.get_full_path }}">
     <div class="form-grid">
       <label class="form-row">附件文件
         <input type="file" name="file">

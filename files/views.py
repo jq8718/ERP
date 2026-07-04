@@ -10,11 +10,13 @@ from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.http import FileResponse, Http404
 from django.shortcuts import redirect
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import DetailView, TemplateView
 
 from accounts.permissions import ErpPermissionRequiredMixin, PermissionCode, user_has_permission
 from system.date_utils import parse_user_date
+from system.display import code_label, field_label
 from system.view_helpers import ErpListView
 
 from .models import Attachment, AttachmentAccessLog, ExportLog, ImportJob, InitializationJob, PrintLog
@@ -23,7 +25,9 @@ from .permissions import (
     can_access_attachment_source,
     can_access_source_doc,
     filter_attachments_for_user,
+    resolve_source_doc_id,
     resolve_source_doc_no,
+    resolve_source_doc_url,
     source_doc_type_choices_for_user,
 )
 from .services import (
@@ -266,6 +270,7 @@ class ExportLogDetailView(ErpPermissionRequiredMixin, DetailView):
         context["page_title"] = f"导出日志 {self.object.export_no}"
         context["file_exists"] = file_path is not None
         context["can_download_file"] = context["file_exists"] and can_download_file
+        context["filter_entries"] = _format_filter_entries(self.object.filter_json)
         return context
 
 
@@ -329,6 +334,11 @@ class PrintLogDetailView(ErpPermissionRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"打印日志 {self.object.print_no}"
+        context["source_doc_url"] = (
+            resolve_source_doc_url(self.object.source_doc_type, self.object.source_doc_id)
+            if can_access_source_doc(self.request.user, self.object.source_doc_type, self.object.source_doc_id)
+            else ""
+        )
         return context
 
 
@@ -345,30 +355,34 @@ class AttachmentUploadView(LoginRequiredMixin, TemplateView):
         uploaded_file = request.FILES.get("file")
         source_doc_type = request.POST.get("source_doc_type", "").strip()
         is_sensitive = request.POST.get("is_sensitive") == "on"
+        return_to = _safe_return_to(request)
 
         try:
             source_doc_id = int(request.POST.get("source_doc_id", "0"))
         except ValueError:
             source_doc_id = 0
+        posted_source_doc_no = request.POST.get("source_doc_no", "").strip()
+        if source_doc_id <= 0 and posted_source_doc_no:
+            source_doc_id = resolve_source_doc_id(source_doc_type, posted_source_doc_no)
 
         if not uploaded_file or not source_doc_type or source_doc_id <= 0:
-            messages.error(request, "来源单据和附件文件必须填写")
-            return redirect("files:attachment_upload")
+            messages.error(request, "来源类型、来源单号和附件文件必须填写")
+            return redirect(return_to or "files:attachment_upload")
         if not can_access_source_doc(request.user, source_doc_type, source_doc_id):
             messages.error(request, "来源单据不存在或无权限上传附件")
-            return redirect("files:attachment_upload")
+            return redirect(return_to or "files:attachment_upload")
         source_doc_no = resolve_source_doc_no(source_doc_type, source_doc_id)
         if not source_doc_no:
             messages.error(request, "来源单据不存在或无权限上传附件")
-            return redirect("files:attachment_upload")
+            return redirect(return_to or "files:attachment_upload")
 
         suffix = Path(uploaded_file.name).suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
             messages.error(request, "附件类型不允许上传")
-            return redirect("files:attachment_upload")
+            return redirect(return_to or "files:attachment_upload")
         if uploaded_file.size > MAX_ATTACHMENT_SIZE:
             messages.error(request, "附件大小超过限制")
-            return redirect("files:attachment_upload")
+            return redirect(return_to or "files:attachment_upload")
 
         file_bytes = uploaded_file.read()
         checksum = sha256(file_bytes).hexdigest()
@@ -392,9 +406,11 @@ class AttachmentUploadView(LoginRequiredMixin, TemplateView):
         if not result.success:
             default_storage.delete(file_path)
             messages.error(request, result.message or result.error_code or "附件上传失败")
-            return redirect("files:attachment_upload")
+            return redirect(return_to or "files:attachment_upload")
 
         messages.success(request, result.message)
+        if return_to:
+            return redirect(return_to)
         return redirect("files:attachment_detail", pk=result.data["attachment_id"])
 
 
@@ -417,6 +433,11 @@ class AttachmentDetailView(LoginRequiredMixin, DetailView):
             self.object.status == Attachment.AttachmentStatus.ACTIVE
             and can_access_attachment_source(self.request.user, self.object)
             and user_has_permission(self.request.user, PermissionCode.ATTACHMENT_DELETE)
+        )
+        context["source_doc_url"] = (
+            resolve_source_doc_url(self.object.source_doc_type, self.object.source_doc_id)
+            if can_access_source_doc(self.request.user, self.object.source_doc_type, self.object.source_doc_id)
+            else ""
         )
         return context
 
@@ -464,3 +485,37 @@ class AttachmentDeleteView(LoginRequiredMixin, View):
         else:
             messages.error(request, result.message or result.error_code or "附件删除失败")
         return redirect("files:attachment_detail", pk=pk)
+
+
+def _safe_return_to(request) -> str:
+    return_to = request.POST.get("return_to", "").strip()
+    if not return_to:
+        return ""
+    if url_has_allowed_host_and_scheme(return_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return return_to
+    return ""
+
+
+def _format_filter_entries(filter_json) -> list[dict[str, str]]:
+    if not isinstance(filter_json, dict):
+        return []
+    query = filter_json.get("query", filter_json)
+    if not isinstance(query, dict):
+        return []
+
+    entries = []
+    for key, value in query.items():
+        if key == "page" or value in [None, "", []]:
+            continue
+        entries.append({"label": field_label(key), "value": _format_filter_value(key, value)})
+    return entries
+
+
+def _format_filter_value(key: str, value) -> str:
+    if isinstance(value, list):
+        return "、".join(_format_filter_value(key, item) for item in value if item not in [None, ""])
+    if key == "dir":
+        return {"asc": "升序", "desc": "降序"}.get(str(value), str(value))
+    if key in {"status", "module", "template_type", "source_doc_type", "source_type", "target_doc_type", "action"}:
+        return code_label(value)
+    return str(value)

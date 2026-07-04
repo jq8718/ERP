@@ -30,9 +30,11 @@ from finance.services import (
     apply_customer_credit_balance,
     confirm_customer_receipt,
     confirm_supplier_payment,
+    customer_order_available_allocation_amount,
     reverse_customer_receipt,
     reverse_supplier_payment,
     apply_supplier_credit_balance,
+    supplier_receipt_available_allocation_amount,
 )
 from inventory.models import WarehouseLocation
 from masterdata.models import Customer, CustomerProduct, Material, Supplier
@@ -412,6 +414,48 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(balance.status, CustomerCreditBalance.Status.CLOSED)
         self.assertEqual(balance.remaining_amount, Decimal("0.00"))
 
+    def test_apply_customer_credit_balance_to_order_creates_allocation(self):
+        first_order = self._sales_order("SO-CB-SOURCE", Decimal("100.00"))
+        target_order = self._sales_order("SO-CB-TARGET", Decimal("40.00"))
+        receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-CB-SOURCE",
+            customer=self.customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("150.00"),
+            unallocated_amount=Decimal("150.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        confirm_customer_receipt(
+            receipt.id,
+            [{"sales_order_id": first_order.id, "allocated_amount": "100.00"}],
+            self.user.id,
+            "rc-cb-source",
+        )
+        balance = CustomerCreditBalance.objects.get(source_doc_type="customer_receipt", source_doc_id=receipt.id)
+
+        result = apply_customer_credit_balance(
+            balance.id,
+            CustomerCreditBalanceTransaction.ActionType.ALLOCATE_TO_ORDER,
+            Decimal("40.00"),
+            self.user.id,
+            target_sales_order_id=target_order.id,
+            reason="核销其他订单",
+            idempotency_key="cb-allocate-order",
+        )
+
+        self.assertTrue(result.success)
+        receipt.refresh_from_db()
+        balance.refresh_from_db()
+        allocation = CustomerReceiptAllocation.objects.get(
+            customer_receipt=receipt,
+            sales_order=target_order,
+            allocation_type=CustomerReceiptAllocation.AllocationType.CREDIT_BALANCE,
+        )
+        self.assertEqual(allocation.allocated_amount, Decimal("40.00"))
+        self.assertEqual(receipt.unallocated_amount, Decimal("10.00"))
+        self.assertEqual(balance.remaining_amount, Decimal("10.00"))
+        self.assertEqual(customer_order_available_allocation_amount(target_order), Decimal("0.00"))
+
     def test_confirm_supplier_payment_and_reverse(self):
         receipt = self._purchase_receipt()
         payment = SupplierPayment.objects.create(
@@ -435,6 +479,48 @@ class FinanceServiceTests(TestCase):
         payment.refresh_from_db()
         self.assertEqual(payment.status, SupplierPayment.Status.REVERSED)
         self.assertEqual(SupplierPaymentReversal.objects.get().reversal_amount, Decimal("100.00"))
+
+    def test_apply_supplier_credit_balance_to_receipt_creates_allocation(self):
+        first_receipt = self._purchase_receipt_with_no("GR-SP-SOURCE", "PO-SP-SOURCE", Decimal("100.00"))
+        target_receipt = self._purchase_receipt_with_no("GR-SP-TARGET", "PO-SP-TARGET", Decimal("40.00"))
+        payment = SupplierPayment.objects.create(
+            payment_no="PY-SP-SOURCE",
+            supplier=self.supplier,
+            payment_date=timezone.localdate(),
+            payment_amount=Decimal("150.00"),
+            unallocated_amount=Decimal("150.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+        )
+        confirm_supplier_payment(
+            payment.id,
+            [{"purchase_receipt_id": first_receipt.id, "allocated_amount": "100.00"}],
+            self.user.id,
+            "py-sp-source",
+        )
+        balance = SupplierCreditBalance.objects.get(source_doc_type="supplier_payment", source_doc_id=payment.id)
+
+        result = apply_supplier_credit_balance(
+            balance.id,
+            SupplierCreditBalanceTransaction.ActionType.ALLOCATE_TO_RECEIPT,
+            Decimal("40.00"),
+            self.user.id,
+            target_purchase_receipt_id=target_receipt.id,
+            reason="核销其他进货单",
+            idempotency_key="sb-allocate-receipt",
+        )
+
+        self.assertTrue(result.success)
+        payment.refresh_from_db()
+        balance.refresh_from_db()
+        allocation = SupplierPaymentAllocation.objects.get(
+            supplier_payment=payment,
+            purchase_receipt=target_receipt,
+            allocation_type=SupplierPaymentAllocation.AllocationType.CREDIT_BALANCE,
+        )
+        self.assertEqual(allocation.allocated_amount, Decimal("40.00"))
+        self.assertEqual(payment.unallocated_amount, Decimal("10.00"))
+        self.assertEqual(balance.remaining_amount, Decimal("10.00"))
+        self.assertEqual(supplier_receipt_available_allocation_amount(target_receipt), Decimal("60.00"))
 
     def test_confirm_supplier_payment_allocates_opening_payable(self):
         opening = OpeningPayable.objects.create(
@@ -574,6 +660,7 @@ class FinanceServiceTests(TestCase):
             status=CustomerReceipt.Status.PENDING_APPROVAL,
         )
         confirm_customer_receipt(receipt.id, [{"sales_order_id": order.id, "allocated_amount": "100.00"}], self.user.id, "rc-view")
+        self._grant_permission(PermissionCode.SALES_VIEW_ALL)
 
         response = self.client.get(f"/finance/customer-receipts/{receipt.id}/")
 
@@ -582,6 +669,7 @@ class FinanceServiceTests(TestCase):
         self.assertContains(response, "确认红冲")
         self.assertContains(response, order.sales_order_no)
         self.assertContains(response, "100.00")
+        self.assertContains(response, f'href="/sales/orders/{order.id}/"')
 
     def test_customer_receipt_detail_masks_amount_without_permission(self):
         self.client.force_login(self.user)
@@ -1251,6 +1339,29 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(balance.status, CustomerCreditBalance.Status.CLOSED)
         self.assertEqual(balance.remaining_amount, Decimal("0.00"))
 
+    def test_customer_credit_balance_detail_uses_readable_order_select(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        order = self._sales_order("SO-BALANCE-TARGET", Decimal("88.00"))
+        balance = CustomerCreditBalance.objects.create(
+            customer=self.customer,
+            source_doc_type="manual",
+            source_doc_id=1,
+            source_doc_no="MANUAL-CB-SELECT",
+            balance_amount=Decimal("20.00"),
+            remaining_amount=Decimal("20.00"),
+            status=CustomerCreditBalance.Status.PENDING,
+        )
+
+        response = self.client.get(f"/finance/customer-balances/{balance.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "目标销售订单")
+        self.assertContains(response, f'<option value="{order.id}">', html=False)
+        self.assertContains(response, "SO-BALANCE-TARGET")
+        self.assertContains(response, "可核销 88.00")
+        self.assertNotContains(response, "目标销售订单 ID")
+
     def test_customer_credit_balance_apply_requires_payment_process_permission(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
@@ -1466,6 +1577,7 @@ class FinanceServiceTests(TestCase):
     def test_supplier_reconciliation_create_sums_open_receipts(self):
         self.client.force_login(self.user)
         self._grant_finance_process_permissions()
+        self._grant_permission(PermissionCode.PURCHASE_VIEW)
         receipt = self._purchase_receipt_with_no("GR-REC", "PO-REC", Decimal("100.00"))
         previous_payment = SupplierPayment.objects.create(
             payment_no="PY-REC-OLD",
@@ -1498,6 +1610,7 @@ class FinanceServiceTests(TestCase):
         detail_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/")
         self.assertContains(detail_response, receipt.purchase_receipt_no)
         self.assertContains(detail_response, "75.00")
+        self.assertContains(detail_response, f'href="/purchase/receipts/{receipt.id}/"')
 
         confirm_response = self.client.post(
             f"/finance/reconciliations/{reconciliation.id}/confirm/",
@@ -2053,6 +2166,29 @@ class FinanceServiceTests(TestCase):
         balance.refresh_from_db()
         self.assertEqual(balance.status, SupplierCreditBalance.Status.CLOSED)
         self.assertEqual(balance.remaining_amount, Decimal("0.00"))
+
+    def test_supplier_credit_balance_detail_uses_readable_receipt_select(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        receipt = self._purchase_receipt_with_no("GR-BALANCE-TARGET", "PO-BALANCE-TARGET", Decimal("66.00"))
+        balance = SupplierCreditBalance.objects.create(
+            supplier=self.supplier,
+            source_doc_type="manual",
+            source_doc_id=1,
+            source_doc_no="MANUAL-SB-SELECT",
+            balance_amount=Decimal("20.00"),
+            remaining_amount=Decimal("20.00"),
+            status=SupplierCreditBalance.Status.PENDING,
+        )
+
+        response = self.client.get(f"/finance/supplier-balances/{balance.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "目标进货单")
+        self.assertContains(response, f'<option value="{receipt.id}">', html=False)
+        self.assertContains(response, "GR-BALANCE-TARGET")
+        self.assertContains(response, "可核销 100.00")
+        self.assertNotContains(response, "目标进货单 ID")
 
     def test_supplier_credit_balance_apply_requires_payment_process_permission(self):
         self.client.force_login(self.user)

@@ -6,16 +6,27 @@
 
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'approvals:approval_list' %}">返回列表</a>
+  {% source_doc_url request.user approval.source_doc_type approval.source_object_id as approval_source_url %}
+  {% if approval_source_url %}
+    <a class="button" href="{{ approval_source_url }}">查看来源单据</a>
+  {% endif %}
 </div>
 
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">审批类型</div>
-    <div class="detail-value">{{ approval.approval_type }}</div>
+    <div class="detail-value">{{ approval.approval_type|code_name }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源单据</div>
-    <div class="detail-value">{{ approval.source_no }}</div>
+    <div class="detail-value">
+      {% source_doc_url request.user approval.source_doc_type approval.source_object_id as approval_source_url %}
+      {% if approval_source_url %}
+        <a href="{{ approval_source_url }}">{{ approval.source_no }}</a>
+      {% else %}
+        {{ approval.source_no }}
+      {% endif %}
+    </div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">来源类型</div>

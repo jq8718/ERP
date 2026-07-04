@@ -8,7 +8,9 @@ from approvals.models import Approval, ApprovalLog
 from approvals.models import ApprovalRule
 from approvals.services import apply_approval_action
 from files.models import Attachment
+from masterdata.models import Customer
 from notifications.models import SystemMessage
+from sales.models import SalesOrder
 
 
 class ApprovalServiceTests(TestCase):
@@ -189,6 +191,19 @@ class ApprovalViewTests(TestCase):
         user.roles.add(role)
         return role
 
+    def _grant_permission(self, user, permission_code, permission_type=Permission.PermissionType.ACTION):
+        permission, _ = Permission.objects.get_or_create(
+            permission_code=permission_code,
+            defaults={
+                "permission_name": permission_code,
+                "permission_type": permission_type,
+            },
+        )
+        role = Role.objects.create(role_code=f"{permission_code}-{user.id}", role_name=permission_code)
+        role.permissions.add(permission)
+        user.roles.add(role)
+        return role
+
     def test_approval_list_links_to_detail(self):
         self.client.force_login(self.approver)
 
@@ -282,6 +297,8 @@ class ApprovalViewTests(TestCase):
         response = self.client.get(f"/approvals/{self.approval.id}/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "销售订单")
+        self.assertNotContains(response, "sales_order")
         self.assertContains(response, "审批摘要")
         self.assertContains(response, "测试客户")
         self.assertContains(response, "同意")
@@ -289,6 +306,28 @@ class ApprovalViewTests(TestCase):
         self.assertContains(response, "转交")
         self.assertContains(response, "退回修改")
         self.assertContains(response, "加签")
+
+    def test_approval_detail_links_to_source_doc_when_user_can_access_it(self):
+        customer = Customer.objects.create(customer_no="C-APV", customer_name="审批客户")
+        order = SalesOrder.objects.create(
+            sales_order_no="SO-APV-LINK",
+            customer=customer,
+            order_date="2026-07-04",
+            status=SalesOrder.Status.PENDING_APPROVAL,
+            created_by=self.submitter,
+        )
+        self.approval.source_content_type = ContentType.objects.get_for_model(SalesOrder)
+        self.approval.source_object_id = order.id
+        self.approval.source_no = order.sales_order_no
+        self.approval.save(update_fields=["source_content_type", "source_object_id", "source_no"])
+        self._grant_permission(self.approver, PermissionCode.SALES_VIEW_ALL, Permission.PermissionType.MODULE)
+        self.client.force_login(self.approver)
+
+        response = self.client.get(f"/approvals/{self.approval.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "查看来源单据")
+        self.assertContains(response, f'href="/sales/orders/{order.id}/"')
 
     def test_approval_detail_shows_attachment_panel(self):
         Attachment.objects.create(
@@ -431,11 +470,14 @@ class ApprovalViewTests(TestCase):
         detail_response = self.client.get(f"/approvals/rules/{rule.id}/")
 
         self.assertEqual(list_response.status_code, 200)
-        self.assertContains(list_response, "sales_order")
+        self.assertContains(list_response, "销售订单")
+        self.assertNotContains(list_response, "sales_order")
         self.assertContains(list_response, f"/approvals/rules/{rule.id}/")
         self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, "销售订单")
+        self.assertNotContains(detail_response, "<h1>sales_order</h1>", html=False)
         self.assertContains(detail_response, "销售主管")
-        self.assertContains(detail_response, "min_amount")
+        self.assertContains(detail_response, "最低金额")
 
     def test_approval_rule_list_filters_by_keyword_and_status(self):
         self._grant_permission_manage(self.approver)
@@ -459,7 +501,7 @@ class ApprovalViewTests(TestCase):
         response = self.client.get("/approvals/rules/?q=sales&status=active")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, keep_rule.doc_type)
+        self.assertContains(response, "销售订单")
         self.assertNotContains(response, "purchase_order")
         self.assertContains(response, "清除")
 
@@ -468,11 +510,17 @@ class ApprovalViewTests(TestCase):
         self.client.force_login(self.approver)
         role = Role.objects.create(role_code="finance", role_name="财务")
 
+        form_response = self.client.get("/approvals/rules/new/")
+        self.assertContains(form_response, "客户收款")
+        self.assertContains(form_response, 'value="customer_receipt"', html=False)
+        self.assertContains(form_response, "最低金额")
+        self.assertNotContains(form_response, "condition_json")
+
         response = self.client.post(
             "/approvals/rules/new/",
             {
                 "doc_type": "customer_receipt",
-                "condition_json": '{"min_amount": "5000"}',
+                "condition_min_amount": "5000",
                 "level_no": "1",
                 "approver_role": role.id,
                 "approver_user": "",
@@ -498,7 +546,7 @@ class ApprovalViewTests(TestCase):
             "/approvals/rules/new/",
             {
                 "doc_type": "purchase_order",
-                "condition_json": "{}",
+                "condition_min_amount": "",
                 "level_no": "1",
                 "approver_role": "",
                 "approver_user": "",

@@ -1429,6 +1429,7 @@ class CustomerCreditBalanceDetailView(LoginRequiredMixin, DetailView):
             CustomerCreditBalance.Status.USED_UP,
             CustomerCreditBalance.Status.CLOSED,
         ]
+        context["target_sales_orders"] = _customer_credit_balance_target_orders(self.object)
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "customer_credit_balance",
@@ -1554,6 +1555,7 @@ class SupplierCreditBalanceDetailView(LoginRequiredMixin, DetailView):
             SupplierCreditBalance.Status.USED_UP,
             SupplierCreditBalance.Status.CLOSED,
         ]
+        context["target_purchase_receipts"] = _supplier_credit_balance_target_receipts(self.object)
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "supplier_credit_balance",
@@ -2056,6 +2058,41 @@ def _supplier_allocation_target_groups(payment: SupplierPayment):
             }
         )
     return receipt_targets, reconciliation_targets, opening_targets
+
+
+def _customer_credit_balance_target_orders(balance: CustomerCreditBalance) -> list[dict]:
+    targets = []
+    orders = (
+        SalesOrder.objects.filter(customer=balance.customer)
+        .exclude(
+            status__in=[
+                SalesOrder.Status.DRAFT,
+                SalesOrder.Status.PENDING_APPROVAL,
+                SalesOrder.Status.REJECTED,
+                SalesOrder.Status.VOIDED,
+            ]
+        )
+        .order_by("-order_date", "-id")
+    )
+    for order in orders:
+        available_amount = customer_order_available_allocation_amount(order)
+        if available_amount > ZERO_AMOUNT:
+            targets.append({"order": order, "available_amount": available_amount})
+    return targets
+
+
+def _supplier_credit_balance_target_receipts(balance: SupplierCreditBalance) -> list[dict]:
+    targets = []
+    receipts = (
+        PurchaseReceipt.objects.filter(supplier=balance.supplier, status=PurchaseReceipt.Status.RECEIVED)
+        .select_related("purchase_order")
+        .order_by("-receipt_date", "-id")
+    )
+    for receipt in receipts:
+        available_amount = supplier_receipt_available_allocation_amount(receipt)
+        if available_amount > ZERO_AMOUNT:
+            targets.append({"receipt": receipt, "available_amount": available_amount})
+    return targets
 
 
 def _flash_result(request, result, fallback_message: str) -> None:

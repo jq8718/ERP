@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from django.apps import apps
+from django.urls import NoReverseMatch, reverse
 from django.db.models import Q
 
 from accounts.permissions import PermissionCode, user_has_any_permission, user_has_permission
@@ -52,6 +54,25 @@ def resolve_source_doc_no(source_doc_type: str, source_doc_id: int) -> str:
     if resolver is None:
         return ""
     return resolver(source_doc_id) or ""
+
+
+def resolve_source_doc_url(source_doc_type: str, source_doc_id: int) -> str:
+    route_name = _SOURCE_DETAIL_ROUTES.get(source_doc_type)
+    if route_name is None:
+        return ""
+    try:
+        return reverse(route_name, kwargs={"pk": source_doc_id})
+    except NoReverseMatch:
+        return ""
+
+
+def resolve_source_doc_id(source_doc_type: str, source_doc_no: str) -> int:
+    if not source_doc_type or not source_doc_no:
+        return 0
+    resolver = _SOURCE_ID_RESOLVERS.get(source_doc_type)
+    if resolver is None:
+        return 0
+    return resolver(source_doc_no.strip()) or 0
 
 
 def _is_privileged(user) -> bool:
@@ -345,6 +366,20 @@ def _reconciliation_no(source_doc_id: int) -> str:
     return Reconciliation.objects.filter(id=source_doc_id).values_list("reconciliation_no", flat=True).first()
 
 
+def _expense_record(user, source_doc_id: int) -> bool:
+    from finance.models import ExpenseRecord
+
+    if not user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT):
+        return False
+    return ExpenseRecord.objects.filter(id=source_doc_id).exists()
+
+
+def _expense_record_no(source_doc_id: int) -> str:
+    from finance.models import ExpenseRecord
+
+    return ExpenseRecord.objects.filter(id=source_doc_id).values_list("expense_no", flat=True).first()
+
+
 def _approval(user, source_doc_id: int) -> bool:
     from approvals.models import Approval
 
@@ -377,6 +412,7 @@ _SOURCE_CHECKERS = {
     "customer_credit_balance": _customer_credit_balance,
     "supplier_credit_balance": _supplier_credit_balance,
     "reconciliation": _reconciliation,
+    "expense_record": _expense_record,
     "approval": _approval,
 }
 
@@ -401,7 +437,63 @@ _SOURCE_NO_RESOLVERS = {
     "customer_credit_balance": _customer_credit_balance_no,
     "supplier_credit_balance": _supplier_credit_balance_no,
     "reconciliation": _reconciliation_no,
+    "expense_record": _expense_record_no,
     "approval": _approval_no,
+}
+
+
+def _doc_id(app_label: str, model_name: str, field_name: str, source_doc_no: str) -> int:
+    model = apps.get_model(app_label, model_name)
+    return model.objects.filter(**{field_name: source_doc_no}).values_list("id", flat=True).first() or 0
+
+
+_SOURCE_ID_RESOLVERS = {
+    "sales_order": lambda value: _doc_id("sales", "SalesOrder", "sales_order_no", value),
+    "sales_shipment": lambda value: _doc_id("sales", "SalesShipment", "shipment_no", value),
+    "customer_return": lambda value: _doc_id("sales", "CustomerReturn", "return_no", value),
+    "sample_loan": lambda value: _doc_id("sales", "SampleLoan", "sample_loan_no", value),
+    "sample_loan_return": lambda value: _doc_id("sales", "SampleLoanReturn", "sample_return_no", value),
+    "purchase_request": lambda value: _doc_id("purchase", "PurchaseRequest", "purchase_request_no", value),
+    "purchase_order": lambda value: _doc_id("purchase", "PurchaseOrder", "purchase_order_no", value),
+    "purchase_receipt": lambda value: _doc_id("purchase", "PurchaseReceipt", "purchase_receipt_no", value),
+    "supplier_return": lambda value: _doc_id("purchase", "SupplierReturn", "supplier_return_no", value),
+    "production_order": lambda value: _doc_id("production", "ProductionOrder", "production_order_no", value),
+    "production_material_requisition": lambda value: _doc_id("production", "ProductionMaterialRequisition", "requisition_no", value),
+    "production_receipt": lambda value: _doc_id("production", "ProductionReceipt", "production_receipt_no", value),
+    "location_transfer": lambda value: _doc_id("inventory", "LocationTransfer", "transfer_no", value),
+    "stock_count": lambda value: _doc_id("inventory", "StockCount", "stock_count_no", value),
+    "customer_receipt": lambda value: _doc_id("finance", "CustomerReceipt", "receipt_no", value),
+    "supplier_payment": lambda value: _doc_id("finance", "SupplierPayment", "payment_no", value),
+    "customer_credit_balance": lambda value: _doc_id("finance", "CustomerCreditBalance", "source_doc_no", value),
+    "supplier_credit_balance": lambda value: _doc_id("finance", "SupplierCreditBalance", "source_doc_no", value),
+    "reconciliation": lambda value: _doc_id("finance", "Reconciliation", "reconciliation_no", value),
+    "expense_record": lambda value: _doc_id("finance", "ExpenseRecord", "expense_no", value),
+    "approval": lambda value: _doc_id("approvals", "Approval", "approval_no", value),
+}
+
+
+_SOURCE_DETAIL_ROUTES = {
+    "sales_order": "sales:sales_order_detail",
+    "sales_shipment": "sales:sales_shipment_detail",
+    "customer_return": "sales:customer_return_detail",
+    "sample_loan": "sales:sample_loan_detail",
+    "sample_loan_return": "sales:sample_loan_return_detail",
+    "purchase_request": "purchase:purchase_request_detail",
+    "purchase_order": "purchase:purchase_order_detail",
+    "purchase_receipt": "purchase:purchase_receipt_detail",
+    "supplier_return": "purchase:supplier_return_detail",
+    "production_order": "production:production_order_detail",
+    "production_material_requisition": "production:material_requisition_detail",
+    "production_receipt": "production:production_receipt_detail",
+    "location_transfer": "inventory:location_transfer_detail",
+    "stock_count": "inventory:stock_count_detail",
+    "customer_receipt": "finance:customer_receipt_detail",
+    "supplier_payment": "finance:supplier_payment_detail",
+    "customer_credit_balance": "finance:customer_credit_balance_detail",
+    "supplier_credit_balance": "finance:supplier_credit_balance_detail",
+    "reconciliation": "finance:reconciliation_detail",
+    "expense_record": "finance:expense_record_detail",
+    "approval": "approvals:approval_detail",
 }
 
 
@@ -428,6 +520,7 @@ def _can_upload_source_type(user, source_doc_type: str) -> bool:
         "customer_credit_balance",
         "supplier_credit_balance",
         "reconciliation",
+        "expense_record",
     }:
         return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
     if source_doc_type == "approval":
