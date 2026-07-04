@@ -3,7 +3,7 @@ from django.db import models
 
 from bom.models import Bom
 from inventory.models import InventoryBatch, WarehouseLocation
-from masterdata.models import Customer, CustomerAddress, CustomerProduct, Material
+from masterdata.models import Customer, CustomerAddress, CustomerProduct, Material, SettlementMethod
 
 
 class SalesOrder(models.Model):
@@ -24,7 +24,7 @@ class SalesOrder(models.Model):
     order_date = models.DateField()
     delivery_date = models.DateField(null=True, blank=True)
     customer_contract_no = models.CharField(max_length=100, blank=True)
-    settlement_method = models.CharField(max_length=80, blank=True)
+    settlement_method = models.CharField(max_length=80, choices=SettlementMethod.choices, blank=True)
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.DRAFT)
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     contract_attachment_count = models.PositiveIntegerField(default=0)
@@ -264,7 +264,7 @@ class SalesShipment(models.Model):
     customer_address_text = models.TextField(blank=True)
     customer_contact_name = models.CharField(max_length=120, blank=True)
     customer_contact_phone = models.CharField(max_length=120, blank=True)
-    settlement_method = models.CharField(max_length=80, blank=True)
+    settlement_method = models.CharField(max_length=80, choices=SettlementMethod.choices, blank=True)
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.DRAFT)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)

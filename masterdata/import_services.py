@@ -12,7 +12,7 @@ from files.models import ImportJob
 from files.services import CsvImportReadError, csv_import_header_row, read_csv_dict_rows
 from system.services import ServiceResult, next_document_no
 
-from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, Supplier
+from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, SettlementMethod, Supplier
 
 
 MATERIAL_IMPORT_COLUMNS = (
@@ -358,6 +358,7 @@ def _validate_customer_rows(rows: list[dict[str, str]]) -> tuple[list[dict], dic
     seen_nos = set()
     existing_nos = set(Customer.objects.filter(customer_no__in=[_clean(row.get("customer_no")) for row in rows]).values_list("customer_no", flat=True))
     valid_statuses = set(Customer.CustomerStatus.values)
+    valid_settlement_methods = set(SettlementMethod.values)
     usernames = {_clean(row.get("sales_owner_username")) for row in rows if _clean(row.get("sales_owner_username"))}
     User = get_user_model()
     owner_map = {user.username: user for user in User.objects.filter(username__in=usernames)}
@@ -378,6 +379,16 @@ def _validate_customer_rows(rows: list[dict[str, str]]) -> tuple[list[dict], dic
         status = _clean(row.get("status")) or Customer.CustomerStatus.ACTIVE
         if status not in valid_statuses:
             errors.append({"row": row_no, "field": "status", "message": "状态不合法"})
+
+        settlement_method = _clean(row.get("settlement_method"))
+        if settlement_method and settlement_method not in valid_settlement_methods:
+            errors.append(
+                {
+                    "row": row_no,
+                    "field": "settlement_method",
+                    "message": f"结算方式不合法，请填写：{', '.join(SettlementMethod.values)}",
+                }
+            )
 
         username = _clean(row.get("sales_owner_username"))
         if username and username not in owner_map:

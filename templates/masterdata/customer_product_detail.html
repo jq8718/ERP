@@ -58,13 +58,13 @@
   <div class="panel">
     <h2>标签要求</h2>
     <div style="padding: 14px;">
-      <pre style="white-space: pre-wrap; margin: 0;">{{ product.label_requirements }}</pre>
+      <pre style="white-space: pre-wrap; margin: 0;">{{ product.label_requirements_display|default:"-" }}</pre>
     </div>
   </div>
   <div class="panel">
     <h2>包装要求</h2>
     <div style="padding: 14px;">
-      <pre style="white-space: pre-wrap; margin: 0;">{{ product.packaging_requirements }}</pre>
+      <pre style="white-space: pre-wrap; margin: 0;">{{ product.packaging_requirements_display|default:"-" }}</pre>
     </div>
   </div>
 </section>

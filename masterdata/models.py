@@ -25,6 +25,17 @@ class TimeStampedModel(models.Model):
         abstract = True
 
 
+class SettlementMethod(models.TextChoices):
+    CASH = "现结", "现结"
+    MONTHLY = "月结", "月结"
+    MONTHLY_30 = "月结30天", "月结30天"
+    MONTHLY_60 = "月结60天", "月结60天"
+    PREPAID = "预付", "预付"
+    PAYMENT_BEFORE_SHIPMENT = "款到发货", "款到发货"
+    CASH_ON_DELIVERY = "货到付款", "货到付款"
+    AFTER_RECONCILIATION = "对账后付款", "对账后付款"
+
+
 class Material(TimeStampedModel):
     class MaterialType(models.TextChoices):
         FINISHED = "finished", "成品"
@@ -87,7 +98,7 @@ class Customer(TimeStampedModel):
     customer_name = models.CharField(max_length=200)
     short_name = models.CharField(max_length=120, blank=True)
     sales_owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
-    settlement_method = models.CharField(max_length=80, blank=True)
+    settlement_method = models.CharField(max_length=80, choices=SettlementMethod.choices, blank=True)
     contact_phone_encrypted = models.TextField(blank=True)
     status = models.CharField(max_length=16, choices=CustomerStatus.choices, default=CustomerStatus.ACTIVE)
     remark = models.TextField(blank=True)
@@ -122,6 +133,28 @@ class CustomerProduct(TimeStampedModel):
         constraints = [
             models.UniqueConstraint(fields=["customer", "customer_product_no"], name="uq_customer_product_no"),
         ]
+
+    @property
+    def label_requirements_display(self):
+        return _requirements_display(self.label_requirements)
+
+    @property
+    def packaging_requirements_display(self):
+        return _requirements_display(self.packaging_requirements)
+
+
+def _requirements_display(value):
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        if set(value.keys()) == {"说明"}:
+            return value["说明"]
+        return "\n".join(f"{key}: {item}" for key, item in value.items())
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return str(value)
 
 
 class CustomerAddress(TimeStampedModel):

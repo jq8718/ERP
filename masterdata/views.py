@@ -19,6 +19,7 @@ from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason
 
+from .forms import CustomerProductForm
 from .import_services import (
     CUSTOMER_IMPORT_TEMPLATE_ROWS,
     CUSTOMER_ADDRESS_IMPORT_TEMPLATE_ROWS,
@@ -712,30 +713,16 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
 class CustomerProductCreateView(LoginRequiredMixin, CreateView):
     model = CustomerProduct
     template_name = "masterdata/customer_product_form.html"
-    fields = [
-        "customer_product_no",
-        "customer_product_name",
-        "finished_material",
-        "default_sale_price",
-        "label_requirements",
-        "packaging_requirements",
-        "status",
-    ]
+    form_class = CustomerProductForm
 
     def dispatch(self, request, *args, **kwargs):
         self.customer = _filter_customer_queryset_for_user(Customer.objects.all(), request.user).get(pk=kwargs["customer_pk"])
         return super().dispatch(request, *args, **kwargs)
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        set_form_labels(form)
-        if not can_view_amount(self.request.user):
-            form.fields.pop("default_sale_price", None)
-        form.fields["finished_material"].queryset = Material.objects.filter(
-            material_type=Material.MaterialType.FINISHED,
-            status=Material.MaterialStatus.ACTIVE,
-        ).order_by("material_code")
-        return form
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["can_edit_amount"] = can_view_amount(self.request.user)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -782,7 +769,7 @@ class CustomerProductDetailView(LoginRequiredMixin, DetailView):
 class CustomerProductUpdateView(LoginRequiredMixin, UpdateView):
     model = CustomerProduct
     template_name = "masterdata/customer_product_form.html"
-    fields = CustomerProductCreateView.fields
+    form_class = CustomerProductForm
 
     def get_queryset(self):
         return _filter_customer_product_queryset_for_user(
@@ -790,16 +777,10 @@ class CustomerProductUpdateView(LoginRequiredMixin, UpdateView):
             self.request.user,
         ).select_related("customer")
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        set_form_labels(form)
-        if not can_view_amount(self.request.user):
-            form.fields.pop("default_sale_price", None)
-        form.fields["finished_material"].queryset = Material.objects.filter(
-            material_type=Material.MaterialType.FINISHED,
-            status=Material.MaterialStatus.ACTIVE,
-        ).order_by("material_code")
-        return form
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["can_edit_amount"] = can_view_amount(self.request.user)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

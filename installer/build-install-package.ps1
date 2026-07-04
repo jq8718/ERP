@@ -18,7 +18,7 @@ if (-not (Test-Path -LiteralPath $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-$excludeDirs = @(".git", ".venv", ".tmp", "backups", "logs", "logs-test", "media", "staticfiles", "dist", "work", "__pycache__", "tests_safety", "packages", $packageDirName)
+$excludeDirs = @(".git", ".agents", ".codex", ".venv", ".tmp", "backups", "logs", "logs-test", "media", "staticfiles", "dist", "work", "__pycache__", "tests_safety", "packages", $packageDirName)
 $excludeFiles = @(".env", "db.sqlite3", "*.pyc", "~*.DDF", "*.docx", $planFileName, $zipFileName)
 $robocopyArgs = @($repoRoot, $OutputDir, "/MIR", "/XD") + $excludeDirs + @("/XF") + $excludeFiles
 & robocopy @robocopyArgs | Out-Host
@@ -31,6 +31,8 @@ $cleanupDirs = @(
     "installer\dist",
     "installer\work",
     "installer\packages",
+    ".agents",
+    ".codex",
     ".git",
     ".venv",
     ".tmp",

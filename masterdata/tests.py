@@ -1152,8 +1152,8 @@ class MasterdataViewTests(TestCase):
                 "customer_product_name": "页面客户产品",
                 "finished_material": material.id,
                 "default_sale_price": "18.8800",
-                "label_requirements": "{}",
-                "packaging_requirements": "{}",
+                "label_requirements": "无要求",
+                "packaging_requirements": "塑料包装",
                 "status": CustomerProduct.ProductStatus.ACTIVE,
             },
         )
@@ -1163,6 +1163,8 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(response["Location"], f"/masterdata/customer-products/{product.id}/")
         self.assertEqual(product.finished_material, material)
         self.assertEqual(product.default_sale_price, Decimal("18.8800"))
+        self.assertEqual(product.label_requirements, "无要求")
+        self.assertEqual(product.packaging_requirements, "塑料包装")
         self.assertEqual(product.created_by, self.user)
 
     def test_customer_product_edit_updates_product_and_preserves_price_without_permission(self):
