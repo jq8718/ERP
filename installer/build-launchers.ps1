@@ -30,14 +30,17 @@ $source = Join-Path $PSScriptRoot "launcher\ErpLauncher.cs"
 $csc = Find-Csc
 
 $setupDist = Join-Path $DistDir "ERP-Setup.exe"
+$updateDist = Join-Path $DistDir "ERP-Update.exe"
 $uninstallDist = Join-Path $DistDir "ERP-Uninstall.exe"
 
 & $csc /nologo /target:winexe /out:$setupDist $source
+& $csc /nologo /target:winexe /out:$updateDist $source
 & $csc /nologo /target:winexe /out:$uninstallDist $source
 
 Copy-Item -LiteralPath $setupDist -Destination (Join-Path $repoRoot "ERP-Setup.exe") -Force
+Copy-Item -LiteralPath $updateDist -Destination (Join-Path $repoRoot "ERP-Update.exe") -Force
 Copy-Item -LiteralPath $uninstallDist -Destination (Join-Path $repoRoot "ERP-Uninstall.exe") -Force
 
-Get-Item -LiteralPath $setupDist, $uninstallDist, (Join-Path $repoRoot "ERP-Setup.exe"), (Join-Path $repoRoot "ERP-Uninstall.exe") |
+Get-Item -LiteralPath $setupDist, $updateDist, $uninstallDist, (Join-Path $repoRoot "ERP-Setup.exe"), (Join-Path $repoRoot "ERP-Update.exe"), (Join-Path $repoRoot "ERP-Uninstall.exe") |
     Select-Object FullName, Length, LastWriteTime |
     Format-Table -AutoSize

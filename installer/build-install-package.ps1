@@ -124,6 +124,8 @@ if (-not $nssmSource -and (Test-Path -LiteralPath $nssmZip)) {
 $required = @(
     "ERP-Setup.exe",
     "ERP-Setup-Console.cmd",
+    "ERP-Update.exe",
+    "ERP-Update-Console.cmd",
     "ERP-Uninstall.exe",
     "ERP-Uninstall-Console.cmd",
     "manage.py",
