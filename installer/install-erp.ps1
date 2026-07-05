@@ -172,6 +172,15 @@ function Assert-OfflineWheels {
     return $wheelFiles
 }
 
+function Get-PackageVersion {
+    param([string]$Root)
+    $versionPath = Join-Path $Root "VERSION"
+    if (-not (Test-Path -LiteralPath $versionPath)) {
+        return ""
+    }
+    return (Get-Content -LiteralPath $versionPath -Raw).Trim()
+}
+
 function Read-RequiredSecret {
     param([string]$Prompt)
     $secure = Read-Host $Prompt -AsSecureString
@@ -189,6 +198,12 @@ if (-not $ServerHost) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = (Resolve-Path -LiteralPath $repoRoot).Path
+$packageVersion = Get-PackageVersion -Root $sourceRoot
+if ($packageVersion) {
+    Write-Host "ERP package version: $packageVersion"
+} else {
+    Write-Host "ERP package version: not set"
+}
 $targetRoot = if (Test-Path -LiteralPath $InstallDir) { (Resolve-Path -LiteralPath $InstallDir).Path } else { "" }
 if ($sourceRoot -ne $targetRoot) {
     Write-Host "Copying ERP files to $InstallDir ..."
@@ -326,6 +341,13 @@ try {
     }
     Invoke-Checked "Run production preflight" {
         .\.venv\Scripts\python.exe manage.py production_preflight --strict --skip-release-gate-report
+    }
+    if ($packageVersion) {
+        Invoke-Checked "Record ERP release version" {
+            .\.venv\Scripts\python.exe manage.py record_release $packageVersion --summary "ERP initial installation" --released-by $AdminUsername --ignore-existing
+        }
+    } else {
+        Write-Host "Release version record skipped because VERSION file is missing."
     }
 
     if ($RunReleaseGate -and -not $SkipTests) {

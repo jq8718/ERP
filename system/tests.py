@@ -121,6 +121,22 @@ class SystemDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "工作台")
 
+    @override_settings(ERP_APP_VERSION="20260705_0150")
+    def test_login_page_displays_app_version(self):
+        response = self.client.get("/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "版本：20260705_0150")
+
+    @override_settings(ERP_APP_VERSION="20260705_0150")
+    def test_authenticated_pages_display_app_version_in_sidebar(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "版本：20260705_0150")
+
     def test_sidebar_sections_are_collapsible_and_expanded_by_default(self):
         superuser = get_user_model().objects.create_superuser(username="sidebar-root", password="x")
         self.client.force_login(superuser)
@@ -484,6 +500,24 @@ class SystemDashboardTests(TestCase):
         self.assertContains(response, "health:failed")
         self.assertContains(response, "模拟事件失败")
         self.assertContains(response, "发布门禁")
+
+    @override_settings(ERP_APP_VERSION="20260705_0150")
+    def test_health_check_displays_current_version_and_latest_release(self):
+        self.client.force_login(self.user)
+        _grant_permission(self.user, PermissionCode.ADMIN_PERMISSION_MANAGE)
+        ReleaseRecord.objects.create(
+            version_no="20260705_0150",
+            released_at=timezone.now(),
+            released_by=self.user,
+            summary="更新包升级",
+        )
+
+        response = self.client.get("/health/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "当前版本")
+        self.assertContains(response, "20260705_0150")
+        self.assertContains(response, "最近发布记录：20260705_0150")
 
     def test_operational_system_lists_require_permission(self):
         self.client.force_login(self.user)
@@ -1776,6 +1810,15 @@ class ReleaseRecordCommandTests(TestCase):
 
         with self.assertRaises(CommandError):
             management.call_command("record_release", "2026.06.11.1", stdout=StringIO())
+
+    def test_record_release_can_ignore_duplicate_version_for_idempotent_update(self):
+        ReleaseRecord.objects.create(version_no="2026.06.11.1", released_at=timezone.now())
+        output = StringIO()
+
+        management.call_command("record_release", "2026.06.11.1", "--ignore-existing", stdout=output)
+
+        self.assertEqual(ReleaseRecord.objects.filter(version_no="2026.06.11.1").count(), 1)
+        self.assertIn("Release already recorded", output.getvalue())
 
     def test_record_release_rejects_unknown_user(self):
         with self.assertRaises(CommandError):

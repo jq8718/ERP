@@ -1,5 +1,6 @@
 param(
-    [string]$OutputDir = $null
+    [string]$OutputDir = $null,
+    [string]$Version = $null
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,9 @@ $updateZipPattern = "$($updatePackageDirName)_*.zip"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $repoRoot $packageDirName
+}
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = Get-Date -Format "yyyyMMdd_HHmm"
 }
 
 if (-not (Test-Path -LiteralPath $OutputDir)) {
@@ -96,6 +100,8 @@ ERP installer logs will be written to this folder.
 If ERP-Setup.exe or ERP-Uninstall.exe fails, send the newest .log file in this folder to the developer.
 "@
 
+Set-Content -LiteralPath (Join-Path $OutputDir "VERSION") -Encoding UTF8 -Value $Version
+
 $toolsDir = Join-Path $OutputDir "installer\tools"
 if (-not (Test-Path -LiteralPath $toolsDir)) {
     New-Item -ItemType Directory -Path $toolsDir | Out-Null
@@ -133,6 +139,7 @@ $required = @(
     "ERP-Update-Console.cmd",
     "ERP-Uninstall.exe",
     "ERP-Uninstall-Console.cmd",
+    "VERSION",
     "manage.py",
     "requirements.txt",
     "installer\wheels\django-6.0.6-py3-none-any.whl",

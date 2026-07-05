@@ -108,6 +108,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'system.context_processors.erp_version',
             ],
         },
     },
@@ -198,6 +199,8 @@ ERP_COMPANY_PHONE = os.getenv("ERP_COMPANY_PHONE", "")
 ERP_COMPANY_CONTACT = os.getenv("ERP_COMPANY_CONTACT", "")
 ERP_RELEASE_GATE_REPORT_FILE = _path_from_env("ERP_RELEASE_GATE_REPORT_FILE", BASE_DIR / "docs" / "latest-release-gate-report.md")
 ERP_RELEASE_GATE_MAX_AGE_HOURS = int(os.getenv("ERP_RELEASE_GATE_MAX_AGE_HOURS", "24"))
+ERP_APP_VERSION = os.getenv("ERP_APP_VERSION", "").strip()
+ERP_VERSION_FILE = _path_from_env("ERP_VERSION_FILE", BASE_DIR / "VERSION")
 ERP_PRELAUNCH_BACKUP_MAX_AGE_HOURS = int(os.getenv("ERP_PRELAUNCH_BACKUP_MAX_AGE_HOURS", "24"))
 ERP_PRELAUNCH_BACKUP_VERIFY_MAX_AGE_HOURS = int(os.getenv("ERP_PRELAUNCH_BACKUP_VERIFY_MAX_AGE_HOURS", "24"))
 ERP_PRELAUNCH_RESTORE_DRILL_MAX_AGE_HOURS = int(os.getenv("ERP_PRELAUNCH_RESTORE_DRILL_MAX_AGE_HOURS", "168"))

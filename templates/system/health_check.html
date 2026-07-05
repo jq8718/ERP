@@ -11,6 +11,17 @@
 
 <section class="detail-grid">
   <div class="detail-cell">
+    <div class="detail-label">当前版本</div>
+    <div class="detail-value">{{ current_version }}</div>
+    <div class="muted">
+      {% if latest_release %}
+        最近发布记录：{{ latest_release.version_no }} · {{ latest_release.released_at }}
+      {% else %}
+        暂无发布记录
+      {% endif %}
+    </div>
+  </div>
+  <div class="detail-cell">
     <div class="detail-label">数据库连接</div>
     <div class="detail-value">{% if database_status.ok %}正常{% else %}异常{% endif %}</div>
     <div class="muted">{{ database_status.message }}</div>

@@ -21,6 +21,7 @@ from sales.models import SalesOrder, ShortageAlert
 from system.models import AuditLog, BackgroundJob, Backup, PendingEvent, ReleaseRecord, SavedFilter
 from system.release_gate_status import get_release_gate_report_status
 from system.view_helpers import ErpListView, filter_json_from_query_string
+from system.version import get_app_version
 
 
 def _safe_return_to(request) -> str:
@@ -105,9 +106,11 @@ class HealthCheckView(LoginRequiredMixin, ErpPermissionRequiredMixin, TemplateVi
                 "database_status": _check_database(),
                 "media_status": _check_directory_writable(Path(settings.MEDIA_ROOT)),
                 "backup_status": _check_directory_writable(backup_dir),
+                "current_version": get_app_version(),
                 "media_root": settings.MEDIA_ROOT,
                 "backup_dir": backup_dir,
                 "latest_backup": Backup.objects.order_by("-created_at").first(),
+                "latest_release": ReleaseRecord.objects.order_by("-released_at").first(),
                 "latest_job": BackgroundJob.objects.order_by("-created_at").first(),
                 "failed_jobs": BackgroundJob.objects.filter(status=BackgroundJob.JobStatus.FAILED).order_by("-created_at")[:5],
                 "stale_running_job_count": _stale_running_job_count(),

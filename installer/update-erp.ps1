@@ -93,6 +93,15 @@ function Find-Nssm {
     return ""
 }
 
+function Get-PackageVersion {
+    param([string]$Root)
+    $versionPath = Join-Path $Root "VERSION"
+    if (-not (Test-Path -LiteralPath $versionPath)) {
+        return ""
+    }
+    return (Get-Content -LiteralPath $versionPath -Raw).Trim()
+}
+
 function Stop-ErpService {
     param([string]$Name, [string]$Nssm)
     $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
@@ -129,6 +138,12 @@ if ($sourceRoot.StartsWith($targetRoot + "\", [System.StringComparison]::Ordinal
 $packageDirName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x5B89, 0x88C5, 0x5305))
 $planFileName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x6A21, 0x5757, 0x5EFA, 0x8BBE, 0x8BA1, 0x5212, 0x002E, 0x006D, 0x0064))
 $zipFileName = "$packageDirName.zip"
+$packageVersion = Get-PackageVersion -Root $sourceRoot
+if ($packageVersion) {
+    Write-Host "ERP package version: $packageVersion"
+} else {
+    Write-Host "ERP package version: not set"
+}
 
 $nssm = Find-Nssm -PackageRoot $sourceRoot -TargetRoot $targetRoot
 Stop-ErpService -Name $ServiceName -Nssm $nssm
@@ -182,6 +197,13 @@ try {
     Invoke-Checked "Apply database migrations" { .\.venv\Scripts\python.exe manage.py migrate }
     Invoke-Checked "Collect static files" { .\.venv\Scripts\python.exe manage.py collectstatic --noinput }
     Invoke-Checked "Run Django system check" { .\.venv\Scripts\python.exe manage.py check }
+    if ($packageVersion) {
+        Invoke-Checked "Record ERP release version" {
+            .\.venv\Scripts\python.exe manage.py record_release $packageVersion --summary "ERP update package" --ignore-existing
+        }
+    } else {
+        Write-Host "Release version record skipped because VERSION file is missing."
+    }
 } finally {
     Pop-Location
 }

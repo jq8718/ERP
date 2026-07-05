@@ -14,6 +14,7 @@ class Command(BaseCommand):
         parser.add_argument("--release-version", default="", help="发布版本号；用于部署脚本显式传参")
         parser.add_argument("--summary", default="", help="发布摘要")
         parser.add_argument("--released-by", default="", help="发布人用户名；为空则不关联用户")
+        parser.add_argument("--ignore-existing", action="store_true", help="版本记录已存在时跳过，不作为错误")
         parser.add_argument("--noinput", action="store_true", help="兼容部署脚本；本命令始终非交互执行")
 
     @transaction.atomic
@@ -32,6 +33,9 @@ class Command(BaseCommand):
             },
         )
         if not created:
+            if options["ignore_existing"]:
+                self.stdout.write(self.style.WARNING(f"Release already recorded: version={record.version_no}"))
+                return
             raise CommandError(f"发布版本已存在：{version_no}")
 
         self.stdout.write(
