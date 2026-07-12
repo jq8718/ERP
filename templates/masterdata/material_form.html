@@ -27,6 +27,7 @@
 
       <label class="record-field medium">{{ form.material_type.label }}
         {{ form.material_type }}
+        {% if form.material_type.help_text %}<span class="muted">{{ form.material_type.help_text }}</span>{% endif %}
         {% if form.material_type.errors %}<span class="error">{{ form.material_type.errors|join:", " }}</span>{% endif %}
       </label>
       <label class="record-field wide">{{ form.spec.label }}

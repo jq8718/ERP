@@ -39,6 +39,7 @@
   <div class="detail-cell">
     <div class="detail-label">成品</div>
     <div class="detail-value">{{ bom.finished_material.material_code }} {{ bom.finished_material.material_name }}</div>
+    {% if bom.finished_material.spec %}<div class="muted">{{ bom.finished_material.spec }}</div>{% endif %}
   </div>
   <div class="detail-cell">
     <div class="detail-label">版本</div>
@@ -90,7 +91,10 @@
         {% for item in bom.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.component_material.material_code }} {{ item.component_material.material_name }}</td>
+            <td>
+              {{ item.component_material.material_code }} {{ item.component_material.material_name }}
+              {% if item.component_material.spec %}<div class="muted">{{ item.component_material.spec }}</div>{% endif %}
+            </td>
             <td>{{ item.usage_qty }}</td>
             <td>{{ item.usage_unit }}</td>
             <td>{{ item.loss_rate }}</td>
@@ -131,7 +135,7 @@
           <select name="component_material">
             <option value="">请选择</option>
             {% for material in component_materials %}
-              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}{% if material.spec %} ｜ {{ material.spec }}{% endif %}</option>
             {% endfor %}
           </select>
         </label>

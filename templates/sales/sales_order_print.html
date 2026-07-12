@@ -126,8 +126,8 @@
     <thead>
       <tr>
         <th>行号</th>
-        <th>客户产品</th>
-        <th>成品编码</th>
+        <th>公司内部型号</th>
+        <th>客户型号/备注</th>
         <th>数量</th>
         <th>已发货</th>
         <th>单价</th>
@@ -139,8 +139,16 @@
       {% for item in order.items.all %}
         <tr>
           <td>{{ item.line_no }}</td>
-          <td>{{ item.customer_product.customer_product_name }}</td>
-          <td>{{ item.finished_material.material_code }}</td>
+          <td>
+            {{ item.finished_material.material_code }} {{ item.finished_material.material_name }}
+            {% if item.finished_material.spec %}<br>{{ item.finished_material.spec }}{% endif %}
+          </td>
+          <td>
+            {{ item.customer_model_remark|default:"" }}
+            {% if not item.customer_model_remark and item.customer_product %}
+              {{ item.customer_product.customer_product_no }} {{ item.customer_product.customer_product_name }}
+            {% endif %}
+          </td>
           <td>{{ item.order_qty }}</td>
           <td>{{ item.shipped_qty }}</td>
           <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>

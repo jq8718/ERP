@@ -37,7 +37,18 @@ from .import_services import (
     import_material_unit_conversions_from_csv,
     import_suppliers_from_csv,
 )
-from .models import Customer, CustomerAddress, CustomerProduct, Material, MaterialSupplierPrice, MaterialUnitConversion, Supplier
+from .models import (
+    Customer,
+    CustomerAddress,
+    CustomerProduct,
+    Material,
+    MaterialSupplierPrice,
+    MaterialUnitConversion,
+    SettlementMethod,
+    Supplier,
+    SupplierPaymentMethod,
+    SupplierType,
+)
 
 
 def configure_supplier_form_widgets(form):
@@ -98,6 +109,7 @@ class MaterialListView(ErpListView):
     columns = (
         ("编码", "material_code"),
         ("名称", "material_name"),
+        ("型号", "spec"),
         ("类型", "get_material_type_display"),
         ("单位", "base_unit"),
         ("状态", "get_status_display"),
@@ -105,9 +117,23 @@ class MaterialListView(ErpListView):
     ordering = ["material_code"]
     search_fields = ("material_code", "material_name", "spec")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "编码", "param": "material_code", "field": "material_code", "placeholder": "物料编码"},
+        {"label": "名称", "param": "material_name", "field": "material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "spec", "field": "spec", "placeholder": "规格型号"},
+        {
+            "label": "类型",
+            "param": "material_type",
+            "field": "material_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": Material.MaterialType.choices,
+        },
+    )
     sortable_fields = {
         "material_code": "material_code",
         "material_name": "material_name",
+        "spec": "spec",
         "material_type": "material_type",
         "base_unit": "base_unit",
         "get_status_display": "status",
@@ -148,6 +174,7 @@ class MasterdataCsvExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_search(queryset)
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.apply_field_filters(queryset)
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -569,6 +596,19 @@ class CustomerListView(ErpListView):
     ordering = ["customer_no"]
     search_fields = ("customer_no", "customer_name", "short_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "客户编号", "param": "customer_no", "field": "customer_no", "placeholder": "客户编号"},
+        {"label": "客户名称", "param": "customer_name", "field": "customer_name", "placeholder": "客户名称"},
+        {"label": "简称", "param": "short_name", "field": "short_name", "placeholder": "客户简称"},
+        {
+            "label": "结算方式",
+            "param": "settlement_method",
+            "field": "settlement_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SettlementMethod.choices,
+        },
+    )
     page_actions = (
         ("导出CSV", "masterdata:customer_export", ""),
         ("下载导入模板", "masterdata:customer_import_template", ""),
@@ -585,6 +625,22 @@ class CustomerListView(ErpListView):
 
     def get_queryset(self):
         return _filter_customer_queryset_for_user(super().get_queryset(), self.request.user).select_related("sales_owner")
+
+    def get_scope_filter_options(self):
+        if _can_view_all_sales(self.request.user):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(Q(sales_owner=self.request.user) | Q(created_by=self.request.user)).distinct()
+        if scope_value == "unassigned" and _can_view_all_sales(self.request.user):
+            return queryset.filter(sales_owner__isnull=True)
+        return queryset
 
 
 class CustomerExportView(MasterdataCsvExportView):
@@ -961,6 +1017,13 @@ class CustomerProductListView(ErpListView):
         "finished_material__material_name",
     )
     status_filter_field = "status"
+    field_filters = (
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "客户产品编号", "param": "customer_product_no", "field": "customer_product_no", "placeholder": "客户产品编号"},
+        {"label": "客户产品名称", "param": "customer_product_name", "field": "customer_product_name", "placeholder": "客户产品名称"},
+        {"label": "成品编码", "param": "finished_material_code", "field": "finished_material__material_code", "placeholder": "成品编码"},
+        {"label": "成品型号", "param": "finished_material_spec", "field": "finished_material__spec", "placeholder": "成品型号"},
+    )
     page_actions = (
         ("导出CSV", "masterdata:customer_product_export", ""),
         ("下载导入模板", "masterdata:customer_product_import_template", ""),
@@ -1024,6 +1087,27 @@ class SupplierListView(ErpListView):
     ordering = ["supplier_no"]
     search_fields = ("supplier_no", "supplier_name", "contact_name", "supplier_type")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "供应商编号", "param": "supplier_no", "field": "supplier_no", "placeholder": "供应商编号"},
+        {"label": "供应商名称", "param": "supplier_name", "field": "supplier_name", "placeholder": "供应商名称"},
+        {"label": "联系人", "param": "contact_name", "field": "contact_name", "placeholder": "联系人"},
+        {
+            "label": "供应商类型",
+            "param": "supplier_type",
+            "field": "supplier_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SupplierType.choices,
+        },
+        {
+            "label": "付款方式",
+            "param": "payment_method",
+            "field": "payment_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SupplierPaymentMethod.choices,
+        },
+    )
     page_actions = (
         ("导出CSV", "masterdata:supplier_export", ""),
         ("下载导入模板", "masterdata:supplier_import_template", ""),
@@ -1171,7 +1255,7 @@ class SupplierDetailView(LoginRequiredMixin, DetailView):
 
 
 def _can_view_all_sales(user) -> bool:
-    return user_has_permission(user, PermissionCode.SALES_VIEW_ALL)
+    return can_view_amount(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL)
 
 
 def _filter_customer_queryset_for_user(queryset, user):

@@ -72,7 +72,7 @@
     <table>
       <thead>
         <tr>
-          <th>物料</th>
+          <th>退货规格/型号</th>
           <th>退货数量</th>
           <th>单价</th>
           <th>金额</th>
@@ -85,7 +85,10 @@
       <tbody>
         {% for item in supplier_return.items.all %}
           <tr>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>
+              {{ item.material.material_code }} {{ item.material.material_name }}
+              {% if item.material.spec %}<br><span class="muted">规格型号：{{ item.material.spec }}</span>{% endif %}
+            </td>
             <td>{{ item.return_qty }}</td>
             <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
             <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>

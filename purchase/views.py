@@ -4,8 +4,8 @@ from io import StringIO
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import F
-from django.http import HttpResponse
+from django.db.models import F, Q
+from django.http import HttpResponse, JsonResponse
 from django.views.generic import TemplateView
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -25,7 +25,14 @@ from system.view_helpers import ErpListView, optional_post_reason, require_post_
 
 from .forms import PurchaseOrderForm, PurchaseOrderItemFormSet, PurchaseReceiptForm, PurchaseReceiptItemFormSet
 from .forms import PurchaseRequestForm, PurchaseRequestItemFormSet
-from .forms import SupplierReturnForm, SupplierReturnItemFormSet, recalculate_purchase_order_total, recalculate_supplier_return_total
+from .forms import (
+    SupplierReturnForm,
+    SupplierReturnItemFormSet,
+    recalculate_purchase_order_total,
+    recalculate_supplier_return_total,
+    supplier_return_receipt_item_label,
+    supplier_returnable_qty,
+)
 from .forms import _default_purchase_price
 from .import_services import (
     PURCHASE_ORDER_IMPORT_TEMPLATE_ROWS,
@@ -68,6 +75,21 @@ class PurchaseRequestListView(ErpListView):
     }
     search_fields = ("purchase_request_no",)
     status_filter_field = "status"
+    field_filters = (
+        {"label": "需求单号", "param": "purchase_request_no", "field": "purchase_request_no", "placeholder": "采购需求单号"},
+        {
+            "label": "来源",
+            "param": "source_type",
+            "field": "source_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": PurchaseRequest.SourceType.choices,
+        },
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "需求物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "需求物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+        {"label": "建议供应商", "param": "supplier_name", "field": "items__suggested_supplier__supplier_name", "placeholder": "建议供应商", "distinct": True},
+    )
     sortable_fields = {
         "purchase_request_no": "purchase_request_no",
         "get_source_type_display": "source_type",
@@ -345,13 +367,14 @@ class PurchaseOrderListView(ErpListView):
     page_title = "采购单"
     create_url_name = "purchase:purchase_order_create"
     create_permission_required = PermissionCode.PURCHASE_PROCESS
-    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS, PermissionCode.FINANCE_VIEW_AMOUNT)
     permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:purchase_order_detail"
     columns = (
         ("采购单号", "purchase_order_no"),
         ("供应商", "supplier.supplier_name"),
         ("订单日期", "order_date"),
+        ("负责人", "purchase_owner"),
         ("状态", "get_status_display"),
         ("金额", "total_amount"),
     )
@@ -368,18 +391,46 @@ class PurchaseOrderListView(ErpListView):
     }
     search_fields = ("purchase_order_no", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "采购单号", "param": "purchase_order_no", "field": "purchase_order_no", "placeholder": "采购单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {"label": "负责人", "param": "purchase_owner", "field": "purchase_owner__username", "placeholder": "负责人账号"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "采购物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "采购物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
     sortable_fields = {
         "purchase_order_no": "purchase_order_no",
         "supplier.supplier_name": "supplier__supplier_name",
         "order_date": "order_date",
+        "purchase_owner": "purchase_owner__username",
         "get_status_display": "status",
         "total_amount": "total_amount",
     }
+
+    def get_queryset(self):
+        return _filter_purchase_order_queryset_for_user(super().get_queryset(), self.request.user).select_related("supplier", "purchase_owner")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["mask_sensitive_columns"] = not can_view_amount(self.request.user)
         return context
+
+    def get_scope_filter_options(self):
+        if _can_view_all_purchase(self.request.user):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(Q(purchase_owner=self.request.user) | Q(created_by=self.request.user)).distinct()
+        if scope_value == "unassigned" and _can_view_all_purchase(self.request.user):
+            return queryset.filter(purchase_owner__isnull=True)
+        return queryset
 
 
 class PurchaseCsvExportView(LoginRequiredMixin, View):
@@ -397,10 +448,7 @@ class PurchaseCsvExportView(LoginRequiredMixin, View):
     def get_queryset(self):
         list_view = self.list_view_class()
         list_view.request = self.request
-        queryset = self.list_view_class.model.objects.all()
-        queryset = list_view.apply_search(queryset)
-        queryset = list_view.apply_status_filter(queryset)
-        queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.get_queryset()
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -599,7 +647,9 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, View):
         submitted_order = form.save(commit=False, user=request.user)
 
         with transaction.atomic():
-            order = PurchaseOrder.objects.select_for_update().prefetch_related("items__material").get(pk=pk)
+            order = _filter_purchase_order_queryset_for_user(
+                PurchaseOrder.objects.select_for_update().prefetch_related("items__material"), request.user
+            ).get(pk=pk)
             if order.status not in self.editable_statuses:
                 messages.error(request, "只有草稿或已驳回采购单可以编辑")
                 return redirect("purchase:purchase_order_detail", pk=pk)
@@ -633,7 +683,7 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, View):
         queryset = PurchaseOrder.objects.prefetch_related("items__material")
         if for_update:
             queryset = queryset.select_for_update()
-        return queryset.filter(pk=pk).first()
+        return _filter_purchase_order_queryset_for_user(queryset, self.request.user).filter(pk=pk).first()
 
     def _render(self, request, order, form, item_formset):
         return render(
@@ -662,12 +712,13 @@ class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("supplier", "created_by")
             .prefetch_related("items__material", "items__purchase_request_item", "receipts")
         )
+        return _filter_purchase_order_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -711,12 +762,13 @@ class PurchaseOrderPrintView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("supplier", "created_by")
             .prefetch_related("items__material", "items__purchase_request_item__purchase_request")
         )
+        return _filter_purchase_order_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -751,7 +803,9 @@ class PurchaseOrderVoidView(LoginRequiredMixin, View):
             return reason_response
         try:
             with transaction.atomic():
-                order = PurchaseOrder.objects.select_for_update().prefetch_related("items__material").get(pk=pk)
+                order = _filter_purchase_order_queryset_for_user(
+                    PurchaseOrder.objects.select_for_update().prefetch_related("items__material"), request.user
+                ).get(pk=pk)
                 if order.status not in self.voidable_statuses:
                     messages.error(request, "只有草稿、待审核或已驳回采购单可以作废")
                     return redirect("purchase:purchase_order_detail", pk=pk)
@@ -782,7 +836,7 @@ class PurchaseOrderItemCreateView(LoginRequiredMixin, View):
         from decimal import Decimal, InvalidOperation
 
         try:
-            order = PurchaseOrder.objects.get(pk=pk)
+            order = _filter_purchase_order_queryset_for_user(PurchaseOrder.objects.all(), request.user).get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             messages.error(request, "采购单不存在")
             return redirect("purchase:purchase_order_list")
@@ -843,7 +897,9 @@ class PurchaseOrderCreateReceiptView(LoginRequiredMixin, View):
 
         with transaction.atomic():
             try:
-                order = PurchaseOrder.objects.select_for_update().select_related("supplier").get(pk=pk)
+                order = _filter_purchase_order_queryset_for_user(
+                    PurchaseOrder.objects.select_for_update().select_related("supplier"), request.user
+                ).get(pk=pk)
             except PurchaseOrder.DoesNotExist:
                 messages.error(request, "采购单不存在")
                 return redirect("purchase:purchase_order_list")
@@ -912,7 +968,7 @@ class PurchaseRequestCreateOrderView(LoginRequiredMixin, View):
 class PurchaseReceiptListView(ErpListView):
     model = PurchaseReceipt
     page_title = "进货单"
-    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS, PermissionCode.FINANCE_VIEW_AMOUNT)
     permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:purchase_receipt_detail"
     columns = (
@@ -934,6 +990,15 @@ class PurchaseReceiptListView(ErpListView):
     }
     search_fields = ("purchase_receipt_no", "purchase_order__purchase_order_no", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "进货单号", "param": "purchase_receipt_no", "field": "purchase_receipt_no", "placeholder": "进货单号"},
+        {"label": "采购单号", "param": "purchase_order_no", "field": "purchase_order__purchase_order_no", "placeholder": "采购单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "进货物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "进货物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+        {"label": "库位", "param": "location_code", "field": "items__location__location_code", "placeholder": "入库库位", "distinct": True},
+    )
     sortable_fields = {
         "purchase_receipt_no": "purchase_receipt_no",
         "purchase_order.purchase_order_no": "purchase_order__purchase_order_no",
@@ -941,6 +1006,31 @@ class PurchaseReceiptListView(ErpListView):
         "receipt_date": "receipt_date",
         "get_status_display": "status",
     }
+
+    def get_queryset(self):
+        return _filter_purchase_receipt_queryset_for_user(super().get_queryset(), self.request.user).select_related(
+            "purchase_order", "supplier"
+        )
+
+    def get_scope_filter_options(self):
+        if _can_view_all_purchase(self.request.user):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(
+                Q(purchase_order__purchase_owner=self.request.user)
+                | Q(purchase_order__created_by=self.request.user)
+                | Q(created_by=self.request.user)
+            ).distinct()
+        if scope_value == "unassigned" and _can_view_all_purchase(self.request.user):
+            return queryset.filter(purchase_order__purchase_owner__isnull=True)
+        return queryset
 
 
 class PurchaseReceiptExportView(PurchaseCsvExportView):
@@ -1005,12 +1095,13 @@ class PurchaseReceiptDetailView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("purchase_order", "supplier", "created_by")
             .prefetch_related("items__purchase_order_item", "items__material", "items__location", "items__batch")
         )
+        return _filter_purchase_receipt_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1068,7 +1159,10 @@ class PurchaseReceiptUpdateView(LoginRequiredMixin, View):
 
         with transaction.atomic():
             receipt = (
-                PurchaseReceipt.objects.select_for_update()
+                _filter_purchase_receipt_queryset_for_user(
+                    PurchaseReceipt.objects.select_for_update(),
+                    request.user,
+                )
                 .prefetch_related("items__material", "items__location", "items__purchase_order_item")
                 .get(pk=pk)
             )
@@ -1099,12 +1193,11 @@ class PurchaseReceiptUpdateView(LoginRequiredMixin, View):
         return redirect("purchase:purchase_receipt_detail", pk=receipt.pk)
 
     def _get_receipt(self, pk):
-        return (
+        queryset = (
             PurchaseReceipt.objects.select_related("purchase_order", "supplier", "created_by")
             .prefetch_related("items__material", "items__location", "items__purchase_order_item")
-            .filter(pk=pk)
-            .first()
         )
+        return _filter_purchase_receipt_queryset_for_user(queryset, self.request.user).filter(pk=pk).first()
 
     def _can_edit(self, receipt):
         return receipt.status in self.editable_statuses and not receipt.items.filter(batch__isnull=False).exists()
@@ -1134,12 +1227,13 @@ class PurchaseReceiptPrintView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("purchase_order", "supplier", "created_by")
             .prefetch_related("items__purchase_order_item", "items__material", "items__location", "items__batch")
         )
+        return _filter_purchase_receipt_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1158,6 +1252,9 @@ class PurchaseReceiptPrintView(LoginRequiredMixin, DetailView):
 class PurchaseReceiptConfirmView(LoginRequiredMixin, View):
     def post(self, request, pk):
         require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        if not _filter_purchase_receipt_queryset_for_user(PurchaseReceipt.objects.all(), request.user).filter(pk=pk).exists():
+            messages.error(request, "进货单不存在")
+            return redirect("purchase:purchase_receipt_list")
         verification_response = require_second_verify(request, "purchase:purchase_receipt_detail", pk)
         if verification_response:
             return verification_response
@@ -1175,7 +1272,7 @@ class SupplierReturnListView(ErpListView):
     page_title = "供应商退货"
     create_url_name = "purchase:supplier_return_create"
     create_permission_required = PermissionCode.PURCHASE_PROCESS
-    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS)
+    view_permission_required = (PermissionCode.PURCHASE_VIEW, PermissionCode.PURCHASE_PROCESS, PermissionCode.FINANCE_VIEW_AMOUNT)
     permission_denied_message = "缺少采购数据查看权限"
     detail_url_name = "purchase:supplier_return_detail"
     columns = (
@@ -1198,11 +1295,46 @@ class SupplierReturnListView(ErpListView):
     }
     search_fields = ("supplier_return_no", "supplier__supplier_name", "purchase_receipt__purchase_receipt_no")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "退货单号", "param": "supplier_return_no", "field": "supplier_return_no", "placeholder": "供应商退货单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {"label": "进货单号", "param": "purchase_receipt_no", "field": "purchase_receipt__purchase_receipt_no", "placeholder": "进货单号"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "退货物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "退货物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
+
+    def get_queryset(self):
+        return _filter_supplier_return_queryset_for_user(
+            super().get_queryset(),
+            self.request.user,
+        ).select_related("supplier", "purchase_receipt", "purchase_receipt__purchase_order")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["mask_sensitive_columns"] = not can_view_amount(self.request.user)
         return context
+
+    def get_scope_filter_options(self):
+        if _can_view_all_purchase(self.request.user):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(
+                Q(purchase_receipt__purchase_order__purchase_owner=self.request.user)
+                | Q(purchase_receipt__purchase_order__created_by=self.request.user)
+                | Q(purchase_receipt__created_by=self.request.user)
+                | Q(created_by=self.request.user)
+            ).distinct()
+        if scope_value == "unassigned" and _can_view_all_purchase(self.request.user):
+            return queryset.filter(Q(purchase_receipt__purchase_order__purchase_owner__isnull=True) | Q(purchase_receipt__isnull=True))
+        return queryset
 
 
 class SupplierReturnExportView(PurchaseCsvExportView):
@@ -1264,6 +1396,14 @@ class SupplierReturnCreateView(LoginRequiredMixin, CreateView):
     model = SupplierReturn
     form_class = SupplierReturnForm
     template_name = "purchase/supplier_return_form.html"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["purchase_receipt_queryset"] = _supplier_return_receipt_queryset(self.request.user)
+        kwargs.setdefault("initial", {})
+        if self.request.GET.get("show_all_receipts") == "1":
+            kwargs["initial"]["show_all_receipts"] = True
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1330,6 +1470,36 @@ class SupplierReturnCreateView(LoginRequiredMixin, CreateView):
         return reverse("purchase:supplier_return_detail", kwargs={"pk": self.object.pk})
 
 
+class SupplierReturnReceiptItemsView(LoginRequiredMixin, View):
+    def get(self, request):
+        require_any_erp_permission(request.user, SupplierReturnListView.view_permission_required, "缺少采购数据查看权限")
+        receipt_id = request.GET.get("purchase_receipt")
+        if not receipt_id:
+            return JsonResponse({"items": []})
+        receipt = (
+            _supplier_return_receipt_queryset(request.user)
+            .filter(pk=receipt_id)
+            .select_related("supplier")
+            .first()
+        )
+        if not receipt:
+            return JsonResponse({"items": []})
+        items = (
+            PurchaseReceiptItem.objects.select_related("material", "batch", "location")
+            .filter(purchase_receipt=receipt, accepted_qty__gt=0)
+            .order_by("id")
+        )
+        return JsonResponse(
+            {
+                "supplier": {
+                    "id": receipt.supplier_id,
+                    "name": receipt.supplier.supplier_name,
+                },
+                "items": [_supplier_return_receipt_item_payload(item) for item in items],
+            }
+        )
+
+
 class SupplierReturnDetailView(LoginRequiredMixin, DetailView):
     model = SupplierReturn
     template_name = "purchase/supplier_return_detail.html"
@@ -1341,12 +1511,13 @@ class SupplierReturnDetailView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
-            .select_related("supplier", "purchase_receipt", "created_by")
-            .prefetch_related("items__material", "items__batch", "items__location", "items__purchase_receipt_item")
+            .select_related("supplier", "purchase_receipt", "purchase_receipt__purchase_order", "created_by")
+            .prefetch_related("items__material", "items__batch", "items__location", "items__purchase_receipt_item__purchase_receipt")
         )
+        return _filter_supplier_return_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1380,12 +1551,13 @@ class SupplierReturnPrintView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
-            .select_related("supplier", "purchase_receipt", "created_by")
+            .select_related("supplier", "purchase_receipt", "purchase_receipt__purchase_order", "created_by")
             .prefetch_related("items__material", "items__batch", "items__location", "items__purchase_receipt_item__purchase_receipt")
         )
+        return _filter_supplier_return_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1412,7 +1584,11 @@ class SupplierReturnUpdateView(LoginRequiredMixin, View):
         if supplier_return.status not in self.editable_statuses:
             messages.error(request, "只有草稿或已驳回供应商退货单可以编辑")
             return redirect("purchase:supplier_return_detail", pk=pk)
-        form = SupplierReturnForm(instance=supplier_return)
+        form = SupplierReturnForm(
+            instance=supplier_return,
+            purchase_receipt_queryset=_supplier_return_receipt_queryset(request.user),
+            initial={"show_all_receipts": request.GET.get("show_all_receipts") == "1"},
+        )
         item_formset = SupplierReturnItemFormSet(
             instance=supplier_return,
             supplier=supplier_return.supplier,
@@ -1431,7 +1607,11 @@ class SupplierReturnUpdateView(LoginRequiredMixin, View):
             return redirect("purchase:supplier_return_detail", pk=pk)
 
         before_snapshot = _supplier_return_snapshot(supplier_return)
-        form = SupplierReturnForm(request.POST, instance=supplier_return)
+        form = SupplierReturnForm(
+            request.POST,
+            instance=supplier_return,
+            purchase_receipt_queryset=_supplier_return_receipt_queryset(request.user),
+        )
         submit_for_approval = request.POST.get("action") == "submit"
         if not form.is_valid():
             item_formset = SupplierReturnItemFormSet(
@@ -1483,6 +1663,7 @@ class SupplierReturnUpdateView(LoginRequiredMixin, View):
         )
         if for_update:
             queryset = queryset.select_for_update()
+        queryset = _filter_supplier_return_queryset_for_user(queryset, request.user)
         try:
             return queryset.get(pk=pk)
         except SupplierReturn.DoesNotExist:
@@ -1524,7 +1705,14 @@ class SupplierReturnVoidView(LoginRequiredMixin, View):
             return reason_response
         try:
             with transaction.atomic():
-                supplier_return = SupplierReturn.objects.select_for_update().prefetch_related("items__material").get(pk=pk)
+                supplier_return = (
+                    _filter_supplier_return_queryset_for_user(
+                        SupplierReturn.objects.select_for_update(),
+                        request.user,
+                    )
+                    .prefetch_related("items__material")
+                    .get(pk=pk)
+                )
                 if supplier_return.status not in self.voidable_statuses:
                     messages.error(request, "只有草稿、待审核或已驳回供应商退货单可以作废")
                     return redirect("purchase:supplier_return_detail", pk=pk)
@@ -1552,6 +1740,9 @@ class SupplierReturnVoidView(LoginRequiredMixin, View):
 class SupplierReturnConfirmOutView(LoginRequiredMixin, View):
     def post(self, request, pk):
         require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        if not _filter_supplier_return_queryset_for_user(SupplierReturn.objects.all(), request.user).filter(pk=pk).exists():
+            messages.error(request, "供应商退货单不存在")
+            return redirect("purchase:supplier_return_list")
         verification_response = require_second_verify(request, "purchase:supplier_return_detail", pk)
         if verification_response:
             return verification_response
@@ -1566,6 +1757,39 @@ class SupplierReturnConfirmOutView(LoginRequiredMixin, View):
 
 def _can_process_purchase(user) -> bool:
     return user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+
+
+def _can_view_all_purchase(user) -> bool:
+    return can_view_amount(user) or user_has_permission(user, PermissionCode.PURCHASE_VIEW)
+
+
+def _filter_purchase_order_queryset_for_user(queryset, user):
+    if _can_view_all_purchase(user):
+        return queryset
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(Q(purchase_owner=user) | Q(created_by=user)).distinct()
+    return queryset.none()
+
+
+def _filter_purchase_receipt_queryset_for_user(queryset, user):
+    if _can_view_all_purchase(user):
+        return queryset
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(Q(purchase_order__purchase_owner=user) | Q(purchase_order__created_by=user) | Q(created_by=user)).distinct()
+    return queryset.none()
+
+
+def _filter_supplier_return_queryset_for_user(queryset, user):
+    if _can_view_all_purchase(user):
+        return queryset
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(
+            Q(purchase_receipt__purchase_order__purchase_owner=user)
+            | Q(purchase_receipt__purchase_order__created_by=user)
+            | Q(purchase_receipt__created_by=user)
+            | Q(created_by=user)
+        ).distinct()
+    return queryset.none()
 
 
 def _purchase_request_snapshot(purchase_request: PurchaseRequest) -> dict:
@@ -1600,6 +1824,7 @@ def _purchase_order_snapshot(order: PurchaseOrder) -> dict:
         "purchase_order_no": order.purchase_order_no,
         "supplier_id": order.supplier_id,
         "order_date": order.order_date.isoformat() if order.order_date else None,
+        "purchase_owner_id": order.purchase_owner_id,
         "status": order.status,
         "total_amount": str(order.total_amount),
         "remark": order.remark,
@@ -1646,6 +1871,33 @@ def _purchase_receipt_snapshot(receipt: PurchaseReceipt) -> dict:
             }
             for item in items
         ],
+    }
+
+
+def _supplier_return_receipt_queryset(user=None):
+    queryset = (
+        PurchaseReceipt.objects.select_related("supplier", "purchase_order")
+        .filter(
+            status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED],
+            items__accepted_qty__gt=0,
+        )
+        .distinct()
+    )
+    if user is not None:
+        queryset = _filter_purchase_receipt_queryset_for_user(queryset, user)
+    return queryset
+
+
+def _supplier_return_receipt_item_payload(item: PurchaseReceiptItem) -> dict:
+    material = item.material
+    return {
+        "id": item.id,
+        "material_id": material.id,
+        "unit_price": str(item.unit_price),
+        "returnable_qty": str(supplier_returnable_qty(item)),
+        "batch_id": item.batch_id or "",
+        "location_id": item.location_id or "",
+        "label": supplier_return_receipt_item_label(item),
     }
 
 

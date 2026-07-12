@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, transaction
+from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.views import View
@@ -28,21 +29,47 @@ EDITABLE_BOM_STATUSES = {
     Bom.BomStatus.PENDING_APPROVAL,
     Bom.BomStatus.REJECTED,
 }
+COMPONENT_MATERIAL_TYPES = (
+    Material.MaterialType.RAW,
+    Material.MaterialType.PART,
+    Material.MaterialType.PACKAGING,
+    Material.MaterialType.OTHER,
+)
 
 
 class BomForm(forms.ModelForm):
+    finished_material_code = forms.CharField(max_length=80)
+    finished_material_name = forms.CharField(max_length=200)
+    finished_material_spec = forms.CharField(max_length=200, required=False)
+    finished_material_base_unit = forms.CharField(max_length=32)
+    finished_material_qty_precision = forms.IntegerField(min_value=0, initial=0)
+
     class Meta:
         model = Bom
         fields = [
             "bom_no",
-            "finished_material",
             "bom_version",
             "base_qty",
             "effective_date",
             "expiry_date",
             "remark",
         ]
-        widgets = {"remark": forms.Textarea(attrs={"rows": 3})}
+        widgets = {
+            "effective_date": forms.DateInput(attrs={"type": "date"}),
+            "expiry_date": forms.DateInput(attrs={"type": "date"}),
+            "remark": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user", None)
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.finished_material_id:
+            material = self.instance.finished_material
+            self.fields["finished_material_code"].initial = material.material_code
+            self.fields["finished_material_name"].initial = material.material_name
+            self.fields["finished_material_spec"].initial = material.spec
+            self.fields["finished_material_base_unit"].initial = material.base_unit
+            self.fields["finished_material_qty_precision"].initial = material.qty_precision
 
     def clean(self):
         cleaned = super().clean()
@@ -50,7 +77,94 @@ class BomForm(forms.ModelForm):
         expiry_date = cleaned.get("expiry_date")
         if effective_date and expiry_date and expiry_date < effective_date:
             self.add_error("expiry_date", "失效日期不能早于生效日期")
+        material_code = (cleaned.get("finished_material_code") or "").strip()
+        existing_material = Material.objects.filter(material_code=material_code).first() if material_code else None
+        if existing_material and existing_material.material_type != Material.MaterialType.FINISHED:
+            self.add_error("finished_material_code", "该物料号已存在，但不是成品物料")
+        self._finished_material = existing_material
         return cleaned
+
+    def save(self, commit=True):
+        bom = super().save(commit=False)
+        bom.finished_material = self._save_finished_material()
+        if commit:
+            bom.save()
+            self.save_m2m()
+        return bom
+
+    def _save_finished_material(self):
+        material = getattr(self, "_finished_material", None)
+        material_code = self.cleaned_data["finished_material_code"].strip()
+        updates = {
+            "material_name": self.cleaned_data["finished_material_name"].strip(),
+            "material_type": Material.MaterialType.FINISHED,
+            "spec": (self.cleaned_data.get("finished_material_spec") or "").strip(),
+            "base_unit": self.cleaned_data["finished_material_base_unit"].strip(),
+            "qty_precision": self.cleaned_data.get("finished_material_qty_precision") or 0,
+            "status": Material.MaterialStatus.ACTIVE,
+        }
+        if material is None:
+            material = Material(material_code=material_code, **updates)
+            if self.user and self.user.is_authenticated:
+                material.created_by = self.user
+                material.updated_by = self.user
+            material.save()
+            return material
+
+        for field_name, value in updates.items():
+            setattr(material, field_name, value)
+        if self.user and self.user.is_authenticated:
+            material.updated_by = self.user
+        material.save()
+        return material
+
+
+class BomItemForm(forms.ModelForm):
+    class Meta:
+        model = BomItem
+        fields = ["line_no", "component_material", "usage_qty", "usage_unit", "loss_rate", "is_required", "remark"]
+        widgets = {"remark": forms.TextInput()}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_form_labels(self)
+        self.fields["component_material"].queryset = _component_material_queryset()
+        self.fields["loss_rate"].initial = self.fields["loss_rate"].initial or 0
+        self.fields["is_required"].initial = True
+
+    def clean(self):
+        cleaned = super().clean()
+        usage_qty = cleaned.get("usage_qty")
+        loss_rate = cleaned.get("loss_rate")
+        if usage_qty is not None and usage_qty <= 0:
+            self.add_error("usage_qty", "用量必须大于 0")
+        if loss_rate is not None and (loss_rate < 0 or loss_rate > 1):
+            self.add_error("loss_rate", "损耗率必须在 0 到 1 之间")
+        return cleaned
+
+
+class BaseBomItemFormSet(BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        seen_line_numbers = set()
+        for form in self.forms:
+            if not form.cleaned_data or form.cleaned_data.get("DELETE") or not form.cleaned_data.get("component_material"):
+                continue
+            line_no = form.cleaned_data.get("line_no")
+            if line_no in seen_line_numbers:
+                form.add_error("line_no", "同一个组成清单下行号不能重复")
+            seen_line_numbers.add(line_no)
+
+
+BomItemFormSet = inlineformset_factory(
+    Bom,
+    BomItem,
+    form=BomItemForm,
+    formset=BaseBomItemFormSet,
+    fields=["line_no", "component_material", "usage_qty", "usage_unit", "loss_rate", "is_required", "remark"],
+    extra=3,
+    can_delete=True,
+)
 
 
 class BomListView(ErpListView):
@@ -72,6 +186,13 @@ class BomListView(ErpListView):
     page_actions = (("导出CSV", "bom:bom_export", ""),)
     search_fields = ("bom_no", "finished_material__material_code", "finished_material__material_name", "bom_version")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "清单编号", "param": "bom_no", "field": "bom_no", "placeholder": "BOM/清单编号"},
+        {"label": "成品编码", "param": "material_code", "field": "finished_material__material_code", "placeholder": "成品编码"},
+        {"label": "成品名称", "param": "material_name", "field": "finished_material__material_name", "placeholder": "成品名称"},
+        {"label": "型号", "param": "material_spec", "field": "finished_material__spec", "placeholder": "规格型号"},
+        {"label": "版本", "param": "bom_version", "field": "bom_version", "placeholder": "版本"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("finished_material")
@@ -90,6 +211,7 @@ class BomExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_search(queryset)
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.apply_field_filters(queryset)
         return queryset.select_related("finished_material").order_by("-created_at")
 
     def get(self, request):
@@ -112,6 +234,11 @@ class BomCreateView(LoginRequiredMixin, CreateView):
         require_erp_permission(request.user, PermissionCode.BOM_PROCESS, "缺少产品组成清单维护权限")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         return _prepare_bom_header_form(form)
@@ -119,25 +246,42 @@ class BomCreateView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = "新建产品组成清单"
+        if "item_formset" not in context:
+            if self.request.POST and "items-TOTAL_FORMS" in self.request.POST:
+                context["item_formset"] = BomItemFormSet(self.request.POST, instance=self.object)
+            else:
+                context["item_formset"] = BomItemFormSet(instance=self.object)
         return context
 
     def form_valid(self, form):
-        form.instance.status = Bom.BomStatus.DRAFT
-        form.instance.is_default = False
-        form.instance.created_by = self.request.user
-        form.instance.updated_by = self.request.user
+        if "items-TOTAL_FORMS" in self.request.POST:
+            item_formset = BomItemFormSet(self.request.POST, instance=self.object)
+            if not item_formset.is_valid():
+                return self.render_to_response(self.get_context_data(form=form, item_formset=item_formset))
+        else:
+            item_formset = None
+
         operation_reason = optional_post_reason(self.request, default="页面创建产品组成清单")
-        response = super().form_valid(form)
-        record_audit_log_from_request(
-            self.request,
-            "bom_create",
-            "bom",
-            self.object.id,
-            self.object.bom_no,
-            after_snapshot=_bom_snapshot(self.object, operation_reason),
-        )
+        with transaction.atomic():
+            self.object = form.save(commit=False)
+            self.object.status = Bom.BomStatus.DRAFT
+            self.object.is_default = False
+            self.object.created_by = self.request.user
+            self.object.updated_by = self.request.user
+            self.object.save()
+            if item_formset is not None:
+                item_formset.instance = self.object
+                item_formset.save()
+            record_audit_log_from_request(
+                self.request,
+                "bom_create",
+                "bom",
+                self.object.id,
+                self.object.bom_no,
+                after_snapshot=_bom_snapshot(self.object, operation_reason, include_items=True),
+            )
         messages.success(self.request, "产品组成清单已创建")
-        return response
+        return redirect(self.get_success_url())
 
     def get_success_url(self):
         return f"/bom/{self.object.pk}/"
@@ -155,6 +299,11 @@ class BomUpdateView(LoginRequiredMixin, UpdateView):
             messages.error(request, "当前组成清单状态不允许直接编辑，请复制为新版本后修改")
             return redirect("bom:bom_detail", pk=self.object.pk)
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -204,11 +353,7 @@ class BomDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"产品组成清单 {self.object.bom_no}"
-        context["component_materials"] = (
-            Material.objects.exclude(id=self.object.finished_material_id)
-            .filter(status=Material.MaterialStatus.ACTIVE)
-            .order_by("material_type", "material_code")
-        )
+        context["component_materials"] = _component_materials_for_bom(self.object)
         can_process_bom = _can_process_bom(self.request.user)
         context["can_process_bom"] = can_process_bom
         context["can_edit_bom"] = can_process_bom and _can_edit_bom_items(self.object)
@@ -512,22 +657,21 @@ def _can_process_bom(user) -> bool:
 
 def _prepare_bom_header_form(form):
     set_form_labels(form)
-    form.fields["finished_material"].queryset = Material.objects.filter(
-        material_type=Material.MaterialType.FINISHED,
-        status=Material.MaterialStatus.ACTIVE,
-    ).order_by("material_code")
     form.fields["base_qty"].validators.append(MinValueValidator(Decimal("0.0001"), message="BOM 基准数量必须大于 0"))
     form.fields["base_qty"].error_messages["min_value"] = "BOM 基准数量必须大于 0"
     form.fields["base_qty"].help_text = "例如：1 表示下面明细用量按生产 1 个成品计算。"
     return form
 
 
+def _component_material_queryset():
+    return Material.objects.filter(
+        material_type__in=COMPONENT_MATERIAL_TYPES,
+        status=Material.MaterialStatus.ACTIVE,
+    ).order_by("material_type", "material_code")
+
+
 def _component_materials_for_bom(bom: Bom):
-    return (
-        Material.objects.exclude(id=bom.finished_material_id)
-        .filter(status=Material.MaterialStatus.ACTIVE)
-        .order_by("material_type", "material_code")
-    )
+    return _component_material_queryset().exclude(id=bom.finished_material_id)
 
 
 def _bom_item_snapshot(item: BomItem, reason: str = "") -> dict:
@@ -603,10 +747,11 @@ def _parse_item_post(request, bom: Bom, exclude_item_id=None):
 
     component = Material.objects.filter(
         id=component_material_id,
+        material_type__in=COMPONENT_MATERIAL_TYPES,
         status=Material.MaterialStatus.ACTIVE,
     ).first()
     if component is None or component.id == bom.finished_material_id:
-        return {"success": False, "message": "子件物料必须是启用状态，且不能等于成品本身"}
+        return {"success": False, "message": "子件物料必须是启用状态的原料、配件或包装材料，且不能等于成品本身"}
 
     return {
         "success": True,

@@ -13,12 +13,36 @@
     {% endfor %}
   </p>
 {% endif %}
-{% if has_search or status_choices or extra_filters %}
+{% if has_search or status_choices or extra_filters or field_filters or scope_filters %}
   <form method="get" class="panel filter-panel">
+    {% if scope_filters %}
+      <div class="filter-controls" style="margin-bottom: 10px;">
+        {% for scope_filter in scope_filters %}
+          <a class="button {% if scope_filter.active %}primary{% endif %}" href="{{ request.path }}?{{ scope_filter.query_string }}">
+            {{ scope_filter.label }}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
     <div class="filter-controls">
-      {% if has_search %}
-        <input class="filter-input" type="text" name="q" value="{{ search_query }}" placeholder="搜索">
+      {% if scope_filters %}
+        <input type="hidden" name="scope" value="{{ request.GET.scope|default:'' }}">
       {% endif %}
+      {% if has_search %}
+        <input class="filter-input" type="text" name="q" value="{{ search_query }}" placeholder="综合搜索">
+      {% endif %}
+      {% for filter in field_filters %}
+        {% if filter.type == "select" %}
+          <select class="filter-select" name="{{ filter.param_name }}">
+            <option value="">全部{{ filter.label }}</option>
+            {% for value, label in filter.choices %}
+              <option value="{{ value }}" {% if filter.value == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="filter-input" type="text" name="{{ filter.param_name }}" value="{{ filter.value }}" placeholder="{{ filter.placeholder }}">
+        {% endif %}
+      {% endfor %}
       {% if status_choices %}
         <select class="filter-select" name="status">
           <option value="">全部状态</option>
@@ -42,7 +66,7 @@
     </div>
   </form>
 {% endif %}
-{% if has_search or status_choices or extra_filters or saved_filters %}
+{% if has_search or status_choices or extra_filters or field_filters or scope_filters or saved_filters %}
   <section class="panel saved-filter-panel">
     <form method="post" action="{% url 'system:saved_filter_save' %}" class="saved-filter-controls" style="margin-bottom: 10px;">
       {% csrf_token %}

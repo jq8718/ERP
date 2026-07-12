@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 
@@ -629,8 +629,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(order.total_amount, Decimal("37.50"))
         self.assertEqual(order.items.get().line_status, SalesOrderItem.LineStatus.DRAFT)
 
-    def test_sales_order_form_uses_human_readable_address_and_product_options(self):
-        CustomerAddress.objects.create(
+    def test_create_sales_order_uses_internal_material_and_customer_model_remark(self):
+        address = CustomerAddress.objects.create(
             customer=self.customer,
             address_type=CustomerAddress.AddressType.SHIPPING,
             receiver_name="王五",
@@ -641,13 +641,117 @@ class SalesOrderViewTests(SalesServiceTests):
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
 
+        response = self.client.post(
+            "/sales/orders/new/",
+            {
+                "customer": self.customer.id,
+                "customer_address": "",
+                "customer_contract_no": "HT-INTERNAL",
+                "settlement_method": "月结",
+                "order_date": timezone.localdate().isoformat(),
+                "delivery_date": "",
+                "remark": "内部型号创建",
+                "items-TOTAL_FORMS": "1",
+                "items-INITIAL_FORMS": "0",
+                "items-MIN_NUM_FORMS": "0",
+                "items-MAX_NUM_FORMS": "1000",
+                "items-0-finished_material": self.finished.id,
+                "items-0-customer_model_remark": "客户型号 CP002",
+                "items-0-customer_product": "",
+                "items-0-order_qty": "3",
+                "items-0-unit_price": "12.5",
+                "action": "draft",
+            },
+        )
+
+        order = SalesOrder.objects.order_by("-id").first()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(order.customer_address, address)
+        self.assertEqual(order.total_amount, Decimal("37.50"))
+        item = order.items.get()
+        self.assertEqual(item.finished_material, self.finished)
+        self.assertIsNone(item.customer_product)
+        self.assertEqual(item.customer_model_remark, "客户型号 CP002")
+
+    def test_create_sales_order_rejects_address_from_other_customer(self):
+        other_customer = Customer.objects.create(customer_no="C-ADDR-OTHER", customer_name="其他客户")
+        other_address = CustomerAddress.objects.create(
+            customer=other_customer,
+            address_type=CustomerAddress.AddressType.SHIPPING,
+            receiver_name="其他人",
+            receiver_phone_encrypted="13800000000",
+            address_encrypted="其他地址",
+        )
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            "/sales/orders/new/",
+            {
+                "customer": self.customer.id,
+                "customer_address": other_address.id,
+                "order_date": timezone.localdate().isoformat(),
+                "delivery_date": "",
+                "remark": "地址越权",
+                "items-TOTAL_FORMS": "1",
+                "items-INITIAL_FORMS": "0",
+                "items-MIN_NUM_FORMS": "0",
+                "items-MAX_NUM_FORMS": "1000",
+                "items-0-finished_material": self.finished.id,
+                "items-0-customer_model_remark": "",
+                "items-0-customer_product": "",
+                "items-0-order_qty": "3",
+                "items-0-unit_price": "12.5",
+                "action": "draft",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(SalesOrder.objects.exists())
+
+    def test_sales_order_form_uses_customer_scoped_address_data_and_internal_material_options(self):
+        address = CustomerAddress.objects.create(
+            customer=self.customer,
+            address_type=CustomerAddress.AddressType.SHIPPING,
+            receiver_name="王五",
+            receiver_phone_encrypted="13900000000",
+            address_encrypted="深圳市测试路 1 号",
+            is_default=True,
+        )
+        other_customer = Customer.objects.create(customer_no="C-ADDR-OTHER", customer_name="其他客户")
+        CustomerAddress.objects.create(
+            customer=other_customer,
+            address_type=CustomerAddress.AddressType.SHIPPING,
+            receiver_name="其他人",
+            receiver_phone_encrypted="13800000000",
+            address_encrypted="其他地址",
+        )
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+
         response = self.client.get("/sales/orders/new/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "测试客户 - 收货地址 - 王五 - 深圳市测试路 1 号（默认）")
-        self.assertContains(response, "测试客户 - CP001 - 客户产品 1 - 成品:FG001 成品 1")
+        self.assertContains(response, "公司内部型号")
+        self.assertContains(response, "FG001｜成品 1")
+        self.assertNotContains(response, "客户产品 1")
+        self.assertNotContains(response, "深圳市测试路 1 号")
+        self.assertNotContains(response, "其他地址")
         self.assertNotContains(response, "CustomerAddress object")
         self.assertNotContains(response, "CustomerProduct object")
+
+        options_response = self.client.get(f"/sales/customer-address-options/?customer={self.customer.id}")
+        self.assertEqual(options_response.status_code, 200)
+        self.assertEqual(
+            options_response.json()["addresses"],
+            [
+                {
+                    "id": address.id,
+                    "label": "王五 - 13900000000 - 深圳市测试路 1 号（默认）",
+                    "is_default": True,
+                }
+            ],
+        )
 
     def test_create_sales_order_submit_requires_sales_process_permission(self):
         self.client.force_login(self.user)
@@ -1526,6 +1630,75 @@ class SalesOrderViewTests(SalesServiceTests):
         audit_log = AuditLog.objects.get(action="sales_order_confirm", source_doc_id=order.id)
         self.assertEqual(audit_log.operator, self.user)
         self.assertEqual(audit_log.source_doc_type, "sales_order")
+
+    def test_confirmed_unshipped_sales_order_can_return_for_revision(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertTrue(order.shortage_alerts.exists())
+
+        detail_response = self.client.get(f"/sales/orders/{order.id}/")
+        self.assertContains(detail_response, "退回修改")
+
+        response = self.client.post(
+            f"/sales/orders/{order.id}/return-for-revision/",
+            {"return_reason": "客户要求修改型号"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/sales/orders/{order.id}/")
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.REJECTED)
+        self.assertIsNone(order.approved_by)
+        self.assertIsNone(order.approved_at)
+        self.assertEqual(item.line_status, SalesOrderItem.LineStatus.DRAFT)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.UNCHECKED)
+        self.assertIsNone(item.locked_bom)
+        self.assertEqual(item.locked_bom_version, "")
+        self.assertFalse(order.shortage_alerts.exists())
+        change_log = order.change_logs.get()
+        self.assertEqual(change_log.change_reason, "客户要求修改型号")
+        audit_log = AuditLog.objects.get(action="sales_order_return_for_revision", source_doc_id=order.id)
+        self.assertEqual(audit_log.after_snapshot["operation_reason"], "客户要求修改型号")
+
+    def test_sales_order_with_pending_shipment_cannot_return_for_revision(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        batch = self._batch(self.finished, Decimal("10.0000"))
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+        shipment = SalesShipment.objects.create(
+            shipment_no="SS-RETURN-BLOCK",
+            sales_order=order,
+            customer=self.customer,
+            shipment_date=timezone.localdate(),
+            status=SalesShipment.Status.PENDING_CONFIRM,
+        )
+        SalesShipmentItem.objects.create(
+            shipment=shipment,
+            sales_order_item=item,
+            material=self.finished,
+            shipment_qty=Decimal("1.0000"),
+            batch=batch,
+            location=self.location,
+        )
+
+        detail_response = self.client.get(f"/sales/orders/{order.id}/")
+        self.assertNotContains(detail_response, "退回修改")
+        response = self.client.post(
+            f"/sales/orders/{order.id}/return-for-revision/",
+            {"return_reason": "尝试退回"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        order.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertFalse(AuditLog.objects.filter(action="sales_order_return_for_revision", source_doc_id=order.id).exists())
 
     def test_pending_bom_order_can_recheck_shortage_after_bom_enabled(self):
         self.client.force_login(self.user)
@@ -2438,6 +2611,116 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(return_item.unit_price, Decimal("10.0000"))
         self.assertEqual(return_item.return_qty, Decimal("2"))
 
+    def test_customer_return_create_can_infer_customer_from_sales_order(self):
+        self.client.force_login(self.user)
+        order, item = self._sales_order()
+        order.status = SalesOrder.Status.SHIPPED
+        order.save(update_fields=["status"])
+        item.shipped_qty = Decimal("10.0000")
+        item.line_status = SalesOrderItem.LineStatus.SHIPPED
+        item.save(update_fields=["shipped_qty", "line_status"])
+
+        response = self.client.post(
+            "/sales/returns/new/",
+            {
+                "customer": "",
+                "sales_order": order.id,
+                "return_date": timezone.localdate().isoformat(),
+                "remark": "按销售订单退货",
+                "items-TOTAL_FORMS": "1",
+                "items-INITIAL_FORMS": "0",
+                "items-MIN_NUM_FORMS": "0",
+                "items-MAX_NUM_FORMS": "1000",
+                "items-0-sales_order_item": item.id,
+                "items-0-material": "",
+                "items-0-return_qty": "2",
+                "items-0-unit_price": "",
+                "items-0-location": self.location.id,
+                "items-0-inventory_type": InventoryBatch.InventoryType.AVAILABLE,
+                "items-0-return_reason": "客户退回",
+                "action": "draft",
+            },
+        )
+
+        customer_return = CustomerReturn.objects.order_by("-id").first()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(customer_return.customer, self.customer)
+        self.assertEqual(customer_return.sales_order, order)
+
+    def test_customer_return_create_defaults_to_recent_orders_and_can_show_all(self):
+        self.client.force_login(self.user)
+        recent_order, recent_item = self._sales_order()
+        recent_order.sales_order_no = "SO-RECENT-RETURN"
+        recent_order.status = SalesOrder.Status.SHIPPED
+        recent_order.save(update_fields=["sales_order_no", "status"])
+        recent_item.shipped_qty = Decimal("1.0000")
+        recent_item.save(update_fields=["shipped_qty"])
+        old_order, old_item = self._sales_order()
+        old_order.sales_order_no = "SO-OLD-RETURN"
+        old_order.status = SalesOrder.Status.SHIPPED
+        old_order.order_date = timezone.localdate() - timedelta(days=10)
+        old_order.save(update_fields=["sales_order_no", "status", "order_date"])
+        old_item.shipped_qty = Decimal("1.0000")
+        old_item.save(update_fields=["shipped_qty"])
+
+        recent_response = self.client.get("/sales/returns/new/")
+        all_response = self.client.get("/sales/returns/new/?show_all_orders=1")
+
+        self.assertEqual(recent_response.status_code, 200)
+        self.assertContains(recent_response, "SO-RECENT-RETURN")
+        self.assertNotContains(recent_response, "SO-OLD-RETURN")
+        self.assertContains(recent_response, "默认显示最近一周")
+        self.assertContains(all_response, "SO-RECENT-RETURN")
+        self.assertContains(all_response, "SO-OLD-RETURN")
+
+    def test_customer_return_sales_order_items_endpoint_returns_selected_order_models(self):
+        self.client.force_login(self.user)
+        self.finished.spec = "双9V电源板"
+        self.finished.save(update_fields=["spec"])
+        order, item = self._sales_order()
+        order.sales_order_no = "SO-RETURN-ENDPOINT"
+        order.status = SalesOrder.Status.SHIPPED
+        order.save(update_fields=["sales_order_no", "status"])
+        item.shipped_qty = Decimal("10.0000")
+        item.customer_model_remark = "客户型号 CP002"
+        item.save(update_fields=["shipped_qty", "customer_model_remark"])
+        other_finished = Material.objects.create(
+            material_code="FG-OTHER-RETURN",
+            material_name="其他成品",
+            material_type=Material.MaterialType.FINISHED,
+            base_unit="pcs",
+        )
+        other_order = SalesOrder.objects.create(
+            sales_order_no="SO-OTHER-RETURN",
+            customer=self.customer,
+            order_date=timezone.localdate(),
+            status=SalesOrder.Status.SHIPPED,
+        )
+        SalesOrderItem.objects.create(
+            sales_order=other_order,
+            line_no=1,
+            finished_material=other_finished,
+            order_qty=Decimal("1.0000"),
+            shipped_qty=Decimal("1.0000"),
+            unit_price=Decimal("1.0000"),
+            line_amount=Decimal("1.00"),
+        )
+
+        response = self.client.get(f"/sales/returns/sales-order-items/?sales_order={order.id}")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["customer"]["id"], self.customer.id)
+        self.assertEqual(len(data["items"]), 1)
+        returned_item = data["items"][0]
+        self.assertEqual(returned_item["id"], item.id)
+        self.assertEqual(returned_item["material_id"], self.finished.id)
+        self.assertEqual(returned_item["returnable_qty"], "10.0000")
+        self.assertIn("FG001", returned_item["label"])
+        self.assertIn("双9V电源板", returned_item["label"])
+        self.assertIn("客户型号 CP002", returned_item["label"])
+        self.assertNotIn("FG-OTHER-RETURN", returned_item["label"])
+
     def test_customer_return_submit_requires_sales_process_permission(self):
         self.client.force_login(self.user)
         order, item = self._sales_order()
@@ -2770,6 +3053,7 @@ class SalesOrderViewTests(SalesServiceTests):
     def test_sample_loan_create_view_saves_header_and_items(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.SALES_PROCESS)
+        batch = self._batch(self.finished, Decimal("5.0000"))
 
         response = self.client.post(
             "/sales/sample-loans/new/",
@@ -2785,7 +3069,7 @@ class SalesOrderViewTests(SalesServiceTests):
                 "items-0-material": self.finished.id,
                 "items-0-loan_qty": "2",
                 "items-0-expected_return_date": "",
-                "items-0-batch": "",
+                "items-0-batch": batch.id,
                 "items-0-location": "",
                 "items-1-material": "",
                 "items-1-loan_qty": "",
@@ -2808,6 +3092,47 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(loan.created_by, self.user)
         self.assertEqual(item.material, self.finished)
         self.assertEqual(item.loan_qty, Decimal("2"))
+        self.assertEqual(item.batch, batch)
+        self.assertEqual(item.location, self.location)
+
+    def test_sample_loan_create_view_uses_material_picker(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+
+        response = self.client.get("/sales/sample-loans/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-sample-loan-search")
+        self.assertContains(response, "data-sample-loan-stock")
+        self.assertContains(response, "/sales/sample-loans/material-options/")
+
+    def test_sample_loan_material_options_endpoint_filters_by_name_and_spec(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.finished.spec = "双9V电源板"
+        self.finished.save(update_fields=["spec"])
+        batch = self._batch(self.finished, Decimal("5.0000"))
+        other_material = Material.objects.create(
+            material_code="FG-OTHER-SAMPLE",
+            material_name="其他样品",
+            material_type=Material.MaterialType.FINISHED,
+            base_unit="pcs",
+        )
+        self._batch(other_material, Decimal("3.0000"))
+
+        response = self.client.get("/sales/sample-loans/material-options/?q=双9V")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["items"]), 1)
+        item = payload["items"][0]
+        self.assertEqual(item["material_id"], self.finished.id)
+        self.assertEqual(item["batch_id"], batch.id)
+        self.assertEqual(item["location_id"], self.location.id)
+        self.assertEqual(item["location_code"], self.location.location_code)
+        self.assertEqual(item["remaining_qty"], "5.0000")
+        self.assertIn("FG001", item["label"])
+        self.assertIn("双9V电源板", item["label"])
 
     def test_sample_loan_create_requires_sales_process_permission(self):
         self.client.force_login(self.user)
@@ -2835,6 +3160,7 @@ class SalesOrderViewTests(SalesServiceTests):
     def test_sample_loan_detail_adds_item(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.SALES_PROCESS)
+        batch = self._batch(self.finished, Decimal("6.0000"))
         loan = SampleLoan.objects.create(
             sample_loan_no="SL001",
             customer=self.customer,
@@ -2850,7 +3176,7 @@ class SalesOrderViewTests(SalesServiceTests):
                 "items-0-material": self.finished.id,
                 "items-0-loan_qty": "3",
                 "items-0-expected_return_date": "2026/7/8",
-                "items-0-batch": "",
+                "items-0-batch": batch.id,
                 "items-0-location": "",
             },
         )
@@ -2862,6 +3188,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(item.material, self.finished)
         self.assertEqual(item.loan_qty, Decimal("3"))
         self.assertEqual(item.expected_return_date, date(2026, 7, 8))
+        self.assertEqual(item.batch, batch)
+        self.assertEqual(item.location, self.location)
 
     def test_sample_loan_confirm_out_view_deducts_inventory(self):
         self.client.force_login(self.user)

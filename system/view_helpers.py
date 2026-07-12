@@ -28,8 +28,10 @@ class ErpListView(LoginRequiredMixin, ListView):
     search_fields: tuple[str, ...] = ()
     status_filter_field = ""
     filter_fields: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = ()
+    field_filters: tuple[dict, ...] = ()
     sortable_fields: dict[str, str] = {}
     saved_filter_module = ""
+    scope_filter_param = "scope"
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and self.view_permission_required:
@@ -67,6 +69,8 @@ class ErpListView(LoginRequiredMixin, ListView):
         context["status_value"] = self.request.GET.get("status", "").strip()
         context["status_choices"] = self._status_choices()
         context["extra_filters"] = self._extra_filter_context()
+        context["field_filters"] = self._field_filter_context()
+        context["scope_filters"] = self._scope_filter_context()
         active_query_string = self._active_query_string()
         context["active_query_string"] = active_query_string
         context["sort_links"] = self._sort_link_context()
@@ -109,6 +113,8 @@ class ErpListView(LoginRequiredMixin, ListView):
         queryset = self.apply_search(queryset)
         queryset = self.apply_status_filter(queryset)
         queryset = self.apply_extra_filters(queryset)
+        queryset = self.apply_field_filters(queryset)
+        queryset = self.apply_scope_filter(queryset, self.current_scope_filter_value())
         queryset = self.apply_sorting(queryset)
         return queryset
 
@@ -132,6 +138,31 @@ class ErpListView(LoginRequiredMixin, ListView):
             value = self.request.GET.get(param_name, "").strip()
             if value:
                 queryset = queryset.filter(**{param_name: value})
+        return queryset
+
+    def get_field_filters(self) -> tuple[dict, ...]:
+        return self.field_filters
+
+    def apply_field_filters(self, queryset):
+        needs_distinct = False
+        for filter_config in self.get_field_filters():
+            param_name = filter_config["param"]
+            value = self.request.GET.get(param_name, "").strip()
+            if not value:
+                continue
+            needs_distinct = needs_distinct or bool(filter_config.get("distinct"))
+            field_name = filter_config.get("field", param_name)
+            lookup = filter_config.get("lookup", "icontains")
+            if lookup == "exact":
+                lookup_expr = field_name
+            else:
+                lookup_expr = f"{field_name}__{lookup}"
+            queryset = queryset.filter(**{lookup_expr: value})
+        if needs_distinct:
+            return queryset.distinct()
+        return queryset
+
+    def apply_scope_filter(self, queryset, scope_value: str):
         return queryset
 
     def apply_sorting(self, queryset):
@@ -174,6 +205,59 @@ class ErpListView(LoginRequiredMixin, ListView):
                 }
             )
         return filters
+
+    def _field_filter_context(self):
+        filters = []
+        for filter_config in self.get_field_filters():
+            filter_type = filter_config.get("type", "text")
+            choices = filter_config.get("choices", ())
+            filters.append(
+                {
+                    "label": filter_config["label"],
+                    "param_name": filter_config["param"],
+                    "type": filter_type,
+                    "choices": choices,
+                    "placeholder": filter_config.get("placeholder", filter_config["label"]),
+                    "value": self.request.GET.get(filter_config["param"], "").strip(),
+                }
+            )
+        return filters
+
+    def get_scope_filter_options(self) -> tuple[dict, ...]:
+        return ()
+
+    def current_scope_filter_value(self) -> str:
+        options = self.get_scope_filter_options()
+        if not options:
+            return ""
+        allowed_values = {option["value"] for option in options}
+        requested = self.request.GET.get(self.scope_filter_param, "").strip()
+        if requested in allowed_values:
+            return requested
+        for option in options:
+            if option.get("default"):
+                return option["value"]
+        return options[0]["value"]
+
+    def _scope_filter_context(self) -> list[dict]:
+        options = self.get_scope_filter_options()
+        if not options:
+            return []
+        current_value = self.current_scope_filter_value()
+        rows = []
+        for option in options:
+            params = self.request.GET.copy()
+            params.pop("page", None)
+            params[self.scope_filter_param] = option["value"]
+            rows.append(
+                {
+                    "label": option["label"],
+                    "value": option["value"],
+                    "active": option["value"] == current_value,
+                    "query_string": params.urlencode(),
+                }
+            )
+        return rows
 
     def _active_query_string(self):
         params = self.request.GET.copy()

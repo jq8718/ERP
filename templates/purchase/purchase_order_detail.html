@@ -53,7 +53,10 @@
       <thead>
         <tr>
           <th>行号</th>
-          <th>物料</th>
+          <th>物料编码</th>
+          <th>物料名称</th>
+          <th>规格型号</th>
+          <th>单位</th>
           <th>采购数量</th>
           <th>已到货</th>
           <th>单价</th>
@@ -67,7 +70,10 @@
         {% for item in purchase_order.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material.material_code }}</td>
+            <td>{{ item.material.material_name }}</td>
+            <td>{{ item.material.spec|default:"" }}</td>
+            <td>{{ item.material.base_unit }}</td>
             <td>{{ item.order_qty }}</td>
             <td>{{ item.received_qty }}</td>
             <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
@@ -83,7 +89,7 @@
             <td>{{ item.get_line_status_display }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="9" class="empty">暂无明细</td></tr>
+          <tr><td colspan="12" class="empty">暂无明细</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -124,11 +130,15 @@
     <form method="post" action="{% url 'purchase:purchase_order_item_create' purchase_order.pk %}" style="padding: 14px;">
       {% csrf_token %}
       <div class="form-grid">
-        <label class="form-row">物料
+        <label class="form-row">物料（编码/名称/规格/单位）
           <select name="material">
             <option value="">请选择</option>
             {% for material in materials %}
-              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+              <option value="{{ material.pk }}">
+                {{ material.material_code }} {{ material.material_name }}
+                {% if material.spec %}｜规格型号：{{ material.spec }}{% endif %}
+                {% if material.base_unit %}｜单位：{{ material.base_unit }}{% endif %}
+              </option>
             {% endfor %}
           </select>
         </label>

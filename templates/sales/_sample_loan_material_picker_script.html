@@ -1,0 +1,159 @@
+<script>
+(function () {
+  var optionsUrl = "{% url 'sales:sample_loan_material_options' %}";
+  var timers = new WeakMap();
+
+  function option(label, value) {
+    var element = document.createElement("option");
+    element.value = value;
+    element.textContent = label;
+    return element;
+  }
+
+  function field(row, suffix) {
+    return row.querySelector('[name$="-' + suffix + '"]') || row.querySelector('[name="' + suffix + '"]');
+  }
+
+  function selectedText(select) {
+    if (!select || !select.value) {
+      return "";
+    }
+    var selected = select.options[select.selectedIndex];
+    return selected ? selected.textContent : "";
+  }
+
+  function setRowDisplay(row, materialLabel, stockLabel) {
+    var selected = row.querySelector("[data-sample-loan-selected]");
+    var stock = row.querySelector("[data-sample-loan-stock]");
+    if (selected) {
+      selected.textContent = materialLabel || "";
+    }
+    if (stock) {
+      stock.textContent = stockLabel || "";
+    }
+  }
+
+  function applyChoice(row, item) {
+    var material = field(row, "material");
+    var batch = field(row, "batch");
+    var location = field(row, "location");
+    var search = row.querySelector("[data-sample-loan-search]");
+    var options = row.querySelector("[data-sample-loan-options]");
+    if (material) {
+      material.value = item.material_id;
+    }
+    if (batch) {
+      batch.value = item.batch_id;
+    }
+    if (location) {
+      location.value = item.location_id || "";
+    }
+    if (search) {
+      search.value = item.material_name;
+    }
+    if (options) {
+      options.hidden = true;
+    }
+    var materialLabel = item.material_code + "｜" + item.material_name + (item.material_spec ? "｜型号：" + item.material_spec : "");
+    var stockLabel = "批次：" + item.batch_no + "｜库位：" + item.location_code + (item.location_name ? " " + item.location_name : "") + "｜可用：" + item.remaining_qty;
+    setRowDisplay(row, materialLabel, stockLabel);
+  }
+
+  function renderOptions(row, items) {
+    var options = row.querySelector("[data-sample-loan-options]");
+    if (!options) {
+      return;
+    }
+    options.innerHTML = "";
+    if (!items.length) {
+      options.hidden = true;
+      return;
+    }
+    items.forEach(function (item) {
+      var element = option(item.label, item.batch_id);
+      element.dataset.item = JSON.stringify(item);
+      options.appendChild(element);
+    });
+    options.size = Math.min(items.length, 5);
+    options.hidden = false;
+  }
+
+  function loadOptions(row) {
+    var search = row.querySelector("[data-sample-loan-search]");
+    if (!search || !search.value.trim()) {
+      renderOptions(row, []);
+      return;
+    }
+    fetch(optionsUrl + "?q=" + encodeURIComponent(search.value.trim()), {
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("sample loan material options request failed");
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        renderOptions(row, data.items || []);
+      })
+      .catch(function () {
+        renderOptions(row, []);
+      });
+  }
+
+  function initRow(row) {
+    if (row.dataset.sampleLoanPickerReady === "1") {
+      return;
+    }
+    row.dataset.sampleLoanPickerReady = "1";
+    var search = row.querySelector("[data-sample-loan-search]");
+    var options = row.querySelector("[data-sample-loan-options]");
+    var material = field(row, "material");
+    var batch = field(row, "batch");
+    if (search) {
+      search.addEventListener("input", function () {
+        if (material) {
+          material.value = "";
+        }
+        if (batch) {
+          batch.value = "";
+        }
+        var location = field(row, "location");
+        if (location) {
+          location.value = "";
+        }
+        setRowDisplay(row, "", "");
+        clearTimeout(timers.get(search));
+        timers.set(search, setTimeout(function () { loadOptions(row); }, 180));
+      });
+      search.addEventListener("focus", function () {
+        if (search.value.trim()) {
+          loadOptions(row);
+        }
+      });
+    }
+    if (options) {
+      options.addEventListener("change", function () {
+        var selected = options.options[options.selectedIndex];
+        if (selected && selected.dataset.item) {
+          applyChoice(row, JSON.parse(selected.dataset.item));
+        }
+      });
+    }
+    setRowDisplay(row, selectedText(material), selectedText(batch));
+  }
+
+  function initAll() {
+    Array.prototype.slice.call(document.querySelectorAll("[data-sample-loan-picker]")).forEach(initRow);
+  }
+
+  initAll();
+  var tableBodies = document.querySelectorAll("[data-formset-table] tbody");
+  Array.prototype.slice.call(tableBodies).forEach(function (body) {
+    if (window.MutationObserver) {
+      new MutationObserver(initAll).observe(body, {childList: true});
+    }
+  });
+})();
+</script>

@@ -74,7 +74,10 @@
         {% for item in loan.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>
+              {{ item.material.material_code }} {{ item.material.material_name }}
+              {% if item.material.spec %}<br><span class="muted">型号：{{ item.material.spec }}</span>{% endif %}
+            </td>
             <td>{{ item.loan_qty }}</td>
             <td>{{ item.returned_qty }}</td>
             <td>{{ item.sold_qty }}</td>
@@ -100,21 +103,28 @@
         <table class="inline-table">
           <thead>
             <tr>
-              <th>样品物料</th>
+              <th>物料名称/型号</th>
               <th>借出数量</th>
               <th>预计归还</th>
-              <th>批次</th>
-              <th>库位</th>
+              <th>批次/库位</th>
             </tr>
           </thead>
           <tbody>
             {% with item_form=item_formset.forms.0 %}
-              <tr>
-                <td>{{ item_form.material }}</td>
+              <tr data-sample-loan-picker>
+                <td>
+                  <input class="filter-input" type="text" data-sample-loan-search autocomplete="off" placeholder="输入名称/编码/型号">
+                  <select data-sample-loan-options hidden style="width: 100%; margin-top: 6px;"></select>
+                  <div class="muted" data-sample-loan-selected style="margin-top: 4px;"></div>
+                  {{ item_form.material }}
+                </td>
                 <td>{{ item_form.loan_qty }}</td>
                 <td>{{ item_form.expected_return_date }}</td>
-                <td>{{ item_form.batch }}</td>
-                <td>{{ item_form.location }}</td>
+                <td>
+                  <div class="muted" data-sample-loan-stock></div>
+                  {{ item_form.batch }}
+                  {{ item_form.location }}
+                </td>
               </tr>
             {% endwith %}
           </tbody>
@@ -184,4 +194,7 @@
   </div>
 </section>
 {% include "files/_attachment_panel.html" %}
+{% if can_add_item %}
+  {% include "sales/_sample_loan_material_picker_script.html" %}
+{% endif %}
 {% endblock %}

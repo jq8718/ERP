@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load erp_extras %}
+
+{% block content %}
+<h1>{{ invoice.invoice_no }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:customer_invoice_list' %}">返回列表</a>
+  {% if invoice.reconciliation %}
+    <a class="button" href="{% url 'finance:reconciliation_detail' invoice.reconciliation.pk %}">返回对账单</a>
+  {% endif %}
+  {% if can_confirm %}
+    <form method="post" action="{% url 'finance:customer_invoice_confirm' invoice.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit" {% if not has_invoice_attachment %}disabled{% endif %}>确认已开票</button>
+    </form>
+  {% endif %}
+  {% if can_void %}
+    <form method="post" action="{% url 'finance:customer_invoice_void' invoice.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="text" name="void_reason" placeholder="作废原因" required style="width: 180px;">
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button" type="submit">作废</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if invoice.status == "draft" and not has_invoice_attachment %}
+  <section class="panel" style="margin-bottom: 16px;">
+    <div style="padding: 14px; font-weight: 700; color: #b45309;">
+      当前开票单还没有上传发票附件，上传附件后才能确认已开票。
+    </div>
+  </section>
+{% endif %}
+
+<section class="detail-grid">
+  <div class="detail-cell">
+    <div class="detail-label">客户</div>
+    <div class="detail-value">{{ invoice.customer.customer_name }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">发票号码</div>
+    <div class="detail-value">{{ invoice.external_invoice_no|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">关联对账单</div>
+    <div class="detail-value">
+      {% if invoice.reconciliation %}
+        <a href="{% url 'finance:reconciliation_detail' invoice.reconciliation.pk %}">{{ invoice.reconciliation.reconciliation_no }}</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">开票日期</div>
+    <div class="detail-value">{{ invoice.invoice_date }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">开票金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ invoice.invoice_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">附件状态</div>
+    <div class="detail-value">{% if has_invoice_attachment %}已上传{% else %}未上传{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">状态</div>
+    <div class="detail-value">{{ invoice.get_status_display }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">确认人</div>
+    <div class="detail-value">{{ invoice.confirmed_by|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">确认时间</div>
+    <div class="detail-value">{{ invoice.confirmed_at|default:"" }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">备注</div>
+    <div class="detail-value">{{ invoice.remark|default:"" }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>开票明细</h2>
+  <div class="table-wrap" style="border: 0; border-radius: 0;">
+    <table>
+      <thead>
+        <tr>
+          <th>行号</th>
+          <th>销售订单</th>
+          <th>对账明细</th>
+          <th>金额</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in invoice.items.all %}
+          <tr>
+            <td>{{ item.line_no }}</td>
+            <td>
+              {% source_doc_url request.user "sales_order" item.sales_order.pk as order_url %}
+              {% if order_url %}
+                <a href="{{ order_url }}">{{ item.sales_order.sales_order_no }}</a>
+              {% else %}
+                {{ item.sales_order.sales_order_no }}
+              {% endif %}
+            </td>
+            <td>{{ item.reconciliation_item.source_no|default:"" }}</td>
+            <td>{% if can_view_amount %}{{ item.invoice_amount }}{% else %}******{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">暂无明细</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% include "files/_attachment_panel.html" %}
+{% endblock %}

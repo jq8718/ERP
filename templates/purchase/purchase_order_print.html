@@ -16,6 +16,7 @@
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     th, td { border: 1px solid #9ca3af; padding: 7px 8px; text-align: left; vertical-align: top; }
     th { background: #f3f4f6; }
+    .code, .qty, .amount, .date { white-space: nowrap; }
     .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
     .signature { border-top: 1px solid #374151; padding-top: 8px; }
     @media print { body { margin: 12mm; } .toolbar { display: none; } }
@@ -44,7 +45,10 @@
     <thead>
       <tr>
         <th>行号</th>
-        <th>物料</th>
+        <th>物料编码</th>
+        <th>物料名称</th>
+        <th>规格型号</th>
+        <th>单位</th>
         <th>采购数量</th>
         <th>已到货</th>
         <th>单价</th>
@@ -58,17 +62,20 @@
       {% for item in purchase_order.items.all %}
         <tr>
           <td>{{ item.line_no }}</td>
-          <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
-          <td>{{ item.order_qty }}</td>
-          <td>{{ item.received_qty }}</td>
-          <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
-          <td>{% if can_view_amount %}{{ item.line_amount }}{% else %}******{% endif %}</td>
-          <td>{{ item.needed_date|default:"" }}</td>
+          <td class="code">{{ item.material.material_code }}</td>
+          <td>{{ item.material.material_name }}</td>
+          <td>{{ item.material.spec|default:"" }}</td>
+          <td class="code">{{ item.material.base_unit }}</td>
+          <td class="qty">{{ item.order_qty }}</td>
+          <td class="qty">{{ item.received_qty }}</td>
+          <td class="amount">{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+          <td class="amount">{% if can_view_amount %}{{ item.line_amount }}{% else %}******{% endif %}</td>
+          <td class="date">{{ item.needed_date|default:"" }}</td>
           <td>{{ item.purchase_request_item.purchase_request.purchase_request_no|default:"" }}</td>
           <td>{{ item.get_line_status_display }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="9">暂无明细</td></tr>
+        <tr><td colspan="12">暂无明细</td></tr>
       {% endfor %}
     </tbody>
   </table>

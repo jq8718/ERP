@@ -57,6 +57,10 @@ class WarehouseLocationListView(ErpListView):
     }
     search_fields = ("location_code", "location_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "库位编码", "param": "location_code", "field": "location_code", "placeholder": "库位编码"},
+        {"label": "库位名称", "param": "location_name", "field": "location_name", "placeholder": "库位名称"},
+    )
 
 
 class WarehouseLocationCreateView(LoginRequiredMixin, CreateView):
@@ -184,8 +188,11 @@ class InventoryListView(ErpListView):
     permission_denied_message = "缺少库存数据查看权限"
     detail_url_name = "inventory:inventory_detail"
     columns = (
-        ("物料", "material.material_code"),
-        ("库位", "location.location_code"),
+        ("物料编码", "material.material_code"),
+        ("名称", "material.material_name"),
+        ("规格型号", "material.spec"),
+        ("库位编码", "location.location_code"),
+        ("库位名称", "location.location_name"),
         ("库存类型", "get_inventory_type_display"),
         ("数量", "qty"),
     )
@@ -201,7 +208,40 @@ class InventoryListView(ErpListView):
         "inventory:initial_inventory_import_template": PermissionCode.INVENTORY_PROCESS,
         "inventory:initial_inventory_import": PermissionCode.INVENTORY_PROCESS,
     }
-    search_fields = ("material__material_code", "material__material_name", "location__location_code", "location__location_name")
+    search_fields = (
+        "material__material_code",
+        "material__material_name",
+        "material__spec",
+        "location__location_code",
+        "location__location_name",
+    )
+    field_filters = (
+        {"label": "物料编码", "param": "material_code", "field": "material__material_code", "placeholder": "物料编码"},
+        {"label": "物料名称", "param": "material_name", "field": "material__material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "material_spec", "field": "material__spec", "placeholder": "规格型号"},
+        {"label": "库位编码", "param": "location_code", "field": "location__location_code", "placeholder": "库位编码"},
+        {"label": "库位名称", "param": "location_name", "field": "location__location_name", "placeholder": "库位名称"},
+        {
+            "label": "库存类型",
+            "param": "inventory_type",
+            "field": "inventory_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": InventoryBatch.InventoryType.choices,
+        },
+    )
+    sortable_fields = {
+        "material.material_code": "material__material_code",
+        "material.material_name": "material__material_name",
+        "material.spec": "material__spec",
+        "location.location_code": "location__location_code",
+        "location.location_name": "location__location_name",
+        "get_inventory_type_display": "inventory_type",
+        "qty": "qty",
+    }
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("material", "location")
 
 
 class InventoryDetailView(LoginRequiredMixin, DetailView):
@@ -258,6 +298,21 @@ class InventoryBatchListView(ErpListView):
     page_actions = (("导出CSV", "inventory:inventory_batch_export", ""),)
     search_fields = ("batch_no", "material__material_code", "material__material_name", "location__location_code")
     status_filter_field = "batch_status"
+    field_filters = (
+        {"label": "批次号", "param": "batch_no", "field": "batch_no", "placeholder": "批次号"},
+        {"label": "物料编码", "param": "material_code", "field": "material__material_code", "placeholder": "物料编码"},
+        {"label": "物料名称", "param": "material_name", "field": "material__material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "material_spec", "field": "material__spec", "placeholder": "规格型号"},
+        {"label": "库位", "param": "location_code", "field": "location__location_code", "placeholder": "库位编码"},
+        {
+            "label": "库存类型",
+            "param": "inventory_type",
+            "field": "inventory_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": InventoryBatch.InventoryType.choices,
+        },
+    )
     sortable_fields = {
         "batch_no": "batch_no",
         "material.material_code": "material__material_code",
@@ -318,6 +373,16 @@ class InventoryTransactionListView(ErpListView):
         "batch__batch_no",
     )
     filter_fields = (("流水类型", "transaction_type", InventoryTransaction.TransactionType.choices),)
+    field_filters = (
+        {"label": "流水号", "param": "transaction_no", "field": "transaction_no", "placeholder": "流水号"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+        {"label": "物料编码", "param": "material_code", "field": "material__material_code", "placeholder": "物料编码"},
+        {"label": "物料名称", "param": "material_name", "field": "material__material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "material_spec", "field": "material__spec", "placeholder": "规格型号"},
+        {"label": "库位", "param": "location_code", "field": "location__location_code", "placeholder": "库位编码"},
+        {"label": "批次号", "param": "batch_no", "field": "batch__batch_no", "placeholder": "批次号"},
+    )
     sortable_fields = {
         "transaction_no": "transaction_no",
         "get_transaction_type_display": "transaction_type",
@@ -371,6 +436,7 @@ class InventoryCsvExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_search(queryset)
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.apply_field_filters(queryset)
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -585,6 +651,15 @@ class LocationTransferListView(ErpListView):
     page_actions = (("导出CSV", "inventory:location_transfer_export", ""),)
     search_fields = ("transfer_no", "material__material_code", "batch__batch_no", "from_location__location_code", "to_location__location_code")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "移库单号", "param": "transfer_no", "field": "transfer_no", "placeholder": "移库单号"},
+        {"label": "物料编码", "param": "material_code", "field": "material__material_code", "placeholder": "物料编码"},
+        {"label": "物料名称", "param": "material_name", "field": "material__material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "material_spec", "field": "material__spec", "placeholder": "规格型号"},
+        {"label": "批次号", "param": "batch_no", "field": "batch__batch_no", "placeholder": "批次号"},
+        {"label": "原库位", "param": "from_location_code", "field": "from_location__location_code", "placeholder": "原库位"},
+        {"label": "目标库位", "param": "to_location_code", "field": "to_location__location_code", "placeholder": "目标库位"},
+    )
 
 
 class LocationTransferExportView(InventoryCsvExportView):
@@ -700,6 +775,11 @@ class StockCountListView(ErpListView):
     page_actions = (("导出CSV", "inventory:stock_count_export", ""),)
     search_fields = ("stock_count_no", "scope_value")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "盘点单号", "param": "stock_count_no", "field": "stock_count_no", "placeholder": "盘点单号"},
+        {"label": "范围类型", "param": "scope_type", "field": "scope_type", "placeholder": "范围类型"},
+        {"label": "范围值", "param": "scope_value", "field": "scope_value", "placeholder": "范围值"},
+    )
 
 
 class StockCountExportView(InventoryCsvExportView):

@@ -73,6 +73,20 @@ class AccountUserListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["username"]
     search_fields = ("username", "display_name", "department", "position", "email")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "用户名", "param": "username", "field": "username", "placeholder": "用户名"},
+        {"label": "姓名", "param": "display_name", "field": "display_name", "placeholder": "姓名"},
+        {"label": "部门", "param": "department", "field": "department", "placeholder": "部门"},
+        {"label": "职位", "param": "position", "field": "position", "placeholder": "职位"},
+        {
+            "label": "安全级别",
+            "param": "security_level",
+            "field": "security_level",
+            "lookup": "exact",
+            "type": "select",
+            "choices": User.SecurityLevel.choices,
+        },
+    )
 
     def get_queryset(self):
         return super().get_queryset().prefetch_related("roles")
@@ -263,6 +277,10 @@ class RoleListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["role_code"]
     search_fields = ("role_code", "role_name", "remark")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "角色编码", "param": "role_code", "field": "role_code", "placeholder": "角色编码"},
+        {"label": "角色名称", "param": "role_name", "field": "role_name", "placeholder": "角色名称"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().prefetch_related("permissions", "users")
@@ -374,7 +392,12 @@ class PermissionListView(ErpPermissionRequiredMixin, ErpListView):
     )
     ordering = ["permission_type", "permission_name"]
     search_fields = ("permission_code", "permission_name", "remark")
-    status_filter_field = "permission_type"
+    filter_fields = (("类型", "permission_type", Permission.PermissionType.choices),)
+    field_filters = (
+        {"label": "权限编码", "param": "permission_code", "field": "permission_code", "placeholder": "权限编码"},
+        {"label": "权限名称", "param": "permission_name", "field": "permission_name", "placeholder": "权限名称"},
+        {"label": "备注", "param": "remark", "field": "remark", "placeholder": "备注"},
+    )
 
 
 def _user_snapshot(user: User, role_ids: list[int], reason: str = "") -> dict:
@@ -420,6 +443,12 @@ class UserSessionListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["-last_seen_at", "-created_at"]
     search_fields = ("user__username", "user__display_name", "ip_address", "user_agent", "session_key")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "用户名", "param": "username", "field": "user__username", "placeholder": "用户名"},
+        {"label": "姓名", "param": "display_name", "field": "user__display_name", "placeholder": "姓名"},
+        {"label": "IP", "param": "ip_address", "field": "ip_address", "placeholder": "IP 地址"},
+        {"label": "会话", "param": "session_key", "field": "session_key", "placeholder": "会话标识"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("user")

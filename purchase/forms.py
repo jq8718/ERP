@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django import forms
@@ -7,6 +8,7 @@ from django.utils import timezone
 
 from inventory.models import InventoryBatch, WarehouseLocation
 from masterdata.models import Material, MaterialSupplierPrice, Supplier
+from system.date_utils import apply_erp_date_inputs, erp_date_input
 from system.display import set_form_labels
 from system.services import next_document_no
 
@@ -22,18 +24,63 @@ from .models import (
 )
 
 
+def material_choice_label(material: Material) -> str:
+    parts = [material.material_code, material.material_name]
+    if material.spec:
+        parts.append(f"规格型号：{material.spec}")
+    if material.base_unit:
+        parts.append(f"单位：{material.base_unit}")
+    return "｜".join(part for part in parts if part)
+
+
+def supplier_return_receipt_label(receipt: PurchaseReceipt) -> str:
+    parts = [
+        receipt.purchase_receipt_no,
+        receipt.supplier.supplier_name if receipt.supplier_id else "",
+        receipt.receipt_date.isoformat() if receipt.receipt_date else "",
+        receipt.get_status_display(),
+    ]
+    return "｜".join(part for part in parts if part)
+
+
+def supplier_returnable_qty(item: PurchaseReceiptItem) -> Decimal:
+    returned_qty = (
+        SupplierReturnItem.objects.filter(purchase_receipt_item=item)
+        .exclude(supplier_return__status=SupplierReturn.Status.VOIDED)
+        .aggregate(total=Sum("return_qty"))
+        .get("total")
+        or Decimal("0")
+    )
+    return max(item.accepted_qty - returned_qty, Decimal("0"))
+
+
+def supplier_return_receipt_item_label(item: PurchaseReceiptItem) -> str:
+    material = item.material
+    parts = [material.material_code, material.material_name]
+    if material.spec:
+        parts.append(f"规格型号：{material.spec}")
+    parts.append(f"入库：{item.accepted_qty}")
+    parts.append(f"可退：{supplier_returnable_qty(item)}")
+    if item.batch_id:
+        parts.append(f"批次：{item.batch.batch_no}")
+    if item.location_id:
+        parts.append(f"库位：{item.location.location_code}")
+    return "｜".join(part for part in parts if part)
+
+
 class PurchaseRequestForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequest
         fields = ["needed_date", "remark"]
         widgets = {
-            "needed_date": forms.DateInput(attrs={"type": "date"}),
+            "needed_date": erp_date_input(),
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("needed_date",))
         self.fields["needed_date"].initial = self.fields["needed_date"].initial or timezone.localdate()
 
     def save(self, commit=True, user=None):
@@ -56,12 +103,14 @@ class PurchaseRequestItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequestItem
         fields = ["material", "request_qty", "suggested_supplier", "needed_date"]
-        widgets = {"needed_date": forms.DateInput(attrs={"type": "date"})}
+        widgets = {"needed_date": erp_date_input()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("needed_date",))
         self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
+        self.fields["material"].label_from_instance = material_choice_label
         self.fields["suggested_supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
         self.fields["suggested_supplier"].required = False
 
@@ -142,13 +191,14 @@ class PurchaseOrderForm(forms.ModelForm):
         model = PurchaseOrder
         fields = ["supplier", "order_date", "remark"]
         widgets = {
-            "order_date": forms.DateInput(attrs={"type": "date"}),
+            "order_date": erp_date_input(),
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("order_date",))
         self.fields["supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
         self.fields["order_date"].initial = self.fields["order_date"].initial or timezone.localdate()
 
@@ -160,6 +210,8 @@ class PurchaseOrderForm(forms.ModelForm):
             order.status = PurchaseOrder.Status.DRAFT
         if user and user.is_authenticated and not order.created_by_id:
             order.created_by = user
+        if user and user.is_authenticated and not order.purchase_owner_id:
+            order.purchase_owner = user
         if commit:
             order.save()
             self.save_m2m()
@@ -170,14 +222,16 @@ class PurchaseOrderItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseOrderItem
         fields = ["material", "order_qty", "unit_price", "needed_date"]
-        widgets = {"needed_date": forms.DateInput(attrs={"type": "date"})}
+        widgets = {"needed_date": erp_date_input()}
 
     def __init__(self, *args, **kwargs):
         self.supplier = kwargs.pop("supplier", None)
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("needed_date",))
         self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
+        self.fields["material"].label_from_instance = material_choice_label
         self.fields["unit_price"].required = False
 
     def clean(self):
@@ -278,13 +332,14 @@ class PurchaseReceiptForm(forms.ModelForm):
         model = PurchaseReceipt
         fields = ["receipt_date", "remark"]
         widgets = {
-            "receipt_date": forms.DateInput(attrs={"type": "date"}),
+            "receipt_date": erp_date_input(),
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("receipt_date",))
 
 
 class PurchaseReceiptItemForm(forms.ModelForm):
@@ -347,35 +402,75 @@ def recalculate_purchase_order_total(order: PurchaseOrder) -> None:
 
 
 class SupplierReturnForm(forms.ModelForm):
+    show_all_receipts = forms.BooleanField(required=False, label="显示全部进货单")
+
     class Meta:
         model = SupplierReturn
         fields = ["supplier", "purchase_receipt", "return_date", "remark"]
         widgets = {
-            "return_date": forms.DateInput(attrs={"type": "date"}),
+            "return_date": erp_date_input(),
             "remark": forms.Textarea(attrs={"rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
+        purchase_receipt_queryset = kwargs.pop("purchase_receipt_queryset", None)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        apply_erp_date_inputs(self, ("return_date",))
+        show_all_receipts = self._show_all_receipts()
+        selected_receipt_id = self._selected_purchase_receipt_id()
         self.fields["supplier"].queryset = Supplier.objects.filter(status=Supplier.SupplierStatus.ACTIVE).order_by("supplier_no")
-        receipt_filter = Q(status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED])
-        if self.instance and self.instance.pk and self.instance.purchase_receipt_id:
-            receipt_filter |= Q(id=self.instance.purchase_receipt_id)
+        self.fields["supplier"].required = False
+        if purchase_receipt_queryset is None:
+            purchase_receipt_queryset = (
+                PurchaseReceipt.objects.select_related("supplier", "purchase_order")
+                .filter(
+                    status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED],
+                    items__accepted_qty__gt=0,
+                )
+                .distinct()
+            )
+        if selected_receipt_id:
+            purchase_receipt_queryset = PurchaseReceipt.objects.filter(
+                Q(pk__in=purchase_receipt_queryset.values("pk")) | Q(pk=selected_receipt_id)
+            )
+        if not show_all_receipts:
+            recent_from = timezone.localdate() - timedelta(days=7)
+            date_filter = Q(receipt_date__gte=recent_from)
+            if selected_receipt_id:
+                date_filter |= Q(pk=selected_receipt_id)
+            purchase_receipt_queryset = purchase_receipt_queryset.filter(date_filter)
         self.fields["purchase_receipt"].queryset = (
-            PurchaseReceipt.objects.select_related("supplier", "purchase_order")
-            .filter(receipt_filter)
+            purchase_receipt_queryset.select_related("supplier", "purchase_order")
             .order_by("-receipt_date", "-id")
         )
-        self.fields["purchase_receipt"].required = False
+        self.fields["purchase_receipt"].label_from_instance = supplier_return_receipt_label
+        self.fields["purchase_receipt"].required = True
+        self.fields["show_all_receipts"].initial = show_all_receipts
         self.fields["return_date"].initial = self.fields["return_date"].initial or timezone.localdate()
+
+    def _show_all_receipts(self) -> bool:
+        if self.is_bound:
+            return self.data.get(self.add_prefix("show_all_receipts")) in ["1", "true", "on", "yes"]
+        return bool(self.initial.get("show_all_receipts"))
+
+    def _selected_purchase_receipt_id(self):
+        if self.is_bound:
+            return self.data.get(self.add_prefix("purchase_receipt")) or None
+        if self.instance and self.instance.pk:
+            return self.instance.purchase_receipt_id
+        return self.initial.get("purchase_receipt")
 
     def clean(self):
         cleaned = super().clean()
         supplier = cleaned.get("supplier")
         receipt = cleaned.get("purchase_receipt")
-        if supplier and receipt and receipt.supplier_id != supplier.id:
+        if not receipt:
+            self.add_error("purchase_receipt", "请选择来源进货单")
+        elif supplier and receipt.supplier_id != supplier.id:
             self.add_error("purchase_receipt", "来源进货单必须属于所选供应商")
+        elif receipt:
+            cleaned["supplier"] = receipt.supplier
         return cleaned
 
     def save(self, commit=True, user=None):
@@ -405,6 +500,7 @@ class SupplierReturnItemForm(forms.ModelForm):
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        self.fields["purchase_receipt_item"].label = "退货规格/型号"
         receipt_item_filter = Q(
             accepted_qty__gt=0,
             purchase_receipt__status__in=[PurchaseReceipt.Status.PARTIAL_RECEIVED, PurchaseReceipt.Status.RECEIVED],
@@ -423,8 +519,11 @@ class SupplierReturnItemForm(forms.ModelForm):
         else:
             receipt_item_queryset = receipt_item_queryset.none()
         self.fields["purchase_receipt_item"].queryset = receipt_item_queryset
+        self.fields["purchase_receipt_item"].label_from_instance = supplier_return_receipt_item_label
         self.fields["purchase_receipt_item"].required = False
         self.fields["material"].queryset = Material.objects.filter(status=Material.MaterialStatus.ACTIVE).order_by("material_code")
+        self.fields["material"].label_from_instance = material_choice_label
+        self.fields["material"].widget = forms.HiddenInput()
         self.fields["material"].required = False
         self.fields["unit_price"].required = False
         batch_filter = Q(

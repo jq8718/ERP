@@ -75,6 +75,84 @@ class ReconciliationItem(models.Model):
         return f"{self.reconciliation.reconciliation_no} 第{self.line_no}行 - {self.source_no}"
 
 
+class CustomerInvoice(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "草稿"
+        CONFIRMED = "confirmed", "已开票"
+        VOIDED = "voided", "已作废"
+
+    invoice_no = models.CharField(max_length=100, unique=True)
+    external_invoice_no = models.CharField(max_length=100, blank=True)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="invoices")
+    reconciliation = models.ForeignKey(
+        Reconciliation,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="customer_invoices",
+    )
+    invoice_date = models.DateField()
+    invoice_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    remark = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "customer_invoices"
+        indexes = [
+            models.Index(fields=["customer", "status", "invoice_date"]),
+            models.Index(fields=["reconciliation", "status"]),
+            models.Index(fields=["external_invoice_no"]),
+        ]
+
+    def __str__(self):
+        return f"{self.invoice_no} - {self.customer} - {self.invoice_amount} - {self.get_status_display()}"
+
+
+class CustomerInvoiceItem(models.Model):
+    customer_invoice = models.ForeignKey(CustomerInvoice, on_delete=models.CASCADE, related_name="items")
+    reconciliation_item = models.ForeignKey(
+        ReconciliationItem,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="customer_invoice_items",
+    )
+    sales_order = models.ForeignKey(SalesOrder, on_delete=models.PROTECT, related_name="invoice_items")
+    line_no = models.PositiveIntegerField()
+    invoice_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "customer_invoice_items"
+        constraints = [
+            models.UniqueConstraint(fields=["customer_invoice", "line_no"], name="uq_customer_invoice_item_line"),
+        ]
+        indexes = [
+            models.Index(fields=["customer_invoice", "line_no"]),
+            models.Index(fields=["sales_order"]),
+            models.Index(fields=["reconciliation_item"]),
+        ]
+
+    def __str__(self):
+        return f"{self.customer_invoice.invoice_no} 第{self.line_no}行 - {self.sales_order.sales_order_no}"
+
+
 class CustomerReceipt(models.Model):
     class ReceiptMethod(models.TextChoices):
         CASH = "cash", "现金"

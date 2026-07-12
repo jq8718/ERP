@@ -1,12 +1,13 @@
 import csv
+from decimal import Decimal
 from io import StringIO
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import Q
-from django.http import HttpResponse
+from django.db.models import Q, Sum
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -18,6 +19,7 @@ from accounts.permissions import PermissionCode, can_view_amount, require_any_er
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch
+from masterdata.models import CustomerAddress, Material, SettlementMethod
 from system.date_utils import parse_user_date
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
@@ -25,6 +27,9 @@ from system.view_helpers import ErpListView, optional_post_reason, require_post_
 from .forms import (
     CustomerReturnForm,
     CustomerReturnItemFormSet,
+    customer_return_sales_item_label,
+    customer_returnable_qty,
+    sample_loan_batch_label,
     SampleLoanForm,
     SampleLoanItemFormSet,
     SampleLoanReturnForm,
@@ -99,6 +104,22 @@ class SalesOrderListView(ErpListView):
     }
     search_fields = ("sales_order_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "订单号", "param": "sales_order_no", "field": "sales_order_no", "placeholder": "销售订单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "客户合同号", "param": "customer_contract_no", "field": "customer_contract_no", "placeholder": "客户合同号"},
+        {
+            "label": "结算方式",
+            "param": "settlement_method",
+            "field": "settlement_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SettlementMethod.choices,
+        },
+        {"label": "物料编码", "param": "material_code", "field": "items__finished_material__material_code", "placeholder": "成品物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__finished_material__material_name", "placeholder": "成品物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__finished_material__spec", "placeholder": "成品型号", "distinct": True},
+    )
     sortable_fields = {
         "sales_order_no": "sales_order_no",
         "customer.customer_name": "customer__customer_name",
@@ -110,6 +131,22 @@ class SalesOrderListView(ErpListView):
 
     def get_queryset(self):
         return _filter_sales_order_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer")
+
+    def get_scope_filter_options(self):
+        if _can_view_all_sales(self.request.user) or can_view_amount(self.request.user):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(Q(customer__sales_owner=self.request.user) | Q(created_by=self.request.user)).distinct()
+        if scope_value == "unassigned" and (_can_view_all_sales(self.request.user) or can_view_amount(self.request.user)):
+            return queryset.filter(customer__sales_owner__isnull=True)
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -138,6 +175,7 @@ class SalesCsvExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_search(queryset)
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.apply_field_filters(queryset)
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = self.apply_scope(queryset)
@@ -179,6 +217,9 @@ class SalesOrderExportView(SalesCsvExportView):
     select_related = ("customer",)
 
     def apply_scope(self, queryset):
+        list_view = self.list_view_class()
+        list_view.request = self.request
+        queryset = list_view.apply_scope_filter(queryset, list_view.current_scope_filter_value())
         return _filter_sales_order_queryset_for_user(queryset, self.request.user)
 
 
@@ -224,6 +265,23 @@ class SalesOrderImportView(LoginRequiredMixin, TemplateView):
                 import_job_id=result.data.get("import_job_id"),
             )
         )
+
+
+class CustomerAddressOptionsView(LoginRequiredMixin, View):
+    def get(self, request):
+        customer_id = request.GET.get("customer")
+        if not customer_id:
+            return JsonResponse({"addresses": []})
+        addresses = (
+            CustomerAddress.objects.filter(
+                customer_id=customer_id,
+                customer__status="active",
+                address_type=CustomerAddress.AddressType.SHIPPING,
+                status=CustomerAddress.AddressStatus.ACTIVE,
+            )
+            .order_by("-is_default", "id")
+        )
+        return JsonResponse({"addresses": [_customer_address_payload(address) for address in addresses]})
 
 
 class SalesOrderCreateView(LoginRequiredMixin, CreateView):
@@ -383,6 +441,7 @@ class SalesOrderDetailView(LoginRequiredMixin, DetailView):
         context["can_view_amount"] = can_view_amount(self.request.user)
         context["can_submit"] = can_process_sales and self.object.status == SalesOrder.Status.DRAFT
         context["can_edit"] = can_process_sales and self.object.status in [SalesOrder.Status.DRAFT, SalesOrder.Status.REJECTED]
+        context["can_return_for_revision"] = can_process_sales and _sales_order_can_return_for_revision(self.object)
         context["can_void"] = can_process_sales and self.object.status in [
             SalesOrder.Status.DRAFT,
             SalesOrder.Status.PENDING_APPROVAL,
@@ -392,6 +451,7 @@ class SalesOrderDetailView(LoginRequiredMixin, DetailView):
         context["can_confirm"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_APPROVAL
         context["can_recheck_bom"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_BOM
         context["can_create_shipment"] = can_process_sales and _sales_order_has_shippable_items(self.object)
+        context["invoice_summary"] = _sales_order_invoice_summary(self.object)
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "sales_order",
@@ -530,6 +590,66 @@ class SalesOrderConfirmView(LoginRequiredMixin, View):
             messages.success(request, result.message)
         else:
             messages.error(request, result.message or result.error_code or "销售订单审核失败")
+        return redirect("sales:sales_order_detail", pk=pk)
+
+
+class SalesOrderReturnForRevisionView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        reason, reason_response = require_post_reason(
+            request,
+            "sales:sales_order_detail",
+            pk,
+            field_names=("return_reason", "reason"),
+            message="请填写退回修改原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                order = (
+                    _filter_sales_order_queryset_for_user(SalesOrder.objects.select_for_update(), request.user)
+                    .prefetch_related("items", "shipments")
+                    .get(pk=pk)
+                )
+                if not _sales_order_can_return_for_revision(order):
+                    messages.error(request, "只有未出货且未进入生产的待审核、待 BOM 处理或已确认销售订单可以退回修改")
+                    return redirect("sales:sales_order_detail", pk=pk)
+                before_snapshot = _sales_order_snapshot(order)
+                order.shortage_alerts.all().delete()
+                order.items.update(
+                    line_status=SalesOrderItem.LineStatus.DRAFT,
+                    inventory_check_status=SalesOrderItem.InventoryCheckStatus.UNCHECKED,
+                    locked_bom=None,
+                    locked_bom_version="",
+                )
+                order.status = SalesOrder.Status.REJECTED
+                order.approved_by = None
+                order.approved_at = None
+                order.updated_by = request.user
+                order.version += 1
+                order.save(update_fields=["status", "approved_by", "approved_at", "updated_by", "updated_at", "version"])
+                after_snapshot = {**_sales_order_snapshot(order), "operation_reason": reason}
+                order.change_logs.create(
+                    changed_by=request.user,
+                    change_reason=reason,
+                    before_snapshot=before_snapshot,
+                    after_snapshot=after_snapshot,
+                )
+        except SalesOrder.DoesNotExist:
+            messages.error(request, "销售订单不存在或无权限操作")
+            return redirect("sales:sales_order_list")
+
+        record_audit_log_from_request(
+            request,
+            "sales_order_return_for_revision",
+            "sales_order",
+            order.id,
+            order.sales_order_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "销售订单已退回修改，编辑后可重新提交审核")
         return redirect("sales:sales_order_detail", pk=pk)
 
 
@@ -703,6 +823,13 @@ class ShortageAlertListView(ErpListView):
     ordering = ["-created_at"]
     search_fields = ("shortage_no", "sales_order__sales_order_no", "material__material_code", "material__material_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "欠料号", "param": "shortage_no", "field": "shortage_no", "placeholder": "欠料号"},
+        {"label": "销售订单", "param": "sales_order_no", "field": "sales_order__sales_order_no", "placeholder": "销售订单号"},
+        {"label": "物料编码", "param": "material_code", "field": "material__material_code", "placeholder": "物料编码"},
+        {"label": "物料名称", "param": "material_name", "field": "material__material_name", "placeholder": "物料名称"},
+        {"label": "型号", "param": "material_spec", "field": "material__spec", "placeholder": "规格型号"},
+    )
     sortable_fields = {
         "shortage_no": "shortage_no",
         "sales_order.sales_order_no": "sales_order__sales_order_no",
@@ -752,6 +879,22 @@ class SalesShipmentListView(ErpListView):
     }
     search_fields = ("shipment_no", "sales_order__sales_order_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "出库单号", "param": "shipment_no", "field": "shipment_no", "placeholder": "出库单号"},
+        {"label": "销售订单", "param": "sales_order_no", "field": "sales_order__sales_order_no", "placeholder": "销售订单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "客户合同号", "param": "customer_contract_no", "field": "customer_contract_no", "placeholder": "客户合同号"},
+        {
+            "label": "结算方式",
+            "param": "settlement_method",
+            "field": "settlement_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SettlementMethod.choices,
+        },
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "物料编码", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
     sortable_fields = {
         "shipment_no": "shipment_no",
         "sales_order.sales_order_no": "sales_order__sales_order_no",
@@ -1058,6 +1201,13 @@ class CustomerReturnListView(ErpListView):
     }
     search_fields = ("return_no", "customer__customer_name", "sales_order__sales_order_no")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "退货单号", "param": "return_no", "field": "return_no", "placeholder": "退货单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "销售订单", "param": "sales_order_no", "field": "sales_order__sales_order_no", "placeholder": "销售订单号"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "退货物料编码", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
 
     def get_queryset(self):
         return _filter_customer_return_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer", "sales_order")
@@ -1130,6 +1280,14 @@ class CustomerReturnCreateView(LoginRequiredMixin, CreateView):
     model = CustomerReturn
     form_class = CustomerReturnForm
     template_name = "sales/customer_return_form.html"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["sales_order_queryset"] = _customer_return_sales_order_queryset(self.request.user)
+        kwargs.setdefault("initial", {})
+        if self.request.GET.get("show_all_orders") == "1":
+            kwargs["initial"]["show_all_orders"] = True
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1236,6 +1394,35 @@ class CustomerReturnDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
+class CustomerReturnSalesOrderItemsView(LoginRequiredMixin, View):
+    def get(self, request):
+        sales_order_id = request.GET.get("sales_order")
+        if not sales_order_id:
+            return JsonResponse({"items": []})
+        sales_order = (
+            _customer_return_sales_order_queryset(request.user)
+            .filter(pk=sales_order_id)
+            .select_related("customer")
+            .first()
+        )
+        if not sales_order:
+            return JsonResponse({"items": []})
+        items = (
+            SalesOrderItem.objects.select_related("finished_material")
+            .filter(sales_order=sales_order, shipped_qty__gt=0)
+            .order_by("line_no", "id")
+        )
+        return JsonResponse(
+            {
+                "customer": {
+                    "id": sales_order.customer_id,
+                    "name": sales_order.customer.customer_name,
+                },
+                "items": [_customer_return_sales_item_payload(item) for item in items],
+            }
+        )
+
+
 class CustomerReturnPrintView(LoginRequiredMixin, DetailView):
     model = CustomerReturn
     template_name = "sales/customer_return_print.html"
@@ -1278,7 +1465,11 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
         if customer_return.status not in self.editable_statuses:
             messages.error(request, "只有草稿或已驳回客户退货单可以编辑")
             return redirect("sales:customer_return_detail", pk=pk)
-        form = CustomerReturnForm(instance=customer_return)
+        form = CustomerReturnForm(
+            instance=customer_return,
+            sales_order_queryset=_customer_return_sales_order_queryset(request.user),
+            initial={"show_all_orders": request.GET.get("show_all_orders") == "1"},
+        )
         item_formset = CustomerReturnItemFormSet(
             instance=customer_return,
             customer=customer_return.customer,
@@ -1297,7 +1488,11 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
             return redirect("sales:customer_return_detail", pk=pk)
 
         before_snapshot = _customer_return_snapshot(customer_return)
-        form = CustomerReturnForm(request.POST, instance=customer_return)
+        form = CustomerReturnForm(
+            request.POST,
+            instance=customer_return,
+            sales_order_queryset=_customer_return_sales_order_queryset(request.user),
+        )
         submit_for_approval = request.POST.get("action") == "submit"
         if not form.is_valid():
             item_formset = CustomerReturnItemFormSet(
@@ -1466,6 +1661,21 @@ class SampleLoanListView(ErpListView):
     }
     search_fields = ("sample_loan_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "借样单号", "param": "sample_loan_no", "field": "sample_loan_no", "placeholder": "借样单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {
+            "label": "逾期状态",
+            "param": "overdue_status",
+            "field": "overdue_status",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SampleLoan.OverdueStatus.choices,
+        },
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "借样物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "借样物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
 
     def get_queryset(self):
         return _filter_sample_loan_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer")
@@ -1479,6 +1689,31 @@ class SampleLoanExportView(SalesCsvExportView):
 
     def apply_scope(self, queryset):
         return _filter_sample_loan_queryset_for_user(queryset, self.request.user)
+
+
+class SampleLoanMaterialOptionsView(LoginRequiredMixin, View):
+    def get(self, request):
+        require_any_erp_permission(request.user, SampleLoanListView.view_permission_required, "缺少销售数据查看权限")
+        keyword = request.GET.get("q", "").strip()
+        if not keyword:
+            return JsonResponse({"items": []})
+
+        batches = (
+            InventoryBatch.objects.select_related("material", "location")
+            .filter(
+                batch_status=InventoryBatch.BatchStatus.IN_STOCK,
+                remaining_qty__gt=0,
+                material__status=Material.MaterialStatus.ACTIVE,
+                material__material_type=Material.MaterialType.FINISHED,
+            )
+            .filter(
+                Q(material__material_code__icontains=keyword)
+                | Q(material__material_name__icontains=keyword)
+                | Q(material__spec__icontains=keyword)
+            )
+            .order_by("material__material_code", "location__location_code", "received_at", "batch_no")[:20]
+        )
+        return JsonResponse({"items": [_sample_loan_batch_payload(batch) for batch in batches]})
 
 
 class SampleLoanImportTemplateView(LoginRequiredMixin, View):
@@ -1542,6 +1777,13 @@ class SampleLoanReturnListView(ErpListView):
     page_actions = (("导出CSV", "sales:sample_loan_return_export", ""),)
     search_fields = ("sample_return_no", "sample_loan__sample_loan_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "归还单号", "param": "sample_return_no", "field": "sample_return_no", "placeholder": "归还单号"},
+        {"label": "借样单号", "param": "sample_loan_no", "field": "sample_loan__sample_loan_no", "placeholder": "借样单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "归还物料编码", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+    )
 
     def get_queryset(self):
         return _filter_sample_return_queryset_for_user(super().get_queryset(), self.request.user).select_related("sample_loan", "customer")
@@ -2076,6 +2318,14 @@ def _can_process_sales(user) -> bool:
     return user_has_permission(user, PermissionCode.SALES_PROCESS)
 
 
+def _sales_order_can_return_for_revision(order: SalesOrder) -> bool:
+    if order.status not in [SalesOrder.Status.PENDING_APPROVAL, SalesOrder.Status.PENDING_BOM, SalesOrder.Status.CONFIRMED]:
+        return False
+    if any(item.shipped_qty > 0 for item in order.items.all()):
+        return False
+    return not order.shipments.exclude(status=SalesShipment.Status.VOIDED).exists()
+
+
 def _sales_order_has_shippable_items(order: SalesOrder) -> bool:
     return any(
         item.line_status == SalesOrderItem.LineStatus.CONFIRMED
@@ -2083,6 +2333,60 @@ def _sales_order_has_shippable_items(order: SalesOrder) -> bool:
         and item.order_qty > item.shipped_qty
         for item in order.items.all()
     )
+
+
+def _customer_address_payload(address: CustomerAddress) -> dict:
+    return {
+        "id": address.id,
+        "label": _customer_address_label(address),
+        "is_default": address.is_default,
+    }
+
+
+def _customer_address_label(address: CustomerAddress) -> str:
+    parts = [address.receiver_name, address.receiver_phone_encrypted, address.address_encrypted]
+    label = " - ".join(part for part in parts if part)
+    if address.is_default:
+        label = f"{label}（默认）"
+    return label
+
+
+def _customer_return_sales_order_queryset(user):
+    queryset = SalesOrder.objects.select_related("customer").filter(
+        status__in=[SalesOrder.Status.SHIPPED, SalesOrder.Status.COMPLETED],
+        items__shipped_qty__gt=0,
+    )
+    return _filter_sales_order_queryset_for_user(queryset, user).distinct()
+
+
+def _customer_return_sales_item_payload(item: SalesOrderItem) -> dict:
+    material = item.finished_material
+    return {
+        "id": item.id,
+        "material_id": material.id,
+        "unit_price": str(item.unit_price),
+        "returnable_qty": str(customer_returnable_qty(item)),
+        "label": customer_return_sales_item_label(item),
+    }
+
+
+def _sample_loan_batch_payload(batch: InventoryBatch) -> dict:
+    material = batch.material
+    location = batch.location
+    return {
+        "material_id": material.id,
+        "material_code": material.material_code,
+        "material_name": material.material_name,
+        "material_spec": material.spec,
+        "base_unit": material.base_unit,
+        "batch_id": batch.id,
+        "batch_no": batch.batch_no,
+        "location_id": location.id if location else "",
+        "location_code": location.location_code if location else "",
+        "location_name": location.location_name if location else "",
+        "remaining_qty": str(batch.remaining_qty),
+        "label": sample_loan_batch_label(batch),
+    }
 
 
 def _sales_order_snapshot(order: SalesOrder) -> dict:
@@ -2104,6 +2408,7 @@ def _sales_order_snapshot(order: SalesOrder) -> dict:
                 "line_no": item.line_no,
                 "customer_product_id": item.customer_product_id,
                 "finished_material_id": item.finished_material_id,
+                "customer_model_remark": item.customer_model_remark,
                 "order_qty": str(item.order_qty),
                 "unit_price": str(item.unit_price),
                 "line_amount": str(item.line_amount),
@@ -2214,6 +2519,39 @@ def _allocate_fifo_batches(material_id: int, required_qty):
     if remaining_qty > 0:
         return []
     return allocations
+
+
+def _sales_order_invoice_summary(order: SalesOrder) -> dict:
+    from files.models import Attachment
+    from finance.models import CustomerInvoice, CustomerInvoiceItem
+
+    total_amount = Decimal(order.total_amount or 0).quantize(Decimal("0.01"))
+    active_invoice_ids = Attachment.objects.filter(
+        source_doc_type="customer_invoice",
+        status=Attachment.AttachmentStatus.ACTIVE,
+    ).values_list("source_doc_id", flat=True)
+    invoiced_amount = (
+        CustomerInvoiceItem.objects.filter(
+            sales_order=order,
+            customer_invoice__status=CustomerInvoice.Status.CONFIRMED,
+            customer_invoice_id__in=active_invoice_ids,
+        ).aggregate(total=Sum("invoice_amount"))["total"]
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+    invoiced_amount = min(invoiced_amount, total_amount)
+    uninvoiced_amount = max(total_amount - invoiced_amount, Decimal("0.00")).quantize(Decimal("0.01"))
+    if total_amount <= Decimal("0.00") or invoiced_amount <= Decimal("0.00"):
+        status_label = "未开票"
+    elif uninvoiced_amount <= Decimal("0.00"):
+        status_label = "已开票"
+    else:
+        status_label = "部分开票"
+    return {
+        "total_amount": total_amount,
+        "invoiced_amount": invoiced_amount,
+        "uninvoiced_amount": uninvoiced_amount,
+        "status_label": status_label,
+    }
 
 
 def _filter_customer_queryset_for_user(queryset, user):

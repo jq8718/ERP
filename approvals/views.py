@@ -42,6 +42,14 @@ class ApprovalListView(ErpListView):
         "submitted_by__username",
     )
     status_filter_field = "status"
+    field_filters = (
+        {"label": "审批单号", "param": "approval_no", "field": "approval_no", "placeholder": "审批单号"},
+        {"label": "类型", "param": "approval_type", "field": "approval_type", "placeholder": "审批类型"},
+        {"label": "来源单号", "param": "source_no", "field": "source_no", "placeholder": "来源单号"},
+        {"label": "来源标题", "param": "source_title", "field": "source_title", "placeholder": "来源标题"},
+        {"label": "当前审批人", "param": "current_approver", "field": "current_approver__username", "placeholder": "审批人账号"},
+        {"label": "提交人", "param": "submitted_by", "field": "submitted_by__username", "placeholder": "提交人账号"},
+    )
 
     def get_queryset(self):
         return _filter_approvals_for_user(super().get_queryset(), self.request.user).select_related(
@@ -136,6 +144,11 @@ class ApprovalRuleListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["doc_type", "level_no", "id"]
     search_fields = ("doc_type", "approver_role__role_name", "approver_user__username", "remark")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "单据类型", "param": "doc_type", "field": "doc_type", "placeholder": "单据类型"},
+        {"label": "审批角色", "param": "approver_role", "field": "approver_role__role_name", "placeholder": "审批角色"},
+        {"label": "审批人员", "param": "approver_user", "field": "approver_user__username", "placeholder": "审批人员账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("approver_role", "approver_user")

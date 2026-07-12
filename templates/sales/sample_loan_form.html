@@ -39,22 +39,29 @@
       <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
-            <th>样品物料</th>
+            <th>物料名称/型号</th>
             <th>借出数量</th>
             <th>预计归还</th>
-            <th>批次</th>
-            <th>库位</th>
+            <th>批次/库位</th>
             <th>删除</th>
           </tr>
         </thead>
         <tbody>
           {% for item_form in item_formset.forms %}
-            <tr data-formset-row>
-              <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
+            <tr data-formset-row data-sample-loan-picker>
+              <td>
+                <input class="filter-input" type="text" data-sample-loan-search autocomplete="off" placeholder="输入名称/编码/型号">
+                <select data-sample-loan-options hidden style="width: 100%; margin-top: 6px;"></select>
+                <div class="muted" data-sample-loan-selected style="margin-top: 4px;"></div>
+                {{ item_form.material }}{{ item_form.material.errors }}
+              </td>
               <td>{{ item_form.loan_qty }}{{ item_form.loan_qty.errors }}</td>
               <td>{{ item_form.expected_return_date }}{{ item_form.expected_return_date.errors }}</td>
-              <td>{{ item_form.batch }}{{ item_form.batch.errors }}</td>
-              <td>{{ item_form.location }}{{ item_form.location.errors }}</td>
+              <td>
+                <div class="muted" data-sample-loan-stock></div>
+                {{ item_form.batch }}{{ item_form.batch.errors }}
+                {{ item_form.location }}{{ item_form.location.errors }}
+              </td>
               <td>
                 {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
                 {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
@@ -66,12 +73,20 @@
       </table>
     </div>
     <template data-formset-empty>
-      <tr data-formset-row>
-        <td>{{ item_formset.empty_form.material }}</td>
+      <tr data-formset-row data-sample-loan-picker>
+        <td>
+          <input class="filter-input" type="text" data-sample-loan-search autocomplete="off" placeholder="输入名称/编码/型号">
+          <select data-sample-loan-options hidden style="width: 100%; margin-top: 6px;"></select>
+          <div class="muted" data-sample-loan-selected style="margin-top: 4px;"></div>
+          {{ item_formset.empty_form.material }}
+        </td>
         <td>{{ item_formset.empty_form.loan_qty }}</td>
         <td>{{ item_formset.empty_form.expected_return_date }}</td>
-        <td>{{ item_formset.empty_form.batch }}</td>
-        <td>{{ item_formset.empty_form.location }}</td>
+        <td>
+          <div class="muted" data-sample-loan-stock></div>
+          {{ item_formset.empty_form.batch }}
+          {{ item_formset.empty_form.location }}
+        </td>
         <td>
           {% if item_formset.empty_form.DELETE %}{{ item_formset.empty_form.DELETE }}{% endif %}
           {% for hidden in item_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
@@ -89,4 +104,5 @@
     <a class="button" href="{% url 'sales:sample_loan_list' %}">返回列表</a>
   </div>
 </form>
+{% include "sales/_sample_loan_material_picker_script.html" %}
 {% endblock %}

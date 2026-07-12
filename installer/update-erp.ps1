@@ -218,6 +218,12 @@ if (-not $SkipServiceRestart) {
     Write-Host "Service restart skipped."
 }
 
+$scheduledTaskScript = Join-Path $targetRoot "installer\register-scheduled-tasks.ps1"
+if (-not (Test-Path -LiteralPath $scheduledTaskScript)) {
+    throw "Scheduled task registration script not found after update: $scheduledTaskScript"
+}
+& $scheduledTaskScript -InstallDir $targetRoot
+
 Write-Host ""
 Write-Host "ERP update finished."
 Write-Host "Application backup: $backupDir"

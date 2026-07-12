@@ -25,7 +25,7 @@ from files.services import (
     resolve_export_file_path,
     uploaded_csv_text_file,
 )
-from finance.models import CustomerReceipt, ExpenseRecord, Reconciliation
+from finance.models import CustomerInvoice, CustomerReceipt, ExpenseRecord, Reconciliation
 from inventory.models import StockCount
 from masterdata.models import Customer, Material, Supplier
 from production.models import ProductionOrder
@@ -296,6 +296,15 @@ class FileViewTests(TestCase):
             receipt_amount="100.00",
             status=CustomerReceipt.Status.PENDING_APPROVAL,
             handled_by=self.user,
+            created_by=self.user,
+        )
+        self.customer_invoice = CustomerInvoice.objects.create(
+            invoice_no="INV-FILE-001",
+            external_invoice_no="FP-FILE-001",
+            customer=self.customer,
+            invoice_date="2026-06-08",
+            invoice_amount="100.00",
+            status=CustomerInvoice.Status.DRAFT,
             created_by=self.user,
         )
         self.reconciliation = Reconciliation.objects.create(
@@ -622,6 +631,30 @@ class FileViewTests(TestCase):
         self.assertEqual(allowed_response["Location"], f"/files/{attachment.id}/")
         self.assertEqual(attachment.source_doc_type, "reconciliation")
         self.assertEqual(attachment.source_doc_id, self.reconciliation.id)
+
+    def test_customer_invoice_attachment_upload_links_back_to_invoice(self):
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+        return_to = f"/finance/customer-invoices/{self.customer_invoice.id}/"
+
+        upload_response = self.client.post(
+            "/files/upload/",
+            {
+                "source_doc_type": "customer_invoice",
+                "source_doc_id": str(self.customer_invoice.id),
+                "file": SimpleUploadedFile("invoice.pdf", b"pdf-content", content_type="application/pdf"),
+                "return_to": return_to,
+            },
+        )
+
+        attachment = Attachment.objects.get(original_filename="invoice.pdf")
+        detail_response = self.client.get(f"/files/{attachment.id}/")
+
+        self.assertEqual(upload_response.status_code, 302)
+        self.assertEqual(upload_response["Location"], return_to)
+        self.assertEqual(attachment.source_doc_no, self.customer_invoice.invoice_no)
+        self.assertContains(detail_response, "返回来源单据")
+        self.assertContains(detail_response, f'href="/finance/customer-invoices/{self.customer_invoice.id}/"')
 
     def test_attachment_detail_and_download_require_source_document_access(self):
         other_user = get_user_model().objects.create_user(username="other-sales", password="x")

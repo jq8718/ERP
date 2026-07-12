@@ -140,6 +140,13 @@ class AuditLogListView(ErpPermissionRequiredMixin, ErpListView):
     )
     ordering = ["-created_at"]
     search_fields = ("log_no", "action", "source_doc_type", "source_doc_no", "operator__username")
+    field_filters = (
+        {"label": "日志号", "param": "log_no", "field": "log_no", "placeholder": "日志号"},
+        {"label": "操作", "param": "action", "field": "action", "placeholder": "操作"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "操作人", "param": "operator", "field": "operator__username", "placeholder": "操作人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("operator")
@@ -161,6 +168,11 @@ class BackupListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["-created_at"]
     search_fields = ("backup_no", "backup_type", "file_path", "created_by__username")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "备份号", "param": "backup_no", "field": "backup_no", "placeholder": "备份号"},
+        {"label": "类型", "param": "backup_type", "field": "backup_type", "placeholder": "备份类型"},
+        {"label": "创建人", "param": "created_by", "field": "created_by__username", "placeholder": "创建人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("created_by")
@@ -183,6 +195,12 @@ class BackgroundJobListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["-created_at"]
     search_fields = ("job_no", "job_type", "trigger_type", "error_message")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "任务号", "param": "job_no", "field": "job_no", "placeholder": "任务号"},
+        {"label": "类型", "param": "job_type", "field": "job_type", "placeholder": "任务类型"},
+        {"label": "触发来源", "param": "trigger_type", "field": "trigger_type", "placeholder": "触发来源"},
+        {"label": "错误", "param": "error_message", "field": "error_message", "placeholder": "错误信息"},
+    )
 
 
 class ReleaseRecordListView(ErpPermissionRequiredMixin, ErpListView):
@@ -198,6 +216,11 @@ class ReleaseRecordListView(ErpPermissionRequiredMixin, ErpListView):
     )
     ordering = ["-released_at"]
     search_fields = ("version_no", "summary", "released_by__username")
+    field_filters = (
+        {"label": "版本号", "param": "version_no", "field": "version_no", "placeholder": "版本号"},
+        {"label": "发布人", "param": "released_by", "field": "released_by__username", "placeholder": "发布人账号"},
+        {"label": "摘要", "param": "summary", "field": "summary", "placeholder": "摘要"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("released_by")

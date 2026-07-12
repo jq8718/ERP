@@ -11,7 +11,7 @@ from bom.services import UnitConversionMissing, required_component_qty_base
 from inventory.exceptions import InventoryError
 from inventory.models import Inventory, InventoryBatch, InventoryTransaction
 from inventory.services import deduct_batch_inventory
-from masterdata.models import Material
+from masterdata.models import CustomerProduct, Material
 from system.models import PendingEvent
 from system.services import ServiceResult, enqueue_pending_event, next_document_no
 
@@ -385,8 +385,6 @@ def convert_sample_loan_item_to_sales_order(
             if not loan_item.batch_id or not loan_item.location_id:
                 return ServiceResult(False, "STATE_INVALID_TRANSITION", "借样明细缺少出库批次或库位，不能转销售")
 
-            from masterdata.models import CustomerProduct
-
             customer_product = (
                 CustomerProduct.objects.filter(
                     customer=sample_loan.customer,
@@ -396,8 +394,6 @@ def convert_sample_loan_item_to_sales_order(
                 .order_by("customer_product_no", "id")
                 .first()
             )
-            if customer_product is None:
-                return ServiceResult(False, "DOC_NOT_FOUND", "客户产品未关联该借样成品，不能自动生成销售订单")
 
             sales_order = SalesOrder.objects.create(
                 sales_order_no=next_document_no("SO"),
@@ -415,6 +411,7 @@ def convert_sample_loan_item_to_sales_order(
                 line_no=1,
                 customer_product=customer_product,
                 finished_material=loan_item.material,
+                customer_model_remark=f"由借样单 {sample_loan.sample_loan_no} 转销售",
                 order_qty=convert_qty,
                 unit_price=unit_price,
                 line_amount=(convert_qty * unit_price).quantize(Decimal("0.01")),

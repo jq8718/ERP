@@ -505,7 +505,7 @@
           </div>
         </div>
       {% endif %}
-      {% if can_inventory_view or can_inventory_process or can_finance_view_amount or can_finance_payment_process %}
+      {% if can_inventory_view or can_inventory_process or can_finance_view_amount or can_finance_payment_process or can_sales_process or can_purchase_process %}
         <div class="nav-section" data-nav-section="inventory-finance">
           <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-inventory-finance">
             <span>库存与财务</span><span class="nav-chevron" aria-hidden="true"></span>
@@ -521,13 +521,24 @@
             {% endif %}
             {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:operations_dashboard' %}">经营看板</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process %}
               <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
+              <a class="nav-link" href="{% url 'finance:customer_invoice_list' %}">客户开票</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process or can_purchase_process %}
               <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:opening_receivable_list' %}">期初应收</a>
               <a class="nav-link" href="{% url 'finance:opening_payable_list' %}">期初应付</a>
               <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
               <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process or can_purchase_process %}
               <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:expense_record_list' %}">管理费用</a>
             {% endif %}
           </div>

@@ -4,21 +4,30 @@
   <meta charset="utf-8">
   <title>{{ page_title }}</title>
   <style>
-    body { margin: 24px; color: #111827; font: 13px/1.45 "Microsoft YaHei", Arial, sans-serif; }
-    .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+    body { margin: 18px; color: #111; font: 13px/1.35 "Microsoft YaHei", SimSun, Arial, sans-serif; }
+    .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
     button { border: 1px solid #9ca3af; background: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
-    h1 { margin: 0 0 18px; text-align: center; font-size: 22px; letter-spacing: 0; }
-    .meta { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #9ca3af; border-bottom: 0; }
-    .cell { min-height: 36px; padding: 8px; border-right: 1px solid #9ca3af; border-bottom: 1px solid #9ca3af; }
-    .cell:nth-child(4n) { border-right: 0; }
-    .label { color: #6b7280; font-size: 12px; }
-    .value { margin-top: 2px; font-weight: 600; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border: 1px solid #9ca3af; padding: 7px 8px; text-align: left; vertical-align: top; }
-    th { background: #f3f4f6; }
-    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
-    .signature { border-top: 1px solid #374151; padding-top: 8px; }
-    @media print { body { margin: 12mm; } .toolbar { display: none; } }
+    .sheet { max-width: 1120px; margin: 0 auto; }
+    .to-line { margin-bottom: 6px; font-weight: 700; }
+    h1 { margin: 4px 0 6px; text-align: center; font-size: 24px; letter-spacing: 0; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; margin-bottom: 4px; font-weight: 700; }
+    .meta .right { text-align: right; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #111; padding: 3px 4px; vertical-align: middle; word-break: break-word; }
+    th { text-align: center; font-weight: 700; }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .num { text-align: right; font-weight: 700; }
+    .muted { color: #374151; }
+    .summary td { font-weight: 700; }
+    .notice { margin-top: 14px; text-align: center; font-size: 15px; line-height: 1.6; }
+    .footer { margin-top: 10px; text-align: right; font-weight: 700; font-size: 16px; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 28px; }
+    .signature { border-top: 1px solid #111; padding-top: 8px; }
+    @media print {
+      body { margin: 8mm; }
+      .toolbar { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -27,56 +36,86 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
-  <h1>对账单</h1>
+  <main class="sheet">
+    <div class="to-line">TO：{{ party_name }}</div>
+    <h1>往来对账</h1>
+    <section class="meta">
+      <div>【日期：{{ reconciliation.period_start }} 至 {{ reconciliation.period_end }}】</div>
+      <div class="right">此前对账余额：{{ prior_balance }} 元</div>
+      <div>往来单位：{{ party_name }}</div>
+      <div class="right">对账单号：{{ reconciliation.reconciliation_no }}</div>
+    </section>
 
-  <section class="meta">
-    <div class="cell"><div class="label">对账单号</div><div class="value">{{ reconciliation.reconciliation_no }}</div></div>
-    <div class="cell"><div class="label">对象类型</div><div class="value">{{ reconciliation.get_party_type_display }}</div></div>
-    <div class="cell"><div class="label">客户</div><div class="value">{{ reconciliation.customer.customer_name|default:"" }}</div></div>
-    <div class="cell"><div class="label">供应商</div><div class="value">{{ reconciliation.supplier.supplier_name|default:"" }}</div></div>
-    <div class="cell"><div class="label">周期</div><div class="value">{{ reconciliation.period_start }} 至 {{ reconciliation.period_end }}</div></div>
-    <div class="cell"><div class="label">保存金额</div><div class="value">{{ reconciliation.total_amount }}</div></div>
-    <div class="cell"><div class="label">明细合计</div><div class="value">{{ current_total }}</div></div>
-    <div class="cell"><div class="label">状态</div><div class="value">{{ reconciliation.get_status_display }}</div></div>
-    <div class="cell"><div class="label">制单人</div><div class="value">{{ reconciliation.created_by|default:"" }}</div></div>
-    <div class="cell"><div class="label">创建时间</div><div class="value">{{ reconciliation.created_at }}</div></div>
-    <div class="cell"><div class="label">备注</div><div class="value">{{ reconciliation.remark }}</div></div>
-    <div class="cell"><div class="label">打印时间</div><div class="value">{% now "Y-m-d H:i" %}</div></div>
-  </section>
-
-  <table>
-    <thead>
-      <tr>
-        <th>来源类型</th>
-        <th>来源单号</th>
-        <th>日期</th>
-        <th>原始金额</th>
-        <th>退货/调整</th>
-        <th>已核销</th>
-        <th>未结金额</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
+    <table>
+      <thead>
         <tr>
-          <td>{{ row.source_type_label }}</td>
-          <td>{{ row.source_no }}</td>
-          <td>{{ row.source_date }}</td>
-          <td>{{ row.gross_amount }}</td>
-          <td>{{ row.adjust_amount }}</td>
-          <td>{{ row.allocated_amount }}</td>
-          <td>{{ row.open_amount }}</td>
+          <th style="width: 48px;">行号</th>
+          <th style="width: 88px;">日期</th>
+          <th style="width: 128px;">订单号</th>
+          <th>规格</th>
+          <th>品名</th>
+          <th style="width: 80px;">数量</th>
+          <th style="width: 80px;">单价</th>
+          <th style="width: 90px;">金额</th>
+          <th style="width: 110px;">备注</th>
         </tr>
-      {% empty %}
-        <tr><td colspan="7">暂无可对账明细</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for row in statement_rows %}
+          <tr>
+            <td class="center">{{ row.line_no }}</td>
+            <td class="center">{{ row.source_date|date:"n月j日" }}</td>
+            <td class="center">{{ row.source_no }}</td>
+            <td>{{ row.spec }}</td>
+            <td>{{ row.item_name }}</td>
+            <td class="right">{{ row.qty }}</td>
+            <td class="right">{{ row.unit_price }}</td>
+            <td class="num">{{ row.amount }}</td>
+            <td>{{ row.note }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="center muted">暂无可对账明细</td></tr>
+        {% endfor %}
+        <tr class="summary">
+          <td colspan="7" class="right">本期往来金额</td>
+          <td class="num">{{ statement_total }}</td>
+          <td></td>
+        </tr>
+        <tr class="summary">
+          <td colspan="7" class="right">本期应确认金额</td>
+          <td class="num">{{ current_total }}</td>
+          <td></td>
+        </tr>
+        {% if reconciliation.party_type == "customer" %}
+          <tr class="summary">
+            <td colspan="7" class="right">已开票金额</td>
+            <td class="num">{{ invoice_summary.invoiced_amount }}</td>
+            <td></td>
+          </tr>
+          <tr class="summary">
+            <td colspan="7" class="right">未开票金额</td>
+            <td class="num">{{ invoice_summary.uninvoiced_amount }}</td>
+            <td></td>
+          </tr>
+        {% endif %}
+        <tr class="summary">
+          <td colspan="7" class="right">期末往来余额</td>
+          <td class="num">{{ ending_balance }}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
 
-  <section class="signatures">
-    <div class="signature">财务</div>
-    <div class="signature">业务确认</div>
-    <div class="signature">审核</div>
-  </section>
+    <div class="notice">
+      请仔细核对该对账单，并于三天内确认回传，否则视同确认。我司将根据对账金额进行后续收付款处理。
+    </div>
+    <div class="footer">{{ statement_date|date:"Y-n-j" }}</div>
+
+    <section class="signatures">
+      <div class="signature">制单</div>
+      <div class="signature">业务确认</div>
+      <div class="signature">对方确认</div>
+    </section>
+  </main>
 </body>
 </html>

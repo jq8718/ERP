@@ -7,14 +7,15 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import DetailView, TemplateView
 from django.utils import timezone
 
-from accounts.permissions import PermissionCode, user_has_permission
+from accounts.permissions import PermissionCode, user_has_any_permission, user_has_permission
+from files.models import Attachment
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from masterdata.models import Customer, Supplier
@@ -34,6 +35,8 @@ from .import_services import (
 from .models import (
     CustomerCreditBalance,
     CustomerCreditBalanceTransaction,
+    CustomerInvoice,
+    CustomerInvoiceItem,
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
@@ -95,10 +98,9 @@ class OperationsDashboardView(LoginRequiredMixin, TemplateView):
 class CustomerReceiptListView(ErpListView):
     model = CustomerReceipt
     page_title = "客户收款"
-    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
-    permission_denied_message = "缺少财务金额查看权限"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.SALES_PROCESS)
+    permission_denied_message = "缺少客户收款查看权限"
     create_url_name = "finance:customer_receipt_create"
-    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:customer_receipt_detail"
     columns = (
         ("收款单号", "receipt_no"),
@@ -121,6 +123,19 @@ class CustomerReceiptListView(ErpListView):
     }
     search_fields = ("receipt_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "收款单号", "param": "receipt_no", "field": "receipt_no", "placeholder": "收款单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {
+            "label": "收款方式",
+            "param": "receipt_method",
+            "field": "receipt_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": CustomerReceipt.ReceiptMethod.choices,
+        },
+        {"label": "经办人", "param": "handled_by", "field": "handled_by__username", "placeholder": "经办人账号"},
+    )
     sortable_fields = {
         "receipt_no": "receipt_no",
         "customer.customer_name": "customer__customer_name",
@@ -132,8 +147,38 @@ class CustomerReceiptListView(ErpListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        context["mask_sensitive_columns"] = not _can_view_customer_receipt_amount(self.request.user)
         return context
+
+    def get_queryset(self):
+        return _filter_customer_receipt_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_process_customer_receipt(self.request.user) else ""
+
+    def get_scope_filter_options(self):
+        if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(
+                Q(customer__sales_owner=self.request.user)
+                | Q(customer__created_by=self.request.user)
+                | Q(customer__sales_orders__created_by=self.request.user)
+                | Q(created_by=self.request.user)
+                | Q(handled_by=self.request.user)
+            ).distinct()
+        if scope_value == "unassigned" and (
+            _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL)
+        ):
+            return queryset.filter(customer__sales_owner__isnull=True)
+        return queryset
 
 
 class FinanceCsvExportView(LoginRequiredMixin, View):
@@ -144,16 +189,15 @@ class FinanceCsvExportView(LoginRequiredMixin, View):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            required_permissions = getattr(self.list_view_class, "view_permission_required", PermissionCode.FINANCE_VIEW_AMOUNT)
+            if not user_has_any_permission(request.user, required_permissions):
+                raise PermissionDenied("缺少导出权限")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         list_view = self.list_view_class()
         list_view.request = self.request
-        queryset = self.list_view_class.model.objects.all()
-        queryset = list_view.apply_search(queryset)
-        queryset = list_view.apply_status_filter(queryset)
-        queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.get_queryset()
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -189,6 +233,9 @@ class CustomerReceiptExportView(FinanceCsvExportView):
     list_view_class = CustomerReceiptListView
     ordering = ("-receipt_date", "-id")
     select_related = ("customer",)
+
+    def get_mask_fields(self):
+        return () if _can_view_customer_receipt_amount(self.request.user) else self.list_view_class.sensitive_columns
 
 
 class CustomerReceiptImportTemplateView(LoginRequiredMixin, View):
@@ -241,13 +288,13 @@ class CustomerReceiptCreateView(LoginRequiredMixin, TemplateView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_payment_process(request.user)
+            _require_customer_receipt_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = "新建客户收款"
-        context["customers"] = Customer.objects.order_by("customer_no")
+        context["customers"] = _customer_receipt_customer_queryset(self.request.user).order_by("customer_no")
         context["receipt_methods"] = CustomerReceipt.ReceiptMethod.choices
         context["today"] = timezone.localdate()
         return context
@@ -256,7 +303,13 @@ class CustomerReceiptCreateView(LoginRequiredMixin, TemplateView):
         amount = _decimal_from_post(request, "receipt_amount")
         receipt_date = _date_from_post(request, "receipt_date")
         customer_id = request.POST.get("customer")
-        if amount is None or amount <= 0 or not receipt_date or not customer_id:
+        if (
+            amount is None
+            or amount <= 0
+            or not receipt_date
+            or not customer_id
+            or not _customer_receipt_customer_queryset(request.user).filter(pk=customer_id).exists()
+        ):
             messages.error(request, "客户、收款日期和收款金额必须正确填写")
             return redirect("finance:customer_receipt_create")
 
@@ -283,26 +336,27 @@ class CustomerReceiptDetailView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_customer_receipt_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("customer", "handled_by", "created_by", "confirmed_by")
             .prefetch_related("allocations__sales_order", "allocations__reconciliation", "reversals")
         )
+        return _filter_customer_receipt_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"客户收款 {self.object.receipt_no}"
-        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
-        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
-        context["can_reverse"] = context["can_view_amount"] and self.object.status in [
+        context["can_view_amount"] = _can_view_customer_receipt_amount(self.request.user)
+        context["can_process_payment"] = _can_process_customer_receipt(self.request.user)
+        context["can_reverse"] = _can_process_full_finance_payment(self.request.user) and self.object.status in [
             CustomerReceipt.Status.CONFIRMED,
             CustomerReceipt.Status.PART_REVERSED,
-        ] and context["can_process_payment"]
+        ]
         context["can_confirm"] = (
             context["can_view_amount"]
             and context["can_process_payment"]
@@ -314,7 +368,7 @@ class CustomerReceiptDetailView(LoginRequiredMixin, DetailView):
             and self.object.status in [CustomerReceipt.Status.DRAFT, CustomerReceipt.Status.PENDING_APPROVAL]
         )
         context["can_void"] = context["can_edit"]
-        allocation_targets, reconciliation_targets, opening_targets = _customer_allocation_target_groups(self.object)
+        allocation_targets, reconciliation_targets, opening_targets = _customer_allocation_target_groups(self.object, self.request.user)
         context["allocation_targets"] = allocation_targets
         context["reconciliation_allocation_targets"] = reconciliation_targets
         context["opening_allocation_targets"] = opening_targets
@@ -334,21 +388,22 @@ class CustomerReceiptPrintView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_customer_receipt_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("customer", "handled_by", "created_by", "confirmed_by")
             .prefetch_related("allocations__sales_order", "allocations__reconciliation")
         )
+        return _filter_customer_receipt_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"打印客户收款 {self.object.receipt_no}"
-        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
+        context["can_view_amount"] = _can_view_customer_receipt_amount(self.request.user)
         record_print_log(
             template_type="customer_receipt",
             source_doc_type="customer_receipt",
@@ -363,8 +418,10 @@ class CustomerReceiptUpdateView(LoginRequiredMixin, View):
     editable_statuses = [CustomerReceipt.Status.DRAFT, CustomerReceipt.Status.PENDING_APPROVAL]
 
     def get(self, request, pk):
-        _require_finance_payment_process(request.user)
-        receipt = CustomerReceipt.objects.select_related("customer").filter(pk=pk).first()
+        _require_customer_receipt_process(request.user)
+        receipt = _filter_customer_receipt_queryset_for_user(
+            CustomerReceipt.objects.select_related("customer"), request.user
+        ).filter(pk=pk).first()
         if receipt is None:
             messages.error(request, "客户收款单不存在")
             return redirect("finance:customer_receipt_list")
@@ -374,7 +431,7 @@ class CustomerReceiptUpdateView(LoginRequiredMixin, View):
         return self._render(request, receipt)
 
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_customer_receipt_process(request.user)
         amount = _decimal_from_post(request, "receipt_amount")
         receipt_date = _date_from_post(request, "receipt_date")
         customer_id = request.POST.get("customer")
@@ -385,14 +442,16 @@ class CustomerReceiptUpdateView(LoginRequiredMixin, View):
             or not receipt_date
             or not customer_id
             or receipt_method not in CustomerReceipt.ReceiptMethod.values
-            or not Customer.objects.filter(pk=customer_id).exists()
+            or not _customer_receipt_customer_queryset(request.user).filter(pk=customer_id).exists()
         ):
             messages.error(request, "客户、收款日期、收款金额和收款方式必须正确填写")
             return redirect("finance:customer_receipt_edit", pk=pk)
 
         try:
             with transaction.atomic():
-                receipt = CustomerReceipt.objects.select_for_update().get(pk=pk)
+                receipt = _filter_customer_receipt_queryset_for_user(
+                    CustomerReceipt.objects.select_for_update(), request.user
+                ).get(pk=pk)
                 if receipt.status not in self.editable_statuses:
                     messages.error(request, "只有草稿或待审核客户收款单可以编辑")
                     return redirect("finance:customer_receipt_detail", pk=pk)
@@ -444,7 +503,7 @@ class CustomerReceiptUpdateView(LoginRequiredMixin, View):
             "finance/customer_receipt_form.html",
             {
                 "page_title": f"编辑客户收款 {receipt.receipt_no}",
-                "customers": Customer.objects.order_by("customer_no"),
+                "customers": _customer_receipt_customer_queryset(request.user).order_by("customer_no"),
                 "receipt_methods": CustomerReceipt.ReceiptMethod.choices,
                 "today": timezone.localdate(),
                 "receipt": receipt,
@@ -457,7 +516,7 @@ class CustomerReceiptVoidView(LoginRequiredMixin, View):
     voidable_statuses = [CustomerReceipt.Status.DRAFT, CustomerReceipt.Status.PENDING_APPROVAL]
 
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_customer_receipt_process(request.user)
         verification_response = require_second_verify(request, "finance:customer_receipt_detail", pk)
         if verification_response:
             return verification_response
@@ -472,7 +531,9 @@ class CustomerReceiptVoidView(LoginRequiredMixin, View):
             return reason_response
         try:
             with transaction.atomic():
-                receipt = CustomerReceipt.objects.select_for_update().get(pk=pk)
+                receipt = _filter_customer_receipt_queryset_for_user(
+                    CustomerReceipt.objects.select_for_update(), request.user
+                ).get(pk=pk)
                 if receipt.status not in self.voidable_statuses:
                     messages.error(request, "只有草稿或待审核客户收款单可以作废")
                     return redirect("finance:customer_receipt_detail", pk=pk)
@@ -502,13 +563,17 @@ class CustomerReceiptVoidView(LoginRequiredMixin, View):
 
 class CustomerReceiptConfirmView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_customer_receipt_process(request.user)
         verification_response = require_second_verify(request, "finance:customer_receipt_detail", pk)
         if verification_response:
             return verification_response
         allocations = _allocation_rows_from_post(request, "sales_order_id", "sales_order_allocated_amount")
         allocations += _allocation_rows_from_post(request, "reconciliation_id", "reconciliation_allocated_amount")
         allocations += _allocation_rows_from_post(request, "opening_receivable_id", "opening_receivable_allocated_amount")
+        receipt = _filter_customer_receipt_queryset_for_user(CustomerReceipt.objects.all(), request.user).filter(pk=pk).first()
+        if receipt is None:
+            raise Http404("客户收款单不存在")
+        _validate_customer_receipt_allocations_for_user(receipt, allocations, request.user)
         result = confirm_customer_receipt(
             pk,
             allocations,
@@ -548,10 +613,9 @@ class CustomerReceiptReverseView(LoginRequiredMixin, View):
 class SupplierPaymentListView(ErpListView):
     model = SupplierPayment
     page_title = "供应商付款"
-    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
-    permission_denied_message = "缺少财务金额查看权限"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少供应商付款查看权限"
     create_url_name = "finance:supplier_payment_create"
-    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:supplier_payment_detail"
     columns = (
         ("付款单号", "payment_no"),
@@ -574,6 +638,19 @@ class SupplierPaymentListView(ErpListView):
     }
     search_fields = ("payment_no", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "付款单号", "param": "payment_no", "field": "payment_no", "placeholder": "付款单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {
+            "label": "付款方式",
+            "param": "payment_method",
+            "field": "payment_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": SupplierPayment.PaymentMethod.choices,
+        },
+        {"label": "经办人", "param": "handled_by", "field": "handled_by__username", "placeholder": "经办人账号"},
+    )
     sortable_fields = {
         "payment_no": "payment_no",
         "supplier.supplier_name": "supplier__supplier_name",
@@ -585,8 +662,38 @@ class SupplierPaymentListView(ErpListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        context["mask_sensitive_columns"] = not _can_view_supplier_payment_amount(self.request.user)
         return context
+
+    def get_queryset(self):
+        return _filter_supplier_payment_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_process_supplier_payment(self.request.user) else ""
+
+    def get_scope_filter_options(self):
+        if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(
+                Q(created_by=self.request.user)
+                | Q(handled_by=self.request.user)
+                | Q(allocations__purchase_receipt__purchase_order__purchase_owner=self.request.user)
+                | Q(allocations__purchase_receipt__purchase_order__created_by=self.request.user)
+                | Q(allocations__purchase_receipt__created_by=self.request.user)
+            ).distinct()
+        if scope_value == "unassigned" and (
+            _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW)
+        ):
+            return queryset.filter(handled_by__isnull=True)
+        return queryset
 
 
 class SupplierPaymentExportView(FinanceCsvExportView):
@@ -594,6 +701,9 @@ class SupplierPaymentExportView(FinanceCsvExportView):
     list_view_class = SupplierPaymentListView
     ordering = ("-payment_date", "-id")
     select_related = ("supplier",)
+
+    def get_mask_fields(self):
+        return () if _can_view_supplier_payment_amount(self.request.user) else self.list_view_class.sensitive_columns
 
 
 class SupplierPaymentImportTemplateView(LoginRequiredMixin, View):
@@ -646,13 +756,13 @@ class SupplierPaymentCreateView(LoginRequiredMixin, TemplateView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_payment_process(request.user)
+            _require_supplier_payment_process(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = "新建供应商付款"
-        context["suppliers"] = Supplier.objects.order_by("supplier_no")
+        context["suppliers"] = _supplier_payment_supplier_queryset(self.request.user).order_by("supplier_no")
         context["payment_methods"] = SupplierPayment.PaymentMethod.choices
         context["today"] = timezone.localdate()
         return context
@@ -661,7 +771,13 @@ class SupplierPaymentCreateView(LoginRequiredMixin, TemplateView):
         amount = _decimal_from_post(request, "payment_amount")
         payment_date = _date_from_post(request, "payment_date")
         supplier_id = request.POST.get("supplier")
-        if amount is None or amount <= 0 or not payment_date or not supplier_id:
+        if (
+            amount is None
+            or amount <= 0
+            or not payment_date
+            or not supplier_id
+            or not _supplier_payment_supplier_queryset(request.user).filter(pk=supplier_id).exists()
+        ):
             messages.error(request, "供应商、付款日期和付款金额必须正确填写")
             return redirect("finance:supplier_payment_create")
 
@@ -688,26 +804,27 @@ class SupplierPaymentDetailView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_supplier_payment_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("supplier", "handled_by", "created_by", "confirmed_by")
             .prefetch_related("allocations__purchase_receipt", "allocations__reconciliation", "reversals")
         )
+        return _filter_supplier_payment_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"供应商付款 {self.object.payment_no}"
-        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
-        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
-        context["can_reverse"] = context["can_view_amount"] and self.object.status in [
+        context["can_view_amount"] = _can_view_supplier_payment_amount(self.request.user)
+        context["can_process_payment"] = _can_process_supplier_payment(self.request.user)
+        context["can_reverse"] = _can_process_full_finance_payment(self.request.user) and self.object.status in [
             SupplierPayment.Status.CONFIRMED,
             SupplierPayment.Status.PART_REVERSED,
-        ] and context["can_process_payment"]
+        ]
         context["can_confirm"] = (
             context["can_view_amount"]
             and context["can_process_payment"]
@@ -719,7 +836,7 @@ class SupplierPaymentDetailView(LoginRequiredMixin, DetailView):
             and self.object.status in [SupplierPayment.Status.DRAFT, SupplierPayment.Status.PENDING_APPROVAL]
         )
         context["can_void"] = context["can_edit"]
-        allocation_targets, reconciliation_targets, opening_targets = _supplier_allocation_target_groups(self.object)
+        allocation_targets, reconciliation_targets, opening_targets = _supplier_allocation_target_groups(self.object, self.request.user)
         context["allocation_targets"] = allocation_targets
         context["reconciliation_allocation_targets"] = reconciliation_targets
         context["opening_allocation_targets"] = opening_targets
@@ -739,21 +856,22 @@ class SupplierPaymentPrintView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_supplier_payment_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return (
+        queryset = (
             super()
             .get_queryset()
             .select_related("supplier", "handled_by", "created_by", "confirmed_by")
             .prefetch_related("allocations__purchase_receipt", "allocations__reconciliation")
         )
+        return _filter_supplier_payment_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"打印供应商付款 {self.object.payment_no}"
-        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
+        context["can_view_amount"] = _can_view_supplier_payment_amount(self.request.user)
         record_print_log(
             template_type="supplier_payment",
             source_doc_type="supplier_payment",
@@ -768,8 +886,10 @@ class SupplierPaymentUpdateView(LoginRequiredMixin, View):
     editable_statuses = [SupplierPayment.Status.DRAFT, SupplierPayment.Status.PENDING_APPROVAL]
 
     def get(self, request, pk):
-        _require_finance_payment_process(request.user)
-        payment = SupplierPayment.objects.select_related("supplier").filter(pk=pk).first()
+        _require_supplier_payment_process(request.user)
+        payment = _filter_supplier_payment_queryset_for_user(
+            SupplierPayment.objects.select_related("supplier"), request.user
+        ).filter(pk=pk).first()
         if payment is None:
             messages.error(request, "供应商付款单不存在")
             return redirect("finance:supplier_payment_list")
@@ -779,7 +899,7 @@ class SupplierPaymentUpdateView(LoginRequiredMixin, View):
         return self._render(request, payment)
 
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_supplier_payment_process(request.user)
         amount = _decimal_from_post(request, "payment_amount")
         payment_date = _date_from_post(request, "payment_date")
         supplier_id = request.POST.get("supplier")
@@ -790,14 +910,16 @@ class SupplierPaymentUpdateView(LoginRequiredMixin, View):
             or not payment_date
             or not supplier_id
             or payment_method not in SupplierPayment.PaymentMethod.values
-            or not Supplier.objects.filter(pk=supplier_id).exists()
+            or not _supplier_payment_supplier_queryset(request.user).filter(pk=supplier_id).exists()
         ):
             messages.error(request, "供应商、付款日期、付款金额和付款方式必须正确填写")
             return redirect("finance:supplier_payment_edit", pk=pk)
 
         try:
             with transaction.atomic():
-                payment = SupplierPayment.objects.select_for_update().get(pk=pk)
+                payment = _filter_supplier_payment_queryset_for_user(
+                    SupplierPayment.objects.select_for_update(), request.user
+                ).get(pk=pk)
                 if payment.status not in self.editable_statuses:
                     messages.error(request, "只有草稿或待审核供应商付款单可以编辑")
                     return redirect("finance:supplier_payment_detail", pk=pk)
@@ -849,7 +971,7 @@ class SupplierPaymentUpdateView(LoginRequiredMixin, View):
             "finance/supplier_payment_form.html",
             {
                 "page_title": f"编辑供应商付款 {payment.payment_no}",
-                "suppliers": Supplier.objects.order_by("supplier_no"),
+                "suppliers": _supplier_payment_supplier_queryset(request.user).order_by("supplier_no"),
                 "payment_methods": SupplierPayment.PaymentMethod.choices,
                 "today": timezone.localdate(),
                 "payment": payment,
@@ -862,7 +984,7 @@ class SupplierPaymentVoidView(LoginRequiredMixin, View):
     voidable_statuses = [SupplierPayment.Status.DRAFT, SupplierPayment.Status.PENDING_APPROVAL]
 
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_supplier_payment_process(request.user)
         verification_response = require_second_verify(request, "finance:supplier_payment_detail", pk)
         if verification_response:
             return verification_response
@@ -877,7 +999,9 @@ class SupplierPaymentVoidView(LoginRequiredMixin, View):
             return reason_response
         try:
             with transaction.atomic():
-                payment = SupplierPayment.objects.select_for_update().get(pk=pk)
+                payment = _filter_supplier_payment_queryset_for_user(
+                    SupplierPayment.objects.select_for_update(), request.user
+                ).get(pk=pk)
                 if payment.status not in self.voidable_statuses:
                     messages.error(request, "只有草稿或待审核供应商付款单可以作废")
                     return redirect("finance:supplier_payment_detail", pk=pk)
@@ -907,13 +1031,17 @@ class SupplierPaymentVoidView(LoginRequiredMixin, View):
 
 class SupplierPaymentConfirmView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_supplier_payment_process(request.user)
         verification_response = require_second_verify(request, "finance:supplier_payment_detail", pk)
         if verification_response:
             return verification_response
         allocations = _allocation_rows_from_post(request, "purchase_receipt_id", "purchase_receipt_allocated_amount")
         allocations += _allocation_rows_from_post(request, "reconciliation_id", "reconciliation_allocated_amount")
         allocations += _allocation_rows_from_post(request, "opening_payable_id", "opening_payable_allocated_amount")
+        payment = _filter_supplier_payment_queryset_for_user(SupplierPayment.objects.all(), request.user).filter(pk=pk).first()
+        if payment is None:
+            raise Http404("供应商付款单不存在")
+        _validate_supplier_payment_allocations_for_user(payment, allocations, request.user)
         result = confirm_supplier_payment(
             pk,
             allocations,
@@ -971,6 +1099,11 @@ class OpeningReceivableListView(ErpListView):
     ordering = ["-opening_date", "-id"]
     search_fields = ("opening_no", "source_doc_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "期初单号", "param": "opening_no", "field": "opening_no", "placeholder": "期初单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("customer")
@@ -1099,6 +1232,11 @@ class OpeningPayableListView(ErpListView):
     ordering = ["-opening_date", "-id"]
     search_fields = ("opening_no", "source_doc_no", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "期初单号", "param": "opening_no", "field": "opening_no", "placeholder": "期初单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("supplier")
@@ -1227,6 +1365,20 @@ class ExpenseRecordListView(ErpListView):
     search_fields = ("expense_no", "payee", "invoice_no", "remark")
     status_filter_field = "status"
     filter_fields = (("类别", "category", ExpenseRecord.ExpenseCategory.choices),)
+    field_filters = (
+        {"label": "费用单号", "param": "expense_no", "field": "expense_no", "placeholder": "费用单号"},
+        {"label": "收款方", "param": "payee", "field": "payee", "placeholder": "收款方"},
+        {"label": "发票号", "param": "invoice_no", "field": "invoice_no", "placeholder": "发票号"},
+        {
+            "label": "付款方式",
+            "param": "payment_method",
+            "field": "payment_method",
+            "lookup": "exact",
+            "type": "select",
+            "choices": ExpenseRecord.PaymentMethod.choices,
+        },
+        {"label": "经办人", "param": "handled_by", "field": "handled_by__username", "placeholder": "经办人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("handled_by", "created_by", "confirmed_by")
@@ -1392,6 +1544,11 @@ class CustomerCreditBalanceListView(ErpListView):
     page_actions = (("导出CSV", "finance:customer_credit_balance_export", ""),)
     search_fields = ("source_doc_no", "customer__customer_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+    )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1518,6 +1675,11 @@ class SupplierCreditBalanceListView(ErpListView):
     page_actions = (("导出CSV", "finance:supplier_credit_balance_export", ""),)
     search_fields = ("source_doc_no", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+    )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1626,13 +1788,292 @@ class SupplierCreditBalanceApplyView(LoginRequiredMixin, View):
         return redirect("finance:supplier_credit_balance_detail", pk=pk)
 
 
+class CustomerInvoiceListView(ErpListView):
+    model = CustomerInvoice
+    page_title = "客户开票"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.SALES_PROCESS)
+    permission_denied_message = "缺少客户开票查看权限"
+    create_url_name = "finance:customer_invoice_create"
+    detail_url_name = "finance:customer_invoice_detail"
+    columns = (
+        ("开票单号", "invoice_no"),
+        ("发票号码", "external_invoice_no"),
+        ("客户", "customer.customer_name"),
+        ("关联对账单", "reconciliation.reconciliation_no"),
+        ("开票日期", "invoice_date"),
+        ("开票金额", "invoice_amount"),
+        ("状态", "get_status_display"),
+    )
+    sensitive_columns = ("invoice_amount",)
+    ordering = ["-invoice_date", "-id"]
+    search_fields = ("invoice_no", "external_invoice_no", "customer__customer_name", "reconciliation__reconciliation_no")
+    status_filter_field = "status"
+    field_filters = (
+        {"label": "开票单号", "param": "invoice_no", "field": "invoice_no", "placeholder": "开票单号"},
+        {"label": "发票号码", "param": "external_invoice_no", "field": "external_invoice_no", "placeholder": "发票号码"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "对账单", "param": "reconciliation_no", "field": "reconciliation__reconciliation_no", "placeholder": "对账单号"},
+    )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["mask_sensitive_columns"] = not _can_view_customer_invoice_amount(self.request.user)
+        return context
+
+    def get_queryset(self):
+        return _filter_customer_invoice_queryset_for_user(
+            super().get_queryset().select_related("customer", "reconciliation"),
+            self.request.user,
+        )
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_process_customer_invoice(self.request.user) else ""
+
+    def get_scope_filter_options(self):
+        if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            return queryset.filter(
+                Q(customer__sales_owner=self.request.user)
+                | Q(customer__created_by=self.request.user)
+                | Q(customer__sales_orders__created_by=self.request.user)
+                | Q(created_by=self.request.user)
+            ).distinct()
+        if scope_value == "unassigned" and (
+            _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL)
+        ):
+            return queryset.filter(customer__sales_owner__isnull=True).distinct()
+        return queryset
+
+
+class CustomerInvoiceCreateView(LoginRequiredMixin, View):
+    template_name = "finance/customer_invoice_form.html"
+
+    def get(self, request):
+        _require_customer_invoice_process(request.user)
+        return self._render(request)
+
+    def post(self, request):
+        _require_customer_invoice_process(request.user)
+        customer_id = _int_or_none(request.POST.get("customer"))
+        reconciliation_id = _int_or_none(request.POST.get("reconciliation"))
+        invoice_date = _date_from_post(request, "invoice_date")
+        external_invoice_no = request.POST.get("external_invoice_no", "").strip()
+        remark = request.POST.get("remark", "").strip()
+        rows = _customer_invoice_item_rows_from_post(request)
+
+        error_message = _validate_customer_invoice_input(
+            request.user,
+            customer_id,
+            reconciliation_id,
+            invoice_date,
+            rows,
+        )
+        if error_message:
+            messages.error(request, error_message)
+            return self._render(request)
+
+        invoice_amount = _money(sum((row["invoice_amount"] for row in rows), ZERO_AMOUNT))
+        with transaction.atomic():
+            invoice = CustomerInvoice.objects.create(
+                invoice_no=next_document_no("INV"),
+                external_invoice_no=external_invoice_no,
+                customer_id=customer_id,
+                reconciliation_id=reconciliation_id,
+                invoice_date=invoice_date,
+                invoice_amount=invoice_amount,
+                status=CustomerInvoice.Status.DRAFT,
+                created_by=request.user,
+                remark=remark,
+            )
+            CustomerInvoiceItem.objects.bulk_create(
+                [
+                    CustomerInvoiceItem(
+                        customer_invoice=invoice,
+                        reconciliation_item_id=row.get("reconciliation_item_id"),
+                        sales_order_id=row["sales_order_id"],
+                        line_no=index,
+                        invoice_amount=row["invoice_amount"],
+                    )
+                    for index, row in enumerate(rows, start=1)
+                ]
+            )
+        record_audit_log_from_request(
+            request,
+            "customer_invoice_create",
+            "customer_invoice",
+            invoice.id,
+            invoice.invoice_no,
+            after_snapshot=_customer_invoice_snapshot(invoice),
+        )
+        messages.success(request, "开票单已保存。请在详情页上传发票附件后再确认开票。")
+        return redirect("finance:customer_invoice_detail", pk=invoice.pk)
+
+    def _render(self, request):
+        customer_id = _int_or_none(request.POST.get("customer") or request.GET.get("customer"))
+        reconciliation_id = _int_or_none(request.POST.get("reconciliation") or request.GET.get("reconciliation"))
+        if reconciliation_id:
+            reconciliation = _customer_invoice_reconciliation_queryset(request.user).filter(pk=reconciliation_id).first()
+            if reconciliation:
+                customer_id = reconciliation.customer_id
+        rows = _customer_invoice_candidate_rows(request.user, customer_id, reconciliation_id)
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_title": "新建客户开票",
+                "customers": _customer_receipt_customer_queryset(request.user).order_by("customer_no"),
+                "reconciliations": _customer_invoice_reconciliation_queryset(request.user, customer_id).order_by("-period_end", "-id"),
+                "selected_customer_id": customer_id,
+                "selected_reconciliation_id": reconciliation_id,
+                "today": timezone.localdate(),
+                "rows": rows,
+            },
+        )
+
+
+class CustomerInvoiceDetailView(LoginRequiredMixin, DetailView):
+    model = CustomerInvoice
+    template_name = "finance/customer_invoice_detail.html"
+    context_object_name = "invoice"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            _require_customer_invoice_view(request.user)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        queryset = (
+            super()
+            .get_queryset()
+            .select_related("customer", "reconciliation", "created_by", "confirmed_by")
+            .prefetch_related("items__sales_order", "items__reconciliation_item")
+        )
+        return _filter_customer_invoice_queryset_for_user(queryset, self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_title"] = f"客户开票 {self.object.invoice_no}"
+        context["can_view_amount"] = _can_view_customer_invoice_amount(self.request.user)
+        context["can_process_invoice"] = _can_process_customer_invoice(self.request.user)
+        context["has_invoice_attachment"] = _customer_invoice_has_active_attachment(self.object)
+        context["can_confirm"] = (
+            context["can_process_invoice"]
+            and self.object.status == CustomerInvoice.Status.DRAFT
+        )
+        context["can_void"] = (
+            context["can_process_invoice"]
+            and self.object.status in [CustomerInvoice.Status.DRAFT, CustomerInvoice.Status.CONFIRMED]
+        )
+        context["attachment_panel"] = build_attachment_panel(
+            self.request.user,
+            "customer_invoice",
+            self.object.id,
+            self.object.invoice_no,
+        )
+        return context
+
+
+class CustomerInvoiceConfirmView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_customer_invoice_process(request.user)
+        verification_response = require_second_verify(request, "finance:customer_invoice_detail", pk)
+        if verification_response:
+            return verification_response
+        try:
+            with transaction.atomic():
+                invoice = _filter_customer_invoice_queryset_for_user(
+                    CustomerInvoice.objects.select_for_update().prefetch_related("items"),
+                    request.user,
+                ).get(pk=pk)
+                if invoice.status != CustomerInvoice.Status.DRAFT:
+                    messages.error(request, "只有草稿开票单可以确认")
+                    return redirect("finance:customer_invoice_detail", pk=pk)
+                before_snapshot = _customer_invoice_snapshot(invoice)
+                error_message = _validate_customer_invoice_confirm(invoice)
+                if error_message:
+                    messages.error(request, error_message)
+                    return redirect("finance:customer_invoice_detail", pk=pk)
+                invoice.status = CustomerInvoice.Status.CONFIRMED
+                invoice.confirmed_at = timezone.now()
+                invoice.confirmed_by = request.user
+                invoice.save(update_fields=["status", "confirmed_at", "confirmed_by"])
+                after_snapshot = _customer_invoice_snapshot(invoice)
+        except CustomerInvoice.DoesNotExist:
+            messages.error(request, "开票单不存在")
+            return redirect("finance:customer_invoice_list")
+
+        record_audit_log_from_request(
+            request,
+            "customer_invoice_confirm",
+            "customer_invoice",
+            invoice.id,
+            invoice.invoice_no,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+        )
+        messages.success(request, "开票单已确认")
+        return redirect("finance:customer_invoice_detail", pk=pk)
+
+
+class CustomerInvoiceVoidView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        _require_customer_invoice_process(request.user)
+        verification_response = require_second_verify(request, "finance:customer_invoice_detail", pk)
+        if verification_response:
+            return verification_response
+        reason, reason_response = require_post_reason(
+            request,
+            "finance:customer_invoice_detail",
+            pk,
+            field_names=("void_reason", "reason"),
+            message="请填写开票单作废原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                invoice = _filter_customer_invoice_queryset_for_user(
+                    CustomerInvoice.objects.select_for_update(),
+                    request.user,
+                ).get(pk=pk)
+                if invoice.status not in [CustomerInvoice.Status.DRAFT, CustomerInvoice.Status.CONFIRMED]:
+                    messages.error(request, "当前开票单状态不能作废")
+                    return redirect("finance:customer_invoice_detail", pk=pk)
+                before_snapshot = _customer_invoice_snapshot(invoice)
+                invoice.status = CustomerInvoice.Status.VOIDED
+                invoice.save(update_fields=["status"])
+                after_snapshot = _customer_invoice_snapshot(invoice)
+        except CustomerInvoice.DoesNotExist:
+            messages.error(request, "开票单不存在")
+            return redirect("finance:customer_invoice_list")
+
+        record_audit_log_from_request(
+            request,
+            "customer_invoice_void",
+            "customer_invoice",
+            invoice.id,
+            invoice.invoice_no,
+            before_snapshot=before_snapshot,
+            after_snapshot={**after_snapshot, "operation_reason": reason},
+        )
+        messages.success(request, "开票单已作废")
+        return redirect("finance:customer_invoice_detail", pk=pk)
+
+
 class ReconciliationListView(ErpListView):
     model = Reconciliation
     page_title = "对账单"
-    view_permission_required = PermissionCode.FINANCE_VIEW_AMOUNT
-    permission_denied_message = "缺少财务金额查看权限"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.SALES_PROCESS, PermissionCode.PURCHASE_PROCESS)
+    permission_denied_message = "缺少对账单查看权限"
     create_url_name = "finance:reconciliation_create"
-    create_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.FINANCE_PAYMENT_PROCESS)
     detail_url_name = "finance:reconciliation_detail"
     columns = (
         ("对账单号", "reconciliation_no"),
@@ -1649,11 +2090,61 @@ class ReconciliationListView(ErpListView):
     page_actions = (("导出CSV", "finance:reconciliation_export", ""),)
     search_fields = ("reconciliation_no", "customer__customer_name", "supplier__supplier_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "对账单号", "param": "reconciliation_no", "field": "reconciliation_no", "placeholder": "对账单号"},
+        {
+            "label": "对象类型",
+            "param": "party_type",
+            "field": "party_type",
+            "lookup": "exact",
+            "type": "select",
+            "choices": Reconciliation.PartyType.choices,
+        },
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+    )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["mask_sensitive_columns"] = not _can_view_finance_amount(self.request.user)
+        context["mask_sensitive_columns"] = not _can_view_reconciliation_amount(self.request.user)
         return context
+
+    def get_queryset(self):
+        return _filter_reconciliation_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_create_reconciliation(self.request.user) else ""
+
+    def get_scope_filter_options(self):
+        if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL) or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW):
+            return (
+                {"value": "all", "label": "全部", "default": True},
+                {"value": "mine", "label": "我的"},
+                {"value": "unassigned", "label": "未分配"},
+            )
+        return ({"value": "mine", "label": "我的", "default": True},)
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "mine":
+            conditions = (
+                Q(customer__sales_owner=self.request.user)
+                | Q(customer__created_by=self.request.user)
+                | Q(supplier__created_by=self.request.user)
+                | Q(created_by=self.request.user)
+            )
+            if user_has_permission(self.request.user, PermissionCode.PURCHASE_PROCESS):
+                conditions |= Q(supplier__in=_supplier_payment_supplier_queryset(self.request.user))
+            return queryset.filter(conditions).distinct()
+        if scope_value == "unassigned" and (
+            _can_view_finance_amount(self.request.user)
+            or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL)
+            or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW)
+        ):
+            return queryset.filter(
+                Q(party_type=Reconciliation.PartyType.CUSTOMER, customer__sales_owner__isnull=True)
+                | Q(party_type=Reconciliation.PartyType.SUPPLIER, created_by__isnull=True)
+            ).distinct()
+        return queryset
 
 
 class ReconciliationExportView(FinanceCsvExportView):
@@ -1662,28 +2153,31 @@ class ReconciliationExportView(FinanceCsvExportView):
     ordering = ("-period_start", "-id")
     select_related = ("customer", "supplier")
 
+    def get_mask_fields(self):
+        return () if _can_view_reconciliation_amount(self.request.user) else self.list_view_class.sensitive_columns
+
 
 class ReconciliationCreateView(LoginRequiredMixin, View):
     template_name = "finance/reconciliation_form.html"
 
     def get(self, request):
-        _require_finance_payment_process(request.user)
+        _require_reconciliation_create(request.user)
         return self._render(request)
 
     def post(self, request):
-        _require_finance_payment_process(request.user)
+        _require_reconciliation_create(request.user)
         party_type = request.POST.get("party_type", "")
         period_start = _date_from_post(request, "period_start")
         period_end = _date_from_post(request, "period_end")
         customer_id = request.POST.get("customer") or None
         supplier_id = request.POST.get("supplier") or None
 
-        error_message = _validate_reconciliation_input(party_type, period_start, period_end, customer_id, supplier_id)
+        error_message = _validate_reconciliation_input(party_type, period_start, period_end, customer_id, supplier_id, request.user)
         if error_message:
             messages.error(request, error_message)
             return self._render(request)
 
-        rows = _reconciliation_rows(party_type, customer_id, supplier_id, period_start, period_end)
+        rows = _reconciliation_rows(party_type, customer_id, supplier_id, period_start, period_end, user=request.user)
         total_amount = _rows_total(rows)
         if not rows:
             messages.error(request, "所选对象和日期范围内没有可对账明细")
@@ -1718,9 +2212,13 @@ class ReconciliationCreateView(LoginRequiredMixin, View):
             self.template_name,
             {
                 "page_title": "新建对账单",
-                "party_type_choices": Reconciliation.PartyType.choices,
-                "customers": Customer.objects.order_by("customer_no"),
-                "suppliers": Supplier.objects.order_by("supplier_no"),
+                "party_type_choices": _reconciliation_party_type_choices(request.user),
+                "customers": _customer_receipt_customer_queryset(request.user).order_by("customer_no"),
+                "suppliers": (
+                    _supplier_payment_supplier_queryset(request.user).order_by("supplier_no")
+                    if _can_create_supplier_reconciliation(request.user)
+                    else Supplier.objects.none()
+                ),
                 "today": timezone.localdate(),
             },
         )
@@ -1733,17 +2231,23 @@ class ReconciliationDetailView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_reconciliation_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return super().get_queryset().select_related("customer", "supplier", "created_by")
+        queryset = super().get_queryset().select_related("customer", "supplier", "created_by")
+        return _filter_reconciliation_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"对账单 {self.object.reconciliation_no}"
-        context["can_view_amount"] = _can_view_finance_amount(self.request.user)
-        context["can_process_payment"] = _can_process_finance_payment(self.request.user)
+        context["can_view_amount"] = _can_view_reconciliation_amount(self.request.user)
+        context["can_process_payment"] = _can_process_reconciliation(self.request.user, self.object)
+        context["can_create_customer_invoice"] = (
+            self.object.party_type == Reconciliation.PartyType.CUSTOMER
+            and _can_process_customer_invoice(self.request.user)
+            and self.object.status != Reconciliation.Status.VOIDED
+        )
         context["can_confirm"] = (
             context["can_view_amount"]
             and context["can_process_payment"]
@@ -1754,7 +2258,13 @@ class ReconciliationDetailView(LoginRequiredMixin, DetailView):
             and context["can_process_payment"]
             and self.object.status in [Reconciliation.Status.DRAFT, Reconciliation.Status.CONFIRMED]
         )
-        context["rows"] = _display_reconciliation_rows(self.object)
+        rows = _display_reconciliation_rows(self.object, self.request.user)
+        if self.object.party_type == Reconciliation.PartyType.CUSTOMER:
+            rows, invoice_summary = _decorate_customer_reconciliation_invoice_rows(rows)
+        else:
+            invoice_summary = {"total_amount": ZERO_AMOUNT, "invoiced_amount": ZERO_AMOUNT, "uninvoiced_amount": ZERO_AMOUNT}
+        context["rows"] = rows
+        context["invoice_summary"] = invoice_summary
         context["current_total"] = _rows_total(context["rows"])
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
@@ -1772,18 +2282,30 @@ class ReconciliationPrintView(LoginRequiredMixin, DetailView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            _require_finance_amount(request.user)
+            _require_reconciliation_view(request.user)
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return super().get_queryset().select_related("customer", "supplier", "created_by")
+        queryset = super().get_queryset().select_related("customer", "supplier", "created_by")
+        return _filter_reconciliation_queryset_for_user(queryset, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        rows = _display_reconciliation_rows(self.object)
+        rows = _display_reconciliation_rows(self.object, self.request.user)
+        if self.object.party_type == Reconciliation.PartyType.CUSTOMER:
+            rows, invoice_summary = _decorate_customer_reconciliation_invoice_rows(rows)
+        else:
+            invoice_summary = {"total_amount": ZERO_AMOUNT, "invoiced_amount": ZERO_AMOUNT, "uninvoiced_amount": ZERO_AMOUNT}
         context["page_title"] = f"打印对账单 {self.object.reconciliation_no}"
         context["rows"] = rows
+        context["invoice_summary"] = invoice_summary
         context["current_total"] = _rows_total(rows)
+        context["statement_rows"] = _reconciliation_statement_rows(self.object, self.request.user)
+        context["statement_total"] = _statement_rows_total(context["statement_rows"])
+        context["prior_balance"] = _reconciliation_prior_balance(self.object, self.request.user)
+        context["ending_balance"] = _money(context["prior_balance"] + context["current_total"])
+        context["party_name"] = _reconciliation_party_name(self.object)
+        context["statement_date"] = timezone.localdate()
         record_print_log(
             template_type="reconciliation",
             source_doc_type="reconciliation",
@@ -1796,13 +2318,17 @@ class ReconciliationPrintView(LoginRequiredMixin, DetailView):
 
 class ReconciliationConfirmView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_reconciliation_view(request.user)
         verification_response = require_second_verify(request, "finance:reconciliation_detail", pk)
         if verification_response:
             return verification_response
         try:
             with transaction.atomic():
-                reconciliation = Reconciliation.objects.select_for_update().get(pk=pk)
+                reconciliation = _filter_reconciliation_queryset_for_user(
+                    Reconciliation.objects.select_for_update(), request.user
+                ).get(pk=pk)
+                if not _can_process_reconciliation(request.user, reconciliation):
+                    raise PermissionDenied("缺少对账单处理权限")
                 if reconciliation.status != Reconciliation.Status.DRAFT:
                     messages.error(request, "只有草稿对账单可以确认")
                     return redirect("finance:reconciliation_detail", pk=pk)
@@ -1814,6 +2340,7 @@ class ReconciliationConfirmView(LoginRequiredMixin, View):
                     reconciliation.period_start,
                     reconciliation.period_end,
                     for_update=True,
+                    user=request.user,
                 )
                 if not rows:
                     messages.error(request, "当前没有可确认的对账明细")
@@ -1842,7 +2369,7 @@ class ReconciliationConfirmView(LoginRequiredMixin, View):
 
 class ReconciliationVoidView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        _require_finance_payment_process(request.user)
+        _require_reconciliation_view(request.user)
         verification_response = require_second_verify(request, "finance:reconciliation_detail", pk)
         if verification_response:
             return verification_response
@@ -1857,7 +2384,11 @@ class ReconciliationVoidView(LoginRequiredMixin, View):
             return reason_response
         try:
             with transaction.atomic():
-                reconciliation = Reconciliation.objects.select_for_update().get(pk=pk)
+                reconciliation = _filter_reconciliation_queryset_for_user(
+                    Reconciliation.objects.select_for_update(), request.user
+                ).get(pk=pk)
+                if not _can_process_reconciliation(request.user, reconciliation):
+                    raise PermissionDenied("缺少对账单处理权限")
                 if reconciliation.status not in [Reconciliation.Status.DRAFT, Reconciliation.Status.CONFIRMED]:
                     messages.error(request, "当前对账单状态不能作废")
                     return redirect("finance:reconciliation_detail", pk=pk)
@@ -1928,7 +2459,261 @@ def _allocation_signature(allocations: list[dict]) -> str:
     return "|".join(parts) or "empty"
 
 
-def _customer_allocation_target_groups(receipt: CustomerReceipt):
+def _int_or_none(value):
+    try:
+        return int(value) if value not in [None, ""] else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _customer_invoice_item_rows_from_post(request) -> list[dict]:
+    sales_order_ids = request.POST.getlist("sales_order_id")
+    reconciliation_item_ids = request.POST.getlist("reconciliation_item_id")
+    amounts = request.POST.getlist("invoice_item_amount")
+    rows = []
+    for index, sales_order_id in enumerate(sales_order_ids):
+        amount_value = amounts[index] if index < len(amounts) else ""
+        if not sales_order_id or not amount_value:
+            continue
+        try:
+            sales_order_id_value = int(sales_order_id)
+        except (TypeError, ValueError):
+            continue
+        try:
+            amount = _money(Decimal(amount_value))
+        except (InvalidOperation, TypeError):
+            continue
+        if amount <= ZERO_AMOUNT:
+            continue
+        reconciliation_item_id = reconciliation_item_ids[index] if index < len(reconciliation_item_ids) else ""
+        try:
+            reconciliation_item_id_value = int(reconciliation_item_id) if reconciliation_item_id else None
+        except (TypeError, ValueError):
+            reconciliation_item_id_value = None
+        rows.append(
+            {
+                "sales_order_id": sales_order_id_value,
+                "reconciliation_item_id": reconciliation_item_id_value,
+                "invoice_amount": amount,
+            }
+        )
+    return rows
+
+
+def _validate_customer_invoice_input(user, customer_id, reconciliation_id, invoice_date, rows: list[dict]) -> str:
+    if not customer_id:
+        return "请选择客户"
+    if not _customer_receipt_customer_queryset(user).filter(pk=customer_id).exists():
+        return "客户不存在或不属于当前销售范围"
+    if not invoice_date:
+        return "请选择开票日期"
+    if not rows:
+        return "请至少填写一行开票金额"
+    reconciliation = None
+    if reconciliation_id:
+        reconciliation = _customer_invoice_reconciliation_queryset(user, customer_id).filter(pk=reconciliation_id).first()
+        if not reconciliation:
+            return "对账单不存在或不属于当前客户"
+    allowed_orders = _filter_customer_sales_order_queryset_for_user(
+        SalesOrder.objects.filter(customer_id=customer_id),
+        user,
+    )
+    candidate_rows = _customer_invoice_candidate_rows(user, customer_id, reconciliation_id)
+    candidate_by_order = {row["sales_order_id"]: row for row in candidate_rows}
+    requested_by_order = {}
+    for row in rows:
+        order_id = row["sales_order_id"]
+        if not allowed_orders.filter(pk=order_id).exists():
+            return "开票明细中存在不属于当前客户或当前用户范围的销售订单"
+        candidate = candidate_by_order.get(order_id)
+        if not candidate:
+            return "开票明细中存在不可开票的销售订单"
+        if reconciliation and row.get("reconciliation_item_id") != candidate.get("reconciliation_item_id"):
+            return "开票明细与对账单明细不一致"
+        if row["invoice_amount"] > candidate["available_amount"]:
+            return f"{candidate['source_no']} 的开票金额不能超过未开票金额 {candidate['available_amount']}"
+        requested_by_order[order_id] = requested_by_order.get(order_id, ZERO_AMOUNT) + row["invoice_amount"]
+    for order_id, requested_amount in requested_by_order.items():
+        candidate = candidate_by_order[order_id]
+        if requested_amount > candidate["available_amount"]:
+            return f"{candidate['source_no']} 的开票金额合计不能超过未开票金额 {candidate['available_amount']}"
+    return ""
+
+
+def _customer_invoice_candidate_rows(user, customer_id, reconciliation_id=None) -> list[dict]:
+    if not customer_id:
+        return []
+    if not _customer_receipt_customer_queryset(user).filter(pk=customer_id).exists():
+        return []
+
+    if reconciliation_id:
+        reconciliation = _customer_invoice_reconciliation_queryset(user, customer_id).filter(pk=reconciliation_id).first()
+        if not reconciliation:
+            return []
+        rows = []
+        for row in _display_reconciliation_rows(reconciliation, user):
+            if row["source_type"] != ReconciliationItem.SourceType.SALES_ORDER:
+                continue
+            available_amount = _money(max(row["open_amount"] - _sales_order_invoiced_amount(row["source_doc_id"]), ZERO_AMOUNT))
+            if available_amount <= ZERO_AMOUNT:
+                continue
+            rows.append(
+                {
+                    "sales_order_id": row["source_doc_id"],
+                    "reconciliation_item_id": row.get("reconciliation_item_id"),
+                    "source_no": row["source_no"],
+                    "source_date": row["source_date"],
+                    "total_amount": row["open_amount"],
+                    "invoiced_amount": _money(row["open_amount"] - available_amount),
+                    "available_amount": available_amount,
+                    "suggested_amount": available_amount,
+                }
+            )
+        return rows
+
+    rows = []
+    orders = (
+        SalesOrder.objects.filter(customer_id=customer_id)
+        .exclude(
+            status__in=[
+                SalesOrder.Status.DRAFT,
+                SalesOrder.Status.PENDING_APPROVAL,
+                SalesOrder.Status.REJECTED,
+                SalesOrder.Status.VOIDED,
+            ]
+        )
+        .order_by("-order_date", "-id")
+    )
+    orders = _filter_customer_sales_order_queryset_for_user(orders, user)
+    for order in orders:
+        summary = _sales_order_invoice_summary(order)
+        if summary["uninvoiced_amount"] <= ZERO_AMOUNT:
+            continue
+        rows.append(
+            {
+                "sales_order_id": order.id,
+                "reconciliation_item_id": None,
+                "source_no": order.sales_order_no,
+                "source_date": order.order_date,
+                "total_amount": summary["total_amount"],
+                "invoiced_amount": summary["invoiced_amount"],
+                "available_amount": summary["uninvoiced_amount"],
+                "suggested_amount": summary["uninvoiced_amount"],
+            }
+        )
+    return rows
+
+
+def _validate_customer_invoice_confirm(invoice: CustomerInvoice) -> str:
+    if not _customer_invoice_has_active_attachment(invoice):
+        return "请先上传发票附件，上传后才可以确认已开票"
+    items = list(invoice.items.select_related("sales_order").order_by("line_no"))
+    if not items:
+        return "开票单没有明细，不能确认"
+    item_total = _money(sum((item.invoice_amount for item in items), ZERO_AMOUNT))
+    if item_total != invoice.invoice_amount:
+        return "开票明细金额合计必须等于开票单金额"
+    if item_total <= ZERO_AMOUNT:
+        return "开票金额必须大于 0"
+    order_ids = sorted({item.sales_order_id for item in items})
+    locked_orders = {
+        order.id: order
+        for order in SalesOrder.objects.select_for_update().filter(pk__in=order_ids).order_by("id")
+    }
+    amount_by_order = {}
+    for item in items:
+        order = locked_orders.get(item.sales_order_id)
+        if not order:
+            return "开票明细中的销售订单不存在"
+        if order.customer_id != invoice.customer_id:
+            return "开票明细客户与开票单客户不一致"
+        amount_by_order[item.sales_order_id] = amount_by_order.get(item.sales_order_id, ZERO_AMOUNT) + item.invoice_amount
+    for order_id, requested_amount in amount_by_order.items():
+        order = locked_orders[order_id]
+        available_amount = _sales_order_uninvoiced_amount(order, exclude_invoice_id=invoice.id)
+        if requested_amount > available_amount:
+            return f"{order.sales_order_no} 的开票金额不能超过未开票金额 {available_amount}"
+    return ""
+
+
+def _active_customer_invoice_ids():
+    return Attachment.objects.filter(
+        source_doc_type="customer_invoice",
+        status=Attachment.AttachmentStatus.ACTIVE,
+    ).values_list("source_doc_id", flat=True)
+
+
+def _confirmed_customer_invoice_items():
+    return CustomerInvoiceItem.objects.filter(
+        customer_invoice__status=CustomerInvoice.Status.CONFIRMED,
+        customer_invoice_id__in=_active_customer_invoice_ids(),
+    )
+
+
+def _customer_invoice_has_active_attachment(invoice: CustomerInvoice) -> bool:
+    return Attachment.objects.filter(
+        source_doc_type="customer_invoice",
+        source_doc_id=invoice.id,
+        status=Attachment.AttachmentStatus.ACTIVE,
+    ).exists()
+
+
+def _sales_order_invoiced_amount(sales_order_id: int, exclude_invoice_id: int | None = None) -> Decimal:
+    queryset = _confirmed_customer_invoice_items().filter(sales_order_id=sales_order_id)
+    if exclude_invoice_id:
+        queryset = queryset.exclude(customer_invoice_id=exclude_invoice_id)
+    return _money(queryset.aggregate(total=Sum("invoice_amount"))["total"] or ZERO_AMOUNT)
+
+
+def _sales_order_uninvoiced_amount(order: SalesOrder, exclude_invoice_id: int | None = None) -> Decimal:
+    return _money(max((order.total_amount or ZERO_AMOUNT) - _sales_order_invoiced_amount(order.id, exclude_invoice_id), ZERO_AMOUNT))
+
+
+def _sales_order_invoice_summary(order: SalesOrder) -> dict:
+    total_amount = _money(order.total_amount or ZERO_AMOUNT)
+    invoiced_amount = min(_sales_order_invoiced_amount(order.id), total_amount)
+    uninvoiced_amount = _money(max(total_amount - invoiced_amount, ZERO_AMOUNT))
+    if total_amount <= ZERO_AMOUNT or invoiced_amount <= ZERO_AMOUNT:
+        status_label = "未开票"
+    elif uninvoiced_amount <= ZERO_AMOUNT:
+        status_label = "已开票"
+    else:
+        status_label = "部分开票"
+    return {
+        "total_amount": total_amount,
+        "invoiced_amount": _money(invoiced_amount),
+        "uninvoiced_amount": uninvoiced_amount,
+        "status_label": status_label,
+    }
+
+
+def _decorate_customer_reconciliation_invoice_rows(rows: list[dict]) -> tuple[list[dict], dict]:
+    decorated_rows = []
+    total_amount = ZERO_AMOUNT
+    invoiced_amount = ZERO_AMOUNT
+    for row in rows:
+        decorated = {**row}
+        if row["source_type"] == ReconciliationItem.SourceType.SALES_ORDER:
+            row_invoiced = min(_sales_order_invoiced_amount(row["source_doc_id"]), row["open_amount"])
+            row_uninvoiced = _money(max(row["open_amount"] - row_invoiced, ZERO_AMOUNT))
+            decorated["invoiced_amount"] = _money(row_invoiced)
+            decorated["uninvoiced_amount"] = row_uninvoiced
+            total_amount += row["open_amount"]
+            invoiced_amount += row_invoiced
+        else:
+            decorated["invoiced_amount"] = ZERO_AMOUNT
+            decorated["uninvoiced_amount"] = row["open_amount"]
+        decorated_rows.append(decorated)
+    total_amount = _money(total_amount)
+    invoiced_amount = _money(invoiced_amount)
+    return decorated_rows, {
+        "total_amount": total_amount,
+        "invoiced_amount": invoiced_amount,
+        "uninvoiced_amount": _money(max(total_amount - invoiced_amount, ZERO_AMOUNT)),
+    }
+
+
+def _customer_allocation_target_groups(receipt: CustomerReceipt, user=None):
     if receipt.status != CustomerReceipt.Status.PENDING_APPROVAL:
         return [], [], []
     remaining_receipt_amount = receipt.receipt_amount
@@ -1938,6 +2723,8 @@ def _customer_allocation_target_groups(receipt: CustomerReceipt):
         .exclude(status__in=[SalesOrder.Status.DRAFT, SalesOrder.Status.PENDING_APPROVAL, SalesOrder.Status.REJECTED])
         .order_by("-order_date", "-id")
     )
+    if user is not None and not _can_process_full_finance_payment(user):
+        orders = _filter_customer_sales_order_queryset_for_user(orders, user)
     for order in orders:
         available_amount = customer_order_available_allocation_amount(order)
         if available_amount <= 0:
@@ -1958,6 +2745,8 @@ def _customer_allocation_target_groups(receipt: CustomerReceipt):
         customer=receipt.customer,
         status=Reconciliation.Status.CONFIRMED,
     ).order_by("-period_end", "-id")
+    if user is not None and not _can_process_full_finance_payment(user):
+        reconciliations = _filter_reconciliation_queryset_for_user(reconciliations, user)
     for reconciliation in reconciliations:
         available_amount = customer_reconciliation_available_allocation_amount(reconciliation)
         if available_amount <= 0:
@@ -1973,6 +2762,8 @@ def _customer_allocation_target_groups(receipt: CustomerReceipt):
         )
 
     opening_targets = []
+    if user is not None and not _can_process_full_finance_payment(user):
+        return order_targets, reconciliation_targets, opening_targets
     openings = OpeningReceivable.objects.filter(
         customer=receipt.customer,
         status__in=[OpeningReceivable.Status.OPEN, OpeningReceivable.Status.PART_SETTLED],
@@ -1994,7 +2785,7 @@ def _customer_allocation_target_groups(receipt: CustomerReceipt):
     return order_targets, reconciliation_targets, opening_targets
 
 
-def _supplier_allocation_target_groups(payment: SupplierPayment):
+def _supplier_allocation_target_groups(payment: SupplierPayment, user=None):
     if payment.status != SupplierPayment.Status.PENDING_APPROVAL:
         return [], [], []
     remaining_payment_amount = payment.payment_amount
@@ -2004,6 +2795,8 @@ def _supplier_allocation_target_groups(payment: SupplierPayment):
         .select_related("purchase_order")
         .order_by("-receipt_date", "-id")
     )
+    if user is not None and not _can_process_full_finance_payment(user):
+        receipts = _filter_supplier_purchase_receipt_queryset_for_user(receipts, user)
     for receipt in receipts:
         available_amount = supplier_receipt_available_allocation_amount(receipt)
         if available_amount <= 0:
@@ -2024,6 +2817,8 @@ def _supplier_allocation_target_groups(payment: SupplierPayment):
         supplier=payment.supplier,
         status=Reconciliation.Status.CONFIRMED,
     ).order_by("-period_end", "-id")
+    if user is not None and not _can_process_full_finance_payment(user):
+        reconciliations = _filter_reconciliation_queryset_for_user(reconciliations, user)
     for reconciliation in reconciliations:
         available_amount = supplier_reconciliation_available_allocation_amount(reconciliation)
         if available_amount <= 0:
@@ -2039,6 +2834,8 @@ def _supplier_allocation_target_groups(payment: SupplierPayment):
         )
 
     opening_targets = []
+    if user is not None and not _can_process_full_finance_payment(user):
+        return receipt_targets, reconciliation_targets, opening_targets
     openings = OpeningPayable.objects.filter(
         supplier=payment.supplier,
         status__in=[OpeningPayable.Status.OPEN, OpeningPayable.Status.PART_SETTLED],
@@ -2310,8 +3107,251 @@ def _sum_decimal(queryset, field_name: str, multiplier_field: str = "") -> Decim
     return (queryset.aggregate(total=Sum(field_name))["total"] or ZERO_AMOUNT).quantize(MONEY_QUANT)
 
 
+def _customer_receipt_customer_queryset(user):
+    queryset = Customer.objects.all()
+    if _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL):
+        return queryset.distinct()
+    return queryset.filter(Q(sales_owner=user) | Q(created_by=user) | Q(sales_orders__created_by=user)).distinct()
+
+
+def _filter_customer_sales_order_queryset_for_user(queryset, user):
+    if _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL):
+        return queryset
+    return queryset.filter(Q(customer__sales_owner=user) | Q(customer__created_by=user) | Q(created_by=user)).distinct()
+
+
+def _filter_customer_receipt_queryset_for_user(queryset, user):
+    if _can_view_finance_amount(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL):
+        return queryset
+    if user_has_permission(user, PermissionCode.SALES_PROCESS):
+        return queryset.filter(
+            Q(customer__sales_owner=user)
+            | Q(customer__created_by=user)
+            | Q(customer__sales_orders__created_by=user)
+            | Q(created_by=user)
+            | Q(handled_by=user)
+        ).distinct()
+    return queryset.none()
+
+
+def _filter_customer_invoice_queryset_for_user(queryset, user):
+    if _can_view_finance_amount(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL):
+        return queryset
+    if user_has_permission(user, PermissionCode.SALES_PROCESS):
+        return queryset.filter(
+            Q(customer__sales_owner=user)
+            | Q(customer__created_by=user)
+            | Q(customer__sales_orders__created_by=user)
+            | Q(created_by=user)
+        ).distinct()
+    return queryset.none()
+
+
+def _customer_invoice_reconciliation_queryset(user, customer_id=None):
+    queryset = Reconciliation.objects.filter(
+        party_type=Reconciliation.PartyType.CUSTOMER,
+    ).exclude(status=Reconciliation.Status.VOIDED)
+    if customer_id:
+        queryset = queryset.filter(customer_id=customer_id)
+    return _filter_reconciliation_queryset_for_user(queryset, user)
+
+
+def _supplier_payment_supplier_queryset(user):
+    queryset = Supplier.objects.all()
+    if _can_process_full_finance_payment(user):
+        return queryset.distinct()
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(
+            Q(created_by=user)
+            | Q(purchase_orders__purchase_owner=user)
+            | Q(purchase_orders__created_by=user)
+            | Q(purchase_orders__receipts__purchase_order__purchase_owner=user)
+            | Q(purchase_orders__receipts__created_by=user)
+        ).distinct()
+    return queryset.none()
+
+
+def _filter_supplier_purchase_receipt_queryset_for_user(queryset, user):
+    if _can_process_full_finance_payment(user):
+        return queryset
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(Q(purchase_order__purchase_owner=user) | Q(purchase_order__created_by=user) | Q(created_by=user)).distinct()
+    return queryset.none()
+
+
+def _filter_supplier_payment_queryset_for_user(queryset, user):
+    if _can_view_finance_amount(user):
+        return queryset
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        return queryset.filter(
+            Q(created_by=user)
+            | Q(handled_by=user)
+            | Q(allocations__purchase_receipt__purchase_order__purchase_owner=user)
+            | Q(allocations__purchase_receipt__purchase_order__created_by=user)
+            | Q(allocations__purchase_receipt__created_by=user)
+        ).distinct()
+    return queryset.none()
+
+
+def _filter_reconciliation_queryset_for_user(queryset, user):
+    if _can_view_finance_amount(user):
+        return queryset
+    conditions = Q()
+    if user_has_permission(user, PermissionCode.SALES_PROCESS):
+        allowed_customers = _customer_receipt_customer_queryset(user)
+        conditions |= Q(party_type=Reconciliation.PartyType.CUSTOMER, customer__in=allowed_customers)
+        conditions |= Q(party_type=Reconciliation.PartyType.CUSTOMER, created_by=user)
+    if user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        allowed_suppliers = _supplier_payment_supplier_queryset(user)
+        conditions |= Q(party_type=Reconciliation.PartyType.SUPPLIER, supplier__in=allowed_suppliers)
+        conditions |= Q(party_type=Reconciliation.PartyType.SUPPLIER, created_by=user)
+    if not conditions:
+        return queryset.none()
+    return queryset.filter(conditions).distinct()
+
+
+def _validate_customer_receipt_allocations_for_user(receipt: CustomerReceipt, allocations: list[dict], user) -> None:
+    if _can_process_full_finance_payment(user):
+        return
+    if not user_has_permission(user, PermissionCode.SALES_PROCESS):
+        raise PermissionDenied("缺少客户收款处理权限")
+    allowed_orders = _filter_customer_sales_order_queryset_for_user(
+        SalesOrder.objects.filter(customer=receipt.customer), user
+    )
+    allowed_reconciliations = _filter_reconciliation_queryset_for_user(
+        Reconciliation.objects.filter(
+            party_type=Reconciliation.PartyType.CUSTOMER,
+            customer=receipt.customer,
+        ),
+        user,
+    )
+    for allocation in allocations:
+        sales_order_id = allocation.get("sales_order_id")
+        reconciliation_id = allocation.get("reconciliation_id")
+        if allocation.get("opening_receivable_id"):
+            raise PermissionDenied("销售角色不能核销期初应收")
+        if sales_order_id and not allowed_orders.filter(pk=sales_order_id).exists():
+            raise PermissionDenied("只能核销自己负责的销售订单")
+        if reconciliation_id and not allowed_reconciliations.filter(pk=reconciliation_id).exists():
+            raise PermissionDenied("只能核销自己负责的客户对账单")
+
+
+def _validate_supplier_payment_allocations_for_user(payment: SupplierPayment, allocations: list[dict], user) -> None:
+    if _can_process_full_finance_payment(user):
+        return
+    if not user_has_permission(user, PermissionCode.PURCHASE_PROCESS):
+        raise PermissionDenied("缺少供应商付款处理权限")
+    allowed_receipts = _filter_supplier_purchase_receipt_queryset_for_user(
+        PurchaseReceipt.objects.filter(supplier=payment.supplier), user
+    )
+    allowed_reconciliations = _filter_reconciliation_queryset_for_user(
+        Reconciliation.objects.filter(
+            party_type=Reconciliation.PartyType.SUPPLIER,
+            supplier=payment.supplier,
+        ),
+        user,
+    )
+    for allocation in allocations:
+        purchase_receipt_id = allocation.get("purchase_receipt_id")
+        reconciliation_id = allocation.get("reconciliation_id")
+        if allocation.get("opening_payable_id"):
+            raise PermissionDenied("采购角色不能核销期初应付")
+        if purchase_receipt_id and not allowed_receipts.filter(pk=purchase_receipt_id).exists():
+            raise PermissionDenied("只能核销自己负责的进货单")
+        if reconciliation_id and not allowed_reconciliations.filter(pk=reconciliation_id).exists():
+            raise PermissionDenied("只能核销自己创建的供应商对账单")
+
+
+def _reconciliation_party_type_choices(user):
+    choices = []
+    if _can_create_customer_reconciliation(user):
+        choices.append((Reconciliation.PartyType.CUSTOMER, Reconciliation.PartyType.CUSTOMER.label))
+    if _can_create_supplier_reconciliation(user):
+        choices.append((Reconciliation.PartyType.SUPPLIER, Reconciliation.PartyType.SUPPLIER.label))
+    return tuple(choices)
+
+
 def _can_process_finance_payment(user) -> bool:
     return user_has_permission(user, PermissionCode.FINANCE_PAYMENT_PROCESS)
+
+
+def _can_process_full_finance_payment(user) -> bool:
+    return _can_view_finance_amount(user) and _can_process_finance_payment(user)
+
+
+def _can_view_customer_receipt(user) -> bool:
+    return _can_view_finance_amount(user) or user_has_permission(user, PermissionCode.SALES_PROCESS)
+
+
+def _can_view_customer_receipt_amount(user) -> bool:
+    return _can_view_customer_receipt(user)
+
+
+def _can_process_customer_receipt(user) -> bool:
+    return _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.SALES_PROCESS)
+
+
+def _can_view_customer_invoice(user) -> bool:
+    return _can_view_finance_amount(user) or user_has_permission(user, PermissionCode.SALES_PROCESS)
+
+
+def _can_view_customer_invoice_amount(user) -> bool:
+    return _can_view_customer_invoice(user)
+
+
+def _can_process_customer_invoice(user) -> bool:
+    return _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.SALES_PROCESS)
+
+
+def _can_view_supplier_payment(user) -> bool:
+    return _can_view_finance_amount(user) or user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+
+
+def _can_view_supplier_payment_amount(user) -> bool:
+    return _can_view_supplier_payment(user)
+
+
+def _can_process_supplier_payment(user) -> bool:
+    return _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+
+
+def _can_view_reconciliation(user) -> bool:
+    return (
+        _can_view_finance_amount(user)
+        or user_has_permission(user, PermissionCode.SALES_PROCESS)
+        or user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+    )
+
+
+def _can_view_reconciliation_amount(user) -> bool:
+    return _can_view_reconciliation(user)
+
+
+def _can_create_customer_reconciliation(user) -> bool:
+    return _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.SALES_PROCESS)
+
+
+def _can_create_supplier_reconciliation(user) -> bool:
+    return _can_process_full_finance_payment(user) or user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+
+
+def _can_create_reconciliation(user) -> bool:
+    return _can_create_customer_reconciliation(user) or _can_create_supplier_reconciliation(user)
+
+
+def _can_process_reconciliation(user, reconciliation: Reconciliation) -> bool:
+    if _can_process_full_finance_payment(user):
+        return True
+    if reconciliation.party_type == Reconciliation.PartyType.CUSTOMER:
+        return user_has_permission(user, PermissionCode.SALES_PROCESS) and _customer_receipt_customer_queryset(user).filter(
+            pk=reconciliation.customer_id
+        ).exists()
+    if reconciliation.party_type == Reconciliation.PartyType.SUPPLIER:
+        return user_has_permission(user, PermissionCode.PURCHASE_PROCESS) and (
+            reconciliation.created_by_id == user.id
+            or _supplier_payment_supplier_queryset(user).filter(pk=reconciliation.supplier_id).exists()
+        )
+    return False
 
 
 def _require_finance_amount(user) -> None:
@@ -2322,6 +3362,46 @@ def _require_finance_amount(user) -> None:
 def _require_finance_payment_process(user) -> None:
     if not _can_view_finance_amount(user) or not _can_process_finance_payment(user):
         raise PermissionDenied("缺少收付款处理权限")
+
+
+def _require_customer_receipt_view(user) -> None:
+    if not _can_view_customer_receipt(user):
+        raise PermissionDenied("缺少客户收款查看权限")
+
+
+def _require_customer_receipt_process(user) -> None:
+    if not _can_process_customer_receipt(user):
+        raise PermissionDenied("缺少客户收款处理权限")
+
+
+def _require_customer_invoice_view(user) -> None:
+    if not _can_view_customer_invoice(user):
+        raise PermissionDenied("缺少客户开票查看权限")
+
+
+def _require_customer_invoice_process(user) -> None:
+    if not _can_process_customer_invoice(user):
+        raise PermissionDenied("缺少客户开票处理权限")
+
+
+def _require_supplier_payment_view(user) -> None:
+    if not _can_view_supplier_payment(user):
+        raise PermissionDenied("缺少供应商付款查看权限")
+
+
+def _require_supplier_payment_process(user) -> None:
+    if not _can_process_supplier_payment(user):
+        raise PermissionDenied("缺少供应商付款处理权限")
+
+
+def _require_reconciliation_view(user) -> None:
+    if not _can_view_reconciliation(user):
+        raise PermissionDenied("缺少对账单查看权限")
+
+
+def _require_reconciliation_create(user) -> None:
+    if not _can_create_reconciliation(user):
+        raise PermissionDenied("缺少对账单处理权限")
 
 
 def _customer_receipt_snapshot(receipt: CustomerReceipt) -> dict:
@@ -2335,6 +3415,31 @@ def _customer_receipt_snapshot(receipt: CustomerReceipt) -> dict:
         "status": receipt.status,
         "handled_by_id": receipt.handled_by_id,
         "remark": receipt.remark,
+    }
+
+
+def _customer_invoice_snapshot(invoice: CustomerInvoice) -> dict:
+    invoice.refresh_from_db()
+    return {
+        "invoice_no": invoice.invoice_no,
+        "external_invoice_no": invoice.external_invoice_no,
+        "customer_id": invoice.customer_id,
+        "reconciliation_id": invoice.reconciliation_id,
+        "invoice_date": invoice.invoice_date.isoformat() if invoice.invoice_date else "",
+        "invoice_amount": str(invoice.invoice_amount),
+        "status": invoice.status,
+        "confirmed_by_id": invoice.confirmed_by_id,
+        "confirmed_at": invoice.confirmed_at.isoformat() if invoice.confirmed_at else "",
+        "remark": invoice.remark,
+        "items": [
+            {
+                "line_no": item.line_no,
+                "sales_order_id": item.sales_order_id,
+                "reconciliation_item_id": item.reconciliation_item_id,
+                "invoice_amount": str(item.invoice_amount),
+            }
+            for item in invoice.items.order_by("line_no")
+        ],
     }
 
 
@@ -2402,9 +3507,14 @@ def _expense_record_snapshot(expense: ExpenseRecord) -> dict:
     }
 
 
-def _validate_reconciliation_input(party_type, period_start, period_end, customer_id, supplier_id) -> str:
+def _validate_reconciliation_input(party_type, period_start, period_end, customer_id, supplier_id, user=None) -> str:
     if party_type not in Reconciliation.PartyType.values:
         return "请选择对账对象类型"
+    if user is not None:
+        if party_type == Reconciliation.PartyType.CUSTOMER and not _can_create_customer_reconciliation(user):
+            return "缺少客户对账单处理权限"
+        if party_type == Reconciliation.PartyType.SUPPLIER and not _can_create_supplier_reconciliation(user):
+            return "缺少供应商对账单处理权限"
     if not period_start or not period_end:
         return "请选择对账开始日期和结束日期"
     if period_start > period_end:
@@ -2413,29 +3523,48 @@ def _validate_reconciliation_input(party_type, period_start, period_end, custome
         return "客户对账必须选择客户"
     if party_type == Reconciliation.PartyType.SUPPLIER and not supplier_id:
         return "供应商对账必须选择供应商"
-    if party_type == Reconciliation.PartyType.CUSTOMER and not Customer.objects.filter(pk=customer_id).exists():
+    if party_type == Reconciliation.PartyType.CUSTOMER and user is not None and not _customer_receipt_customer_queryset(user).filter(pk=customer_id).exists():
+        return "客户不存在或不属于当前销售范围"
+    if party_type == Reconciliation.PartyType.CUSTOMER and user is None and not Customer.objects.filter(pk=customer_id).exists():
         return "客户不存在"
+    if party_type == Reconciliation.PartyType.SUPPLIER and user is not None and not _supplier_payment_supplier_queryset(user).filter(pk=supplier_id).exists():
+        return "供应商不存在或不属于当前采购范围"
     if party_type == Reconciliation.PartyType.SUPPLIER and not Supplier.objects.filter(pk=supplier_id).exists():
         return "供应商不存在"
     return ""
 
 
-def _reconciliation_rows(party_type, customer_id, supplier_id, period_start, period_end, for_update=False) -> list[dict]:
+def _reconciliation_rows(party_type, customer_id, supplier_id, period_start, period_end, for_update=False, user=None) -> list[dict]:
     if party_type == Reconciliation.PartyType.CUSTOMER:
-        return _customer_reconciliation_rows(customer_id, period_start, period_end, for_update=for_update)
+        return _customer_reconciliation_rows(customer_id, period_start, period_end, for_update=for_update, user=user)
     if party_type == Reconciliation.PartyType.SUPPLIER:
-        return _supplier_reconciliation_rows(supplier_id, period_start, period_end, for_update=for_update)
+        return _supplier_reconciliation_rows(supplier_id, period_start, period_end, for_update=for_update, user=user)
     return []
 
 
-def _display_reconciliation_rows(reconciliation: Reconciliation) -> list[dict]:
+def _display_reconciliation_rows(reconciliation: Reconciliation, user=None) -> list[dict]:
     snapshot_rows = list(reconciliation.items.order_by("line_no"))
+    if (
+        user is not None
+        and not _can_process_full_finance_payment(user)
+        and user_has_permission(user, PermissionCode.PURCHASE_PROCESS)
+        and reconciliation.party_type == Reconciliation.PartyType.SUPPLIER
+    ):
+        allowed_receipt_ids = set(
+            _filter_supplier_purchase_receipt_queryset_for_user(PurchaseReceipt.objects.all(), user).values_list("id", flat=True)
+        )
+        snapshot_rows = [
+            item
+            for item in snapshot_rows
+            if item.source_type == ReconciliationItem.SourceType.PURCHASE_RECEIPT and item.source_doc_id in allowed_receipt_ids
+        ]
     if snapshot_rows:
         return [
             {
                 "source_type": item.source_type,
                 "source_type_label": item.get_source_type_display(),
                 "source_doc_id": item.source_doc_id,
+                "reconciliation_item_id": item.id,
                 "source_no": item.source_no,
                 "source_date": item.source_date,
                 "gross_amount": item.gross_amount,
@@ -2451,10 +3580,138 @@ def _display_reconciliation_rows(reconciliation: Reconciliation) -> list[dict]:
         reconciliation.supplier_id,
         reconciliation.period_start,
         reconciliation.period_end,
+        user=user,
     )
 
 
-def _customer_reconciliation_rows(customer_id, period_start, period_end, for_update=False) -> list[dict]:
+def _reconciliation_statement_rows(reconciliation: Reconciliation, user=None) -> list[dict]:
+    source_rows = _display_reconciliation_rows(reconciliation, user)
+    if reconciliation.party_type == Reconciliation.PartyType.CUSTOMER:
+        order_ids = [row["source_doc_id"] for row in source_rows if row["source_type"] == ReconciliationItem.SourceType.SALES_ORDER]
+        orders = {
+            order.id: order
+            for order in SalesOrder.objects.filter(pk__in=order_ids)
+            .prefetch_related("items__finished_material")
+            .order_by("order_date", "id")
+        }
+        rows = []
+        line_no = 1
+        for source_row in source_rows:
+            order = orders.get(source_row["source_doc_id"])
+            if not order:
+                continue
+            first_line = True
+            for item in order.items.all().order_by("line_no", "id"):
+                material = item.finished_material
+                spec = material.spec or item.customer_model_remark
+                rows.append(
+                    {
+                        "line_no": line_no,
+                        "source_date": order.order_date,
+                        "source_no": order.sales_order_no if first_line else "",
+                        "spec": spec,
+                        "item_name": f"{material.material_code} {material.material_name}",
+                        "qty": item.order_qty,
+                        "unit_price": item.unit_price,
+                        "amount": item.line_amount,
+                        "note": "",
+                    }
+                )
+                first_line = False
+                line_no += 1
+        return rows
+
+    if reconciliation.party_type == Reconciliation.PartyType.SUPPLIER:
+        receipt_ids = [
+            row["source_doc_id"] for row in source_rows if row["source_type"] == ReconciliationItem.SourceType.PURCHASE_RECEIPT
+        ]
+        receipts = {
+            receipt.id: receipt
+            for receipt in PurchaseReceipt.objects.filter(pk__in=receipt_ids)
+            .select_related("purchase_order")
+            .prefetch_related("items__material")
+            .order_by("receipt_date", "id")
+        }
+        rows = []
+        line_no = 1
+        for source_row in source_rows:
+            receipt = receipts.get(source_row["source_doc_id"])
+            if not receipt:
+                continue
+            first_line = True
+            for item in receipt.items.all().order_by("id"):
+                material = item.material
+                rows.append(
+                    {
+                        "line_no": line_no,
+                        "source_date": receipt.receipt_date,
+                        "source_no": receipt.purchase_receipt_no if first_line else "",
+                        "spec": material.spec,
+                        "item_name": f"{material.material_code} {material.material_name}",
+                        "qty": item.accepted_qty,
+                        "unit_price": item.unit_price,
+                        "amount": _money(item.accepted_qty * item.unit_price),
+                        "note": receipt.purchase_order.purchase_order_no if first_line and receipt.purchase_order_id else "",
+                    }
+                )
+                first_line = False
+                line_no += 1
+        return rows
+    return []
+
+
+def _statement_rows_total(rows: list[dict]) -> Decimal:
+    return _money(sum((row["amount"] for row in rows), ZERO_AMOUNT))
+
+
+def _reconciliation_party_name(reconciliation: Reconciliation) -> str:
+    if reconciliation.party_type == Reconciliation.PartyType.CUSTOMER and reconciliation.customer_id:
+        return reconciliation.customer.customer_name
+    if reconciliation.party_type == Reconciliation.PartyType.SUPPLIER and reconciliation.supplier_id:
+        return reconciliation.supplier.supplier_name
+    return ""
+
+
+def _reconciliation_prior_balance(reconciliation: Reconciliation, user=None) -> Decimal:
+    if reconciliation.party_type == Reconciliation.PartyType.CUSTOMER and reconciliation.customer_id:
+        total = ZERO_AMOUNT
+        orders = (
+            SalesOrder.objects.filter(customer=reconciliation.customer, order_date__lt=reconciliation.period_start)
+            .exclude(
+                status__in=[
+                    SalesOrder.Status.DRAFT,
+                    SalesOrder.Status.PENDING_APPROVAL,
+                    SalesOrder.Status.REJECTED,
+                    SalesOrder.Status.VOIDED,
+                ]
+            )
+            .order_by("id")
+        )
+        if user is not None and not _can_process_full_finance_payment(user):
+            orders = _filter_customer_sales_order_queryset_for_user(orders, user)
+        for order in orders:
+            amount = customer_order_available_allocation_amount(order)
+            if amount > ZERO_AMOUNT:
+                total += amount
+        return _money(total)
+    if reconciliation.party_type == Reconciliation.PartyType.SUPPLIER and reconciliation.supplier_id:
+        total = ZERO_AMOUNT
+        receipts = PurchaseReceipt.objects.filter(
+            supplier=reconciliation.supplier,
+            receipt_date__lt=reconciliation.period_start,
+            status=PurchaseReceipt.Status.RECEIVED,
+        ).order_by("id")
+        if user is not None and not _can_process_full_finance_payment(user):
+            receipts = _filter_supplier_purchase_receipt_queryset_for_user(receipts, user)
+        for receipt in receipts:
+            amount = supplier_receipt_available_allocation_amount(receipt)
+            if amount > ZERO_AMOUNT:
+                total += amount
+        return _money(total)
+    return ZERO_AMOUNT
+
+
+def _customer_reconciliation_rows(customer_id, period_start, period_end, for_update=False, user=None) -> list[dict]:
     queryset = (
         SalesOrder.objects.filter(customer_id=customer_id, order_date__range=(period_start, period_end))
         .exclude(
@@ -2470,6 +3727,8 @@ def _customer_reconciliation_rows(customer_id, period_start, period_end, for_upd
     )
     if for_update:
         queryset = queryset.select_for_update()
+    if user is not None and not _can_process_full_finance_payment(user):
+        queryset = _filter_customer_sales_order_queryset_for_user(queryset, user)
 
     rows = []
     for order in queryset:
@@ -2512,7 +3771,7 @@ def _customer_reconciliation_rows(customer_id, period_start, period_end, for_upd
     return rows
 
 
-def _supplier_reconciliation_rows(supplier_id, period_start, period_end, for_update=False) -> list[dict]:
+def _supplier_reconciliation_rows(supplier_id, period_start, period_end, for_update=False, user=None) -> list[dict]:
     queryset = (
         PurchaseReceipt.objects.filter(
             supplier_id=supplier_id,
@@ -2524,6 +3783,8 @@ def _supplier_reconciliation_rows(supplier_id, period_start, period_end, for_upd
     )
     if for_update:
         queryset = queryset.select_for_update()
+    if user is not None and not _can_process_full_finance_payment(user):
+        queryset = _filter_supplier_purchase_receipt_queryset_for_user(queryset, user)
 
     rows = []
     for receipt in queryset:

@@ -164,7 +164,10 @@ class SystemDashboardTests(TestCase):
         self.assertNotContains(response, 'href="/purchase/orders/"')
         self.assertNotContains(response, 'href="/production/orders/"')
         self.assertNotContains(response, 'href="/inventory/"')
-        self.assertNotContains(response, 'href="/finance/customer-receipts/"')
+        self.assertContains(response, 'href="/finance/customer-receipts/"')
+        self.assertContains(response, 'href="/finance/reconciliations/"')
+        self.assertNotContains(response, 'href="/finance/supplier-payments/"')
+        self.assertNotContains(response, 'href="/finance/operations/"')
         self.assertNotContains(response, 'href="/roles/"')
         self.assertNotContains(response, "待审采购需求")
         self.assertNotContains(response, "待入库进货单")
@@ -185,6 +188,19 @@ class SystemDashboardTests(TestCase):
         self.assertNotContains(response, 'href="/inventory/"')
         self.assertNotContains(response, 'href="/production/orders/"')
         self.assertNotContains(response, 'href="/finance/customer-receipts/"')
+
+    def test_sidebar_for_purchase_process_role_shows_supplier_payment(self):
+        _grant_permission(self.user, PermissionCode.PURCHASE_PROCESS)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'href="/purchase/orders/"')
+        self.assertContains(response, 'href="/finance/supplier-payments/"')
+        self.assertContains(response, 'href="/finance/reconciliations/"')
+        self.assertNotContains(response, 'href="/finance/customer-receipts/"')
+        self.assertNotContains(response, 'href="/finance/operations/"')
 
     def test_sidebar_for_boss_readonly_role_shows_modules_without_admin(self):
         for permission_code in [
@@ -235,6 +251,16 @@ class SystemDashboardTests(TestCase):
         _grant_permission(self.user, PermissionCode.PURCHASE_VIEW)
         self.assertEqual(self.client.get("/purchase/orders/").status_code, 200)
         self.assertEqual(self.client.get("/sales/shortages/").status_code, 200)
+
+        _grant_permission(self.user, PermissionCode.SALES_PROCESS)
+        self.assertEqual(self.client.get("/finance/customer-receipts/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/reconciliations/").status_code, 200)
+
+        other_user = get_user_model().objects.create_user(username="purchase-finance-menu", password="x")
+        _grant_permission(other_user, PermissionCode.PURCHASE_PROCESS)
+        self.client.force_login(other_user)
+        self.assertEqual(self.client.get("/finance/supplier-payments/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/reconciliations/").status_code, 200)
 
     def test_readonly_module_permissions_do_not_show_create_or_import_actions(self):
         _grant_permission(self.user, PermissionCode.INVENTORY_VIEW)

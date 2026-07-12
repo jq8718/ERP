@@ -12,6 +12,8 @@ from files.models import Attachment, ExportLog, ImportJob, PrintLog
 from finance.models import (
     CustomerCreditBalance,
     CustomerCreditBalanceTransaction,
+    CustomerInvoice,
+    CustomerInvoiceItem,
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
@@ -109,13 +111,15 @@ class FinanceServiceTests(TestCase):
         )
         return order
 
-    def _purchase_receipt(self, amount=Decimal("100.00")):
+    def _purchase_receipt(self, amount=Decimal("100.00"), created_by=None, purchase_owner=None):
         order = PurchaseOrder.objects.create(
             purchase_order_no="PO001",
             supplier=self.supplier,
             status=PurchaseOrder.Status.RECEIVED,
             order_date=timezone.localdate(),
             total_amount=amount,
+            created_by=created_by,
+            purchase_owner=purchase_owner,
         )
         order_item = PurchaseOrderItem.objects.create(
             purchase_order=order,
@@ -133,6 +137,7 @@ class FinanceServiceTests(TestCase):
             supplier=self.supplier,
             receipt_date=timezone.localdate(),
             status=PurchaseReceipt.Status.RECEIVED,
+            created_by=created_by,
         )
         PurchaseReceiptItem.objects.create(
             purchase_receipt=receipt,
@@ -145,13 +150,15 @@ class FinanceServiceTests(TestCase):
         )
         return receipt
 
-    def _purchase_receipt_with_no(self, receipt_no, order_no, amount=Decimal("100.00")):
+    def _purchase_receipt_with_no(self, receipt_no, order_no, amount=Decimal("100.00"), created_by=None, purchase_owner=None):
         order = PurchaseOrder.objects.create(
             purchase_order_no=order_no,
             supplier=self.supplier,
             status=PurchaseOrder.Status.RECEIVED,
             order_date=timezone.localdate(),
             total_amount=amount,
+            created_by=created_by,
+            purchase_owner=purchase_owner,
         )
         order_item = PurchaseOrderItem.objects.create(
             purchase_order=order,
@@ -169,6 +176,7 @@ class FinanceServiceTests(TestCase):
             supplier=self.supplier,
             receipt_date=timezone.localdate(),
             status=PurchaseReceipt.Status.RECEIVED,
+            created_by=created_by,
         )
         PurchaseReceiptItem.objects.create(
             purchase_receipt=receipt,
@@ -1019,6 +1027,61 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(amount_only_response.status_code, 403)
         self.assertFalse(CustomerReceipt.objects.exists())
 
+    def test_sales_process_can_manage_own_customer_receipts_only(self):
+        self.customer.sales_owner = self.user
+        self.customer.save(update_fields=["sales_owner"])
+        other_customer = Customer.objects.create(customer_no="C-OTHER", customer_name="其他客户")
+        own_receipt = CustomerReceipt.objects.create(
+            receipt_no="RC-OWN",
+            customer=self.customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("100.00"),
+            unallocated_amount=Decimal("100.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        CustomerReceipt.objects.create(
+            receipt_no="RC-OTHER",
+            customer=other_customer,
+            receipt_date=timezone.localdate(),
+            receipt_amount=Decimal("200.00"),
+            unallocated_amount=Decimal("200.00"),
+            status=CustomerReceipt.Status.PENDING_APPROVAL,
+        )
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+
+        list_response = self.client.get("/finance/customer-receipts/")
+        create_page = self.client.get("/finance/customer-receipts/new/")
+        create_response = self.client.post(
+            "/finance/customer-receipts/new/",
+            {
+                "customer": self.customer.id,
+                "receipt_date": "2026-07-04",
+                "receipt_amount": "88.00",
+                "receipt_method": CustomerReceipt.ReceiptMethod.TRANSFER,
+                "remark": "销售登记收款",
+            },
+        )
+        bad_response = self.client.post(
+            "/finance/customer-receipts/new/",
+            {
+                "customer": other_customer.id,
+                "receipt_date": "2026-07-04",
+                "receipt_amount": "66.00",
+                "receipt_method": CustomerReceipt.ReceiptMethod.TRANSFER,
+            },
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, own_receipt.receipt_no)
+        self.assertNotContains(list_response, "RC-OTHER")
+        self.assertContains(create_page, self.customer.customer_name)
+        self.assertNotContains(create_page, other_customer.customer_name)
+        self.assertEqual(create_response.status_code, 302)
+        self.assertEqual(bad_response.status_code, 302)
+        self.assertTrue(CustomerReceipt.objects.filter(receipt_amount=Decimal("88.00"), customer=self.customer).exists())
+        self.assertFalse(CustomerReceipt.objects.filter(receipt_amount=Decimal("66.00"), customer=other_customer).exists())
+
     def test_customer_receipt_edit_updates_pending_receipt_and_writes_audit_log(self):
         self.client.force_login(self.user)
         self._grant_finance_process_permissions()
@@ -1575,6 +1638,229 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(reconciliation.status, Reconciliation.Status.VOIDED)
         self.assertTrue(AuditLog.objects.filter(action="reconciliation_void", source_doc_id=reconciliation.id).exists())
 
+    def test_customer_invoice_requires_attachment_before_confirm_and_updates_uninvoiced_amount(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        self._grant_permission(PermissionCode.SALES_VIEW)
+        self.customer.sales_owner = self.user
+        self.customer.save(update_fields=["sales_owner"])
+        order = self._sales_order("SO-INV", Decimal("100.00"))
+        reconciliation = Reconciliation.objects.create(
+            reconciliation_no="REC-INV",
+            party_type=Reconciliation.PartyType.CUSTOMER,
+            customer=self.customer,
+            period_start=timezone.localdate(),
+            period_end=timezone.localdate(),
+            total_amount=Decimal("100.00"),
+            status=Reconciliation.Status.CONFIRMED,
+            created_by=self.user,
+        )
+        reconciliation_item = ReconciliationItem.objects.create(
+            reconciliation=reconciliation,
+            line_no=1,
+            source_type=ReconciliationItem.SourceType.SALES_ORDER,
+            source_doc_id=order.id,
+            source_no=order.sales_order_no,
+            source_date=order.order_date,
+            gross_amount=Decimal("100.00"),
+            open_amount=Decimal("100.00"),
+        )
+
+        create_response = self.client.post(
+            "/finance/customer-invoices/new/",
+            {
+                "customer": self.customer.id,
+                "reconciliation": reconciliation.id,
+                "invoice_date": timezone.localdate().isoformat(),
+                "external_invoice_no": "FP-001",
+                "sales_order_id": [str(order.id)],
+                "reconciliation_item_id": [str(reconciliation_item.id)],
+                "invoice_item_amount": ["80.00"],
+            },
+        )
+
+        invoice = CustomerInvoice.objects.get()
+        self.assertEqual(create_response.status_code, 302)
+        self.assertEqual(create_response["Location"], f"/finance/customer-invoices/{invoice.id}/")
+        self.assertEqual(invoice.invoice_amount, Decimal("80.00"))
+        self.assertEqual(invoice.status, CustomerInvoice.Status.DRAFT)
+        self.assertEqual(invoice.items.get().sales_order, order)
+
+        denied_confirm = self.client.post(
+            f"/finance/customer-invoices/{invoice.id}/confirm/",
+            {"current_password": "x"},
+        )
+        invoice.refresh_from_db()
+        self.assertEqual(denied_confirm.status_code, 302)
+        self.assertEqual(invoice.status, CustomerInvoice.Status.DRAFT)
+
+        Attachment.objects.create(
+            attachment_no="ATT-INV-001",
+            source_doc_type="customer_invoice",
+            source_doc_id=invoice.id,
+            source_doc_no=invoice.invoice_no,
+            original_filename="invoice.pdf",
+            stored_filename="invoice.pdf",
+            file_path="attachments/invoice.pdf",
+            file_size=100,
+            uploaded_by=self.user,
+        )
+        confirm_response = self.client.post(
+            f"/finance/customer-invoices/{invoice.id}/confirm/",
+            {"current_password": "x"},
+        )
+        invoice.refresh_from_db()
+
+        self.assertEqual(confirm_response.status_code, 302)
+        self.assertEqual(invoice.status, CustomerInvoice.Status.CONFIRMED)
+        self.assertTrue(AuditLog.objects.filter(action="customer_invoice_confirm", source_doc_id=invoice.id).exists())
+
+        order_response = self.client.get(f"/sales/orders/{order.id}/")
+        self.assertContains(order_response, "部分开票")
+        self.assertContains(order_response, "80.00")
+        self.assertContains(order_response, "20.00")
+
+        reconciliation_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/")
+        self.assertContains(reconciliation_response, "已开票")
+        self.assertContains(reconciliation_response, "未开票")
+        self.assertContains(reconciliation_response, "80.00")
+        self.assertContains(reconciliation_response, "20.00")
+
+    def test_customer_invoice_deleted_attachment_is_not_counted(self):
+        self.client.force_login(self.user)
+        self._grant_finance_process_permissions()
+        order = self._sales_order("SO-INV-DELETED", Decimal("100.00"))
+        invoice = CustomerInvoice.objects.create(
+            invoice_no="INV-DELETED",
+            external_invoice_no="FP-DELETED",
+            customer=self.customer,
+            invoice_date=timezone.localdate(),
+            invoice_amount=Decimal("60.00"),
+            status=CustomerInvoice.Status.CONFIRMED,
+            confirmed_by=self.user,
+            confirmed_at=timezone.now(),
+        )
+        CustomerInvoiceItem.objects.create(
+            customer_invoice=invoice,
+            sales_order=order,
+            line_no=1,
+            invoice_amount=Decimal("60.00"),
+        )
+        Attachment.objects.create(
+            attachment_no="ATT-INV-DELETED",
+            source_doc_type="customer_invoice",
+            source_doc_id=invoice.id,
+            source_doc_no=invoice.invoice_no,
+            original_filename="invoice.pdf",
+            stored_filename="invoice.pdf",
+            file_path="attachments/invoice.pdf",
+            file_size=100,
+            uploaded_by=self.user,
+            status=Attachment.AttachmentStatus.DELETED,
+        )
+
+        response = self.client.get(f"/finance/customer-invoices/{invoice.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "未上传")
+
+    def test_sales_process_can_create_own_customer_reconciliation_and_print_statement(self):
+        self.customer.sales_owner = self.user
+        self.customer.save(update_fields=["sales_owner"])
+        self.finished.spec = "KBL-500-600-W-OP"
+        self.finished.save(update_fields=["spec"])
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        order = self._sales_order(no="SO-SALES-REC", amount=Decimal("100.00"))
+
+        response = self.client.post(
+            "/finance/reconciliations/new/",
+            {
+                "party_type": Reconciliation.PartyType.CUSTOMER,
+                "customer": self.customer.id,
+                "period_start": timezone.localdate().isoformat(),
+                "period_end": timezone.localdate().isoformat(),
+                "remark": "销售客户对账",
+            },
+        )
+
+        reconciliation = Reconciliation.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/finance/reconciliations/{reconciliation.id}/")
+        self.assertEqual(reconciliation.total_amount, Decimal("100.00"))
+
+        print_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/print/")
+        self.assertEqual(print_response.status_code, 200)
+        self.assertContains(print_response, "往来对账")
+        self.assertContains(print_response, self.customer.customer_name)
+        self.assertContains(print_response, order.sales_order_no)
+        self.assertContains(print_response, "KBL-500-600-W-OP")
+        self.assertContains(print_response, "本期应确认金额")
+
+    def test_sales_process_cannot_create_supplier_reconciliation(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+
+        response = self.client.post(
+            "/finance/reconciliations/new/",
+            {
+                "party_type": Reconciliation.PartyType.SUPPLIER,
+                "supplier": self.supplier.id,
+                "period_start": timezone.localdate().isoformat(),
+                "period_end": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "缺少供应商对账单处理权限")
+        self.assertFalse(Reconciliation.objects.exists())
+
+    def test_purchase_process_supplier_reconciliation_uses_own_receipts_only(self):
+        other_user = get_user_model().objects.create_user(username="other-reconciliation-buyer", password="x")
+        own_receipt = self._purchase_receipt_with_no("GR-OWN-REC", "PO-OWN-REC", Decimal("100.00"), created_by=self.user)
+        other_receipt = self._purchase_receipt_with_no("GR-OTHER-REC", "PO-OTHER-REC", Decimal("80.00"), created_by=other_user)
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+
+        response = self.client.post(
+            "/finance/reconciliations/new/",
+            {
+                "party_type": Reconciliation.PartyType.SUPPLIER,
+                "supplier": self.supplier.id,
+                "period_start": timezone.localdate().isoformat(),
+                "period_end": timezone.localdate().isoformat(),
+                "remark": "采购个人供应商对账",
+            },
+        )
+
+        reconciliation = Reconciliation.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(reconciliation.total_amount, Decimal("100.00"))
+        self.assertEqual(reconciliation.created_by, self.user)
+
+        detail_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/")
+        self.assertContains(detail_response, own_receipt.purchase_receipt_no)
+        self.assertNotContains(detail_response, other_receipt.purchase_receipt_no)
+        self.assertContains(detail_response, "100.00")
+        self.assertNotContains(detail_response, "80.00")
+
+        confirm_response = self.client.post(f"/finance/reconciliations/{reconciliation.id}/confirm/", {"current_password": "x"})
+        self.assertEqual(confirm_response.status_code, 302)
+        self.assertTrue(
+            ReconciliationItem.objects.filter(
+                reconciliation=reconciliation,
+                source_type=ReconciliationItem.SourceType.PURCHASE_RECEIPT,
+                source_doc_id=own_receipt.id,
+            ).exists()
+        )
+        self.assertFalse(
+            ReconciliationItem.objects.filter(
+                reconciliation=reconciliation,
+                source_type=ReconciliationItem.SourceType.PURCHASE_RECEIPT,
+                source_doc_id=other_receipt.id,
+            ).exists()
+        )
+
     def test_supplier_reconciliation_create_sums_open_receipts(self):
         self.client.force_login(self.user)
         self._grant_finance_process_permissions()
@@ -1860,6 +2146,134 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(no_permission_response.status_code, 403)
         self.assertEqual(amount_only_response.status_code, 403)
         self.assertFalse(SupplierPayment.objects.exists())
+
+    def test_purchase_process_can_create_and_confirm_supplier_payment(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        other_user = get_user_model().objects.create_user(username="other-purchaser", password="x")
+        receipt = self._purchase_receipt(created_by=self.user)
+        other_receipt = self._purchase_receipt_with_no("GR-OTHER-BUYER", "PO-OTHER-BUYER", created_by=other_user)
+        other_payment = SupplierPayment.objects.create(
+            payment_no="PY-OTHER-BUYER",
+            supplier=self.supplier,
+            payment_date=timezone.localdate(),
+            payment_amount=Decimal("50.00"),
+            unallocated_amount=Decimal("50.00"),
+            status=SupplierPayment.Status.PENDING_APPROVAL,
+            created_by=other_user,
+            handled_by=other_user,
+        )
+
+        create_response = self.client.post(
+            "/finance/supplier-payments/new/",
+            {
+                "supplier": self.supplier.id,
+                "payment_date": "2026-07-04",
+                "payment_amount": "100.00",
+                "payment_method": SupplierPayment.PaymentMethod.TRANSFER,
+                "remark": "采购登记付款",
+            },
+        )
+
+        payment = SupplierPayment.objects.get(payment_amount=Decimal("100.00"), created_by=self.user)
+        self.assertEqual(create_response.status_code, 302)
+        self.assertEqual(create_response["Location"], f"/finance/supplier-payments/{payment.id}/")
+        self.assertEqual(payment.status, SupplierPayment.Status.PENDING_APPROVAL)
+
+        list_response = self.client.get("/finance/supplier-payments/")
+        other_detail_response = self.client.get(f"/finance/supplier-payments/{other_payment.id}/")
+        self.assertContains(list_response, payment.payment_no)
+        self.assertNotContains(list_response, other_payment.payment_no)
+        self.assertEqual(other_detail_response.status_code, 404)
+
+        detail_response = self.client.get(f"/finance/supplier-payments/{payment.id}/")
+        self.assertContains(detail_response, receipt.purchase_receipt_no)
+        self.assertNotContains(detail_response, other_receipt.purchase_receipt_no)
+        self.assertContains(detail_response, "100.00")
+
+        bad_confirm_response = self.client.post(
+            f"/finance/supplier-payments/{payment.id}/confirm/",
+            {
+                "purchase_receipt_id": [str(other_receipt.id)],
+                "purchase_receipt_allocated_amount": ["50.00"],
+                "current_password": "x",
+            },
+        )
+        self.assertEqual(bad_confirm_response.status_code, 403)
+        self.assertFalse(SupplierPaymentAllocation.objects.filter(supplier_payment=payment, purchase_receipt=other_receipt).exists())
+
+        confirm_response = self.client.post(
+            f"/finance/supplier-payments/{payment.id}/confirm/",
+            {
+                "purchase_receipt_id": [str(receipt.id)],
+                "purchase_receipt_allocated_amount": ["100.00"],
+                "current_password": "x",
+            },
+        )
+
+        self.assertEqual(confirm_response.status_code, 302)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, SupplierPayment.Status.CONFIRMED)
+        self.assertTrue(SupplierPaymentAllocation.objects.filter(supplier_payment=payment, purchase_receipt=receipt).exists())
+
+    def test_purchase_owner_can_create_and_confirm_supplier_payment(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        creator = get_user_model().objects.create_user(username="payment-creator", password="x")
+        other_owner = get_user_model().objects.create_user(username="payment-other-owner", password="x")
+        receipt = self._purchase_receipt_with_no(
+            "GR-OWNER-PAY",
+            "PO-OWNER-PAY",
+            created_by=creator,
+            purchase_owner=self.user,
+        )
+        other_receipt = self._purchase_receipt_with_no(
+            "GR-OTHER-OWNER-PAY",
+            "PO-OTHER-OWNER-PAY",
+            created_by=creator,
+            purchase_owner=other_owner,
+        )
+
+        create_response = self.client.post(
+            "/finance/supplier-payments/new/",
+            {
+                "supplier": self.supplier.id,
+                "payment_date": "2026-07-04",
+                "payment_amount": "100.00",
+                "payment_method": SupplierPayment.PaymentMethod.TRANSFER,
+                "remark": "采购负责人付款",
+            },
+        )
+
+        payment = SupplierPayment.objects.get(created_by=self.user)
+        self.assertEqual(create_response.status_code, 302)
+        detail_response = self.client.get(f"/finance/supplier-payments/{payment.id}/")
+        self.assertContains(detail_response, receipt.purchase_receipt_no)
+        self.assertNotContains(detail_response, other_receipt.purchase_receipt_no)
+
+        bad_confirm_response = self.client.post(
+            f"/finance/supplier-payments/{payment.id}/confirm/",
+            {
+                "purchase_receipt_id": [str(other_receipt.id)],
+                "purchase_receipt_allocated_amount": ["50.00"],
+                "current_password": "x",
+            },
+        )
+        self.assertEqual(bad_confirm_response.status_code, 403)
+
+        confirm_response = self.client.post(
+            f"/finance/supplier-payments/{payment.id}/confirm/",
+            {
+                "purchase_receipt_id": [str(receipt.id)],
+                "purchase_receipt_allocated_amount": ["100.00"],
+                "current_password": "x",
+            },
+        )
+
+        self.assertEqual(confirm_response.status_code, 302)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, SupplierPayment.Status.CONFIRMED)
+        self.assertTrue(SupplierPaymentAllocation.objects.filter(supplier_payment=payment, purchase_receipt=receipt).exists())
 
     def test_supplier_payment_edit_updates_pending_payment_and_writes_audit_log(self):
         self.client.force_login(self.user)

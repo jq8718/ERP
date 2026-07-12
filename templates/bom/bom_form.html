@@ -15,15 +15,120 @@
   <h2>清单信息</h2>
   <form method="post" style="padding: 14px;">
     {% csrf_token %}
+    {{ form.non_field_errors }}
+    <h3 style="margin: 0 0 12px;">成品资料</h3>
     <div class="form-grid">
-      {% for field in form %}
-        <label class="form-row">{{ field.label }}
-          {{ field }}
-          {% if field.errors %}<span class="error">{{ field.errors|join:", " }}</span>{% endif %}
-        </label>
-      {% endfor %}
+      <label class="form-row">{{ form.finished_material_code.label }}
+        {{ form.finished_material_code }}
+        {% if form.finished_material_code.errors %}<span class="error">{{ form.finished_material_code.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row wide">{{ form.finished_material_name.label }}
+        {{ form.finished_material_name }}
+        {% if form.finished_material_name.errors %}<span class="error">{{ form.finished_material_name.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row wide">{{ form.finished_material_spec.label }}
+        {{ form.finished_material_spec }}
+        {% if form.finished_material_spec.errors %}<span class="error">{{ form.finished_material_spec.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row short">{{ form.finished_material_base_unit.label }}
+        {{ form.finished_material_base_unit }}
+        {% if form.finished_material_base_unit.errors %}<span class="error">{{ form.finished_material_base_unit.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row short">{{ form.finished_material_qty_precision.label }}
+        {{ form.finished_material_qty_precision }}
+        {% if form.finished_material_qty_precision.errors %}<span class="error">{{ form.finished_material_qty_precision.errors|join:", " }}</span>{% endif %}
+      </label>
+    </div>
+
+    <h3 style="margin: 18px 0 12px;">清单信息</h3>
+    <div class="form-grid">
+      <label class="form-row">{{ form.bom_no.label }}
+        {{ form.bom_no }}
+        {% if form.bom_no.errors %}<span class="error">{{ form.bom_no.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row">{{ form.bom_version.label }}
+        {{ form.bom_version }}
+        {% if form.bom_version.errors %}<span class="error">{{ form.bom_version.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row short">{{ form.base_qty.label }}
+        {{ form.base_qty }}
+        {% if form.base_qty.help_text %}<span class="muted">{{ form.base_qty.help_text }}</span>{% endif %}
+        {% if form.base_qty.errors %}<span class="error">{{ form.base_qty.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row">{{ form.effective_date.label }}
+        {{ form.effective_date }}
+        {% if form.effective_date.errors %}<span class="error">{{ form.effective_date.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row">{{ form.expiry_date.label }}
+        {{ form.expiry_date }}
+        {% if form.expiry_date.errors %}<span class="error">{{ form.expiry_date.errors|join:", " }}</span>{% endif %}
+      </label>
+      <label class="form-row full">{{ form.remark.label }}
+        {{ form.remark }}
+        {% if form.remark.errors %}<span class="error">{{ form.remark.errors|join:", " }}</span>{% endif %}
+      </label>
       {% include "common/operation_reason_field.html" with is_edit=bom %}
     </div>
+
+    {% if item_formset %}
+      <h3 style="margin: 18px 0 12px;">原料 / 配件组成</h3>
+      {{ item_formset.management_form }}
+      {{ item_formset.non_form_errors }}
+      <div class="table-wrap" style="border-radius: 6px;">
+        <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
+          <thead>
+            <tr>
+              <th>行号</th>
+              <th>原料 / 配件</th>
+              <th>每基准数量用量</th>
+              <th>单位</th>
+              <th>损耗率</th>
+              <th>必需</th>
+              <th>备注</th>
+              <th>删除</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item_form in item_formset.forms %}
+              <tr data-formset-row>
+                <td>{{ item_form.line_no }}{{ item_form.line_no.errors }}</td>
+                <td>{{ item_form.component_material }}{{ item_form.component_material.errors }}</td>
+                <td>{{ item_form.usage_qty }}{{ item_form.usage_qty.errors }}</td>
+                <td>{{ item_form.usage_unit }}{{ item_form.usage_unit.errors }}</td>
+                <td>{{ item_form.loss_rate }}{{ item_form.loss_rate.errors }}</td>
+                <td>{{ item_form.is_required }}{{ item_form.is_required.errors }}</td>
+                <td>{{ item_form.remark }}{{ item_form.remark.errors }}</td>
+                <td>
+                  {% if item_form.DELETE %}{{ item_form.DELETE }}{% endif %}
+                  {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                  <button class="button" type="button" data-formset-delete>删除</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <template data-formset-empty>
+        <tr data-formset-row>
+          <td>{{ item_formset.empty_form.line_no }}</td>
+          <td>{{ item_formset.empty_form.component_material }}</td>
+          <td>{{ item_formset.empty_form.usage_qty }}</td>
+          <td>{{ item_formset.empty_form.usage_unit }}</td>
+          <td>{{ item_formset.empty_form.loss_rate }}</td>
+          <td>{{ item_formset.empty_form.is_required }}</td>
+          <td>{{ item_formset.empty_form.remark }}</td>
+          <td>
+            {% if item_formset.empty_form.DELETE %}{{ item_formset.empty_form.DELETE }}{% endif %}
+            {% for hidden in item_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+            <button class="button" type="button" data-formset-delete>删除</button>
+          </td>
+        </tr>
+      </template>
+      <div class="form-actions" style="justify-content: flex-start; margin-top: 12px;">
+        <button class="button" type="button" data-formset-add>新增一行</button>
+      </div>
+    {% endif %}
+
     <p class="muted">产品组成清单启用后不能直接修改，需要复制为新版本后调整。</p>
     <div class="form-actions">
       <button class="button primary" type="submit">保存</button>

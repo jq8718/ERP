@@ -7,6 +7,9 @@
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'finance:reconciliation_list' %}">返回列表</a>
   <a class="button" href="{% url 'finance:reconciliation_print' reconciliation.pk %}" target="_blank">打印</a>
+  {% if can_create_customer_invoice %}
+    <a class="button primary" href="{% url 'finance:customer_invoice_create' %}?reconciliation={{ reconciliation.pk }}">登记开票</a>
+  {% endif %}
   {% if can_confirm %}
     <form method="post" action="{% url 'finance:reconciliation_confirm' reconciliation.pk %}" style="display:inline;">
       {% csrf_token %}
@@ -49,6 +52,16 @@
     <div class="detail-label">明细合计</div>
     <div class="detail-value">{% if can_view_amount %}{{ current_total }}{% else %}******{% endif %}</div>
   </div>
+  {% if reconciliation.party_type == "customer" %}
+    <div class="detail-cell">
+      <div class="detail-label">已开票</div>
+      <div class="detail-value">{% if can_view_amount %}{{ invoice_summary.invoiced_amount }}{% else %}******{% endif %}</div>
+    </div>
+    <div class="detail-cell">
+      <div class="detail-label">未开票</div>
+      <div class="detail-value">{% if can_view_amount %}{{ invoice_summary.uninvoiced_amount }}{% else %}******{% endif %}</div>
+    </div>
+  {% endif %}
   <div class="detail-cell">
     <div class="detail-label">状态</div>
     <div class="detail-value">{{ reconciliation.get_status_display }}</div>
@@ -72,6 +85,10 @@
           <th>退货/调整</th>
           <th>已核销</th>
           <th>未结金额</th>
+          {% if reconciliation.party_type == "customer" %}
+            <th>已开票</th>
+            <th>未开票</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -91,9 +108,13 @@
             <td>{% if can_view_amount %}{{ row.adjust_amount }}{% else %}******{% endif %}</td>
             <td>{% if can_view_amount %}{{ row.allocated_amount }}{% else %}******{% endif %}</td>
             <td>{% if can_view_amount %}{{ row.open_amount }}{% else %}******{% endif %}</td>
+            {% if reconciliation.party_type == "customer" %}
+              <td>{% if can_view_amount %}{{ row.invoiced_amount }}{% else %}******{% endif %}</td>
+              <td>{% if can_view_amount %}{{ row.uninvoiced_amount }}{% else %}******{% endif %}</td>
+            {% endif %}
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="empty">暂无可对账明细</td></tr>
+          <tr><td colspan="{% if reconciliation.party_type == 'customer' %}9{% else %}7{% endif %}" class="empty">暂无可对账明细</td></tr>
         {% endfor %}
       </tbody>
     </table>

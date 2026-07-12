@@ -9,14 +9,21 @@
   <section class="panel" style="padding: 14px; margin-bottom: 16px;">
     <div class="form-grid">
       <div class="form-row">
-        <label for="{{ form.supplier.id_for_label }}">供应商</label>
-        {{ form.supplier }}
-        {{ form.supplier.errors }}
-      </div>
-      <div class="form-row">
         <label for="{{ form.purchase_receipt.id_for_label }}">来源进货单</label>
         {{ form.purchase_receipt }}
         {{ form.purchase_receipt.errors }}
+        <div class="muted" style="margin-top: 4px;">
+          默认显示最近一周已入库/部分入库进货单。
+          <label style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;">
+            {{ form.show_all_receipts }} 显示全部进货单
+          </label>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="{{ form.supplier.id_for_label }}">供应商</label>
+        {{ form.supplier }}
+        {{ form.supplier.errors }}
+        <div class="muted" style="margin-top: 4px;">选择进货单后自动带出。</div>
       </div>
       <div class="form-row">
         <label for="{{ form.return_date.id_for_label }}">退货日期</label>
@@ -40,8 +47,7 @@
       <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
-            <th>来源进货行</th>
-            <th>物料</th>
+            <th>退货规格/型号</th>
             <th>退货数量</th>
             {% if can_view_amount %}<th>退货单价</th>{% endif %}
             <th>批次</th>
@@ -53,8 +59,7 @@
         <tbody>
           {% for item_form in item_formset.forms %}
             <tr data-formset-row>
-              <td>{{ item_form.purchase_receipt_item }}{{ item_form.purchase_receipt_item.errors }}</td>
-              <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
+              <td>{{ item_form.purchase_receipt_item }}{{ item_form.purchase_receipt_item.errors }}{{ item_form.material.errors }}</td>
               <td>{{ item_form.return_qty }}{{ item_form.return_qty.errors }}</td>
               {% if can_view_amount %}
                 <td>{{ item_form.unit_price }}{{ item_form.unit_price.errors }}</td>
@@ -77,7 +82,6 @@
     <template data-formset-empty>
       <tr data-formset-row>
         <td>{{ item_formset.empty_form.purchase_receipt_item }}</td>
-        <td>{{ item_formset.empty_form.material }}</td>
         <td>{{ item_formset.empty_form.return_qty }}</td>
         {% if can_view_amount %}
           <td>{{ item_formset.empty_form.unit_price }}</td>
@@ -111,4 +115,141 @@
     {% endif %}
   </div>
 </form>
+<script>
+(function () {
+  var receiptSelect = document.getElementById("{{ form.purchase_receipt.id_for_label }}");
+  var supplierSelect = document.getElementById("{{ form.supplier.id_for_label }}");
+  var showAll = document.getElementById("{{ form.show_all_receipts.id_for_label }}");
+  var itemsUrl = "{% url 'purchase:supplier_return_receipt_items' %}";
+  var itemOptions = [];
+  var requestSeq = 0;
+
+  function option(label, value) {
+    var element = document.createElement("option");
+    element.value = value;
+    element.textContent = label;
+    return element;
+  }
+
+  function itemSelects() {
+    return Array.prototype.slice.call(document.querySelectorAll('select[name$="-purchase_receipt_item"]'));
+  }
+
+  function rowInput(select, suffix) {
+    var prefix = select.name.replace(/purchase_receipt_item$/, "");
+    return document.querySelector('[name="' + prefix + suffix + '"]');
+  }
+
+  function applyLineDefaults(select) {
+    var selected = itemOptions.find(function (item) {
+      return String(item.id) === String(select.value);
+    });
+    var materialInput = rowInput(select, "material");
+    var unitPriceInput = rowInput(select, "unit_price");
+    var batchSelect = rowInput(select, "batch");
+    var locationSelect = rowInput(select, "location");
+    if (materialInput) {
+      materialInput.value = selected ? String(selected.material_id) : "";
+    }
+    if (selected && unitPriceInput && !unitPriceInput.value) {
+      unitPriceInput.value = selected.unit_price;
+    }
+    if (batchSelect) {
+      batchSelect.value = selected && selected.batch_id ? String(selected.batch_id) : "";
+    }
+    if (locationSelect) {
+      locationSelect.value = selected && selected.location_id ? String(selected.location_id) : "";
+    }
+  }
+
+  function renderSelect(select) {
+    var selectedValue = select.value || select.dataset.selectedValue || "";
+    select.innerHTML = "";
+    select.appendChild(option("请选择退货规格/型号", ""));
+    itemOptions.forEach(function (item) {
+      var element = option(item.label, item.id);
+      element.dataset.materialId = item.material_id;
+      element.dataset.unitPrice = item.unit_price;
+      element.dataset.returnableQty = item.returnable_qty;
+      element.dataset.batchId = item.batch_id || "";
+      element.dataset.locationId = item.location_id || "";
+      select.appendChild(element);
+    });
+    if (itemOptions.some(function (item) { return String(item.id) === String(selectedValue); })) {
+      select.value = selectedValue;
+    }
+    applyLineDefaults(select);
+  }
+
+  function renderAllSelects() {
+    itemSelects().forEach(renderSelect);
+  }
+
+  function loadReceiptItems() {
+    if (!receiptSelect || !receiptSelect.value) {
+      itemOptions = [];
+      renderAllSelects();
+      return;
+    }
+    var seq = ++requestSeq;
+    fetch(itemsUrl + "?purchase_receipt=" + encodeURIComponent(receiptSelect.value), {
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("purchase receipt items request failed");
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (seq !== requestSeq) {
+          return;
+        }
+        itemOptions = data.items || [];
+        if (supplierSelect && data.supplier && data.supplier.id) {
+          supplierSelect.value = String(data.supplier.id);
+        }
+        renderAllSelects();
+      })
+      .catch(function () {
+        if (seq === requestSeq) {
+          itemOptions = [];
+          renderAllSelects();
+        }
+      });
+  }
+
+  if (showAll) {
+    showAll.addEventListener("change", function () {
+      var url = new URL(window.location.href);
+      if (showAll.checked) {
+        url.searchParams.set("show_all_receipts", "1");
+      } else {
+        url.searchParams.delete("show_all_receipts");
+      }
+      window.location.href = url.toString();
+    });
+  }
+  if (receiptSelect) {
+    receiptSelect.addEventListener("change", loadReceiptItems);
+  }
+  document.addEventListener("change", function (event) {
+    if (event.target && event.target.matches && event.target.matches('select[name$="-purchase_receipt_item"]')) {
+      event.target.dataset.selectedValue = event.target.value;
+      applyLineDefaults(event.target);
+    }
+  });
+  var tableBody = document.querySelector("[data-formset-table] tbody");
+  if (tableBody && window.MutationObserver) {
+    new MutationObserver(function () {
+      renderAllSelects();
+    }).observe(tableBody, {childList: true});
+  }
+  itemSelects().forEach(function (select) {
+    select.dataset.selectedValue = select.value || "";
+  });
+  loadReceiptItems();
+})();
+</script>
 {% endblock %}

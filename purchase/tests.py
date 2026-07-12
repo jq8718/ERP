@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -89,6 +89,24 @@ class PurchaseReceiptServiceTests(TestCase):
         role = Role.objects.create(role_code=f"purchase-role-{permission_code}-{self.user.id}", role_name=permission_code)
         role.permissions.add(permission)
         self.user.roles.add(role)
+        return role
+
+    def _grant_permission_to(self, user, permission_code: str):
+        permission_types = {
+            PermissionCode.FINANCE_VIEW_AMOUNT: Permission.PermissionType.FIELD,
+            PermissionCode.PURCHASE_VIEW: Permission.PermissionType.MODULE,
+            PermissionCode.PURCHASE_PROCESS: Permission.PermissionType.ACTION,
+        }
+        permission, _ = Permission.objects.get_or_create(
+            permission_code=permission_code,
+            defaults={
+                "permission_name": permission_code,
+                "permission_type": permission_types.get(permission_code, Permission.PermissionType.ACTION),
+            },
+        )
+        role = Role.objects.create(role_code=f"purchase-role-{permission_code}-{user.id}", role_name=permission_code)
+        role.permissions.add(permission)
+        user.roles.add(role)
         return role
 
     def _purchase_receipt(self, accepted_qty=Decimal("20.0000")):
@@ -1060,6 +1078,19 @@ class PurchaseReceiptServiceTests(TestCase):
     def test_purchase_order_create_and_detail_views(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.raw.spec = "10K 1%"
+        self.raw.save(update_fields=["spec"])
+
+        page_response = self.client.get("/purchase/orders/new/")
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context["form"].fields["order_date"].widget.attrs["data-erp-date"], "1")
+        self.assertEqual(
+            page_response.context["item_formset"].forms[0].fields["needed_date"].widget.attrs["data-erp-date"],
+            "1",
+        )
+        self.assertContains(page_response, 'name="items-0-needed_date"')
+        self.assertContains(page_response, 'type="date"')
+        self.assertContains(page_response, "RM001｜原料 1｜规格型号：10K 1%｜单位：pcs")
 
         response = self.client.post(
             "/purchase/orders/new/",
@@ -1074,7 +1105,7 @@ class PurchaseReceiptServiceTests(TestCase):
                 "items-0-material": self.raw.id,
                 "items-0-order_qty": "8",
                 "items-0-unit_price": "1.25",
-                "items-0-needed_date": "",
+                "items-0-needed_date": "2026/7/5",
                 "items-1-material": "",
                 "items-1-order_qty": "",
                 "items-1-unit_price": "",
@@ -1092,10 +1123,15 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response["Location"], f"/purchase/orders/{order.id}/")
         self.assertEqual(order.status, PurchaseOrder.Status.DRAFT)
         self.assertEqual(order.total_amount, Decimal("10.00"))
-        self.assertEqual(order.items.get().line_amount, Decimal("10.00"))
+        item = order.items.get()
+        self.assertEqual(item.line_amount, Decimal("10.00"))
+        self.assertEqual(item.needed_date, date(2026, 7, 5))
         detail_response = self.client.get(f"/purchase/orders/{order.id}/")
         self.assertContains(detail_response, order.purchase_order_no)
         self.assertContains(detail_response, self.raw.material_code)
+        self.assertContains(detail_response, "原料 1")
+        self.assertContains(detail_response, "10K 1%")
+        self.assertContains(detail_response, "pcs")
 
     def test_purchase_order_submit_requires_purchase_process_permission(self):
         self.client.force_login(self.user)
@@ -1445,6 +1481,8 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_purchase_order_print_masks_amount_and_records_log(self):
         self.client.force_login(self.user)
+        self.raw.spec = "10K 1%"
+        self.raw.save(update_fields=["spec"])
         order = PurchaseOrder.objects.create(
             purchase_order_no="PO-PRINT",
             supplier=self.supplier,
@@ -1470,6 +1508,8 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "采购单")
         self.assertContains(response, order.purchase_order_no)
+        self.assertContains(response, "10K 1%")
+        self.assertContains(response, "pcs")
         self.assertContains(response, "******")
         self.assertNotContains(response, "11.110000")
         print_log = PrintLog.objects.get(source_doc_type="purchase_order", source_doc_id=order.id)
@@ -1493,12 +1533,91 @@ class PurchaseReceiptServiceTests(TestCase):
 
         self.assertContains(list_response, "导出CSV")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("采购单号,供应商,订单日期,状态,金额", content)
+        self.assertIn("采购单号,供应商,订单日期,负责人,状态,金额", content)
         self.assertIn("PO-EXPORT", content)
         self.assertIn("******", content)
         self.assertNotIn("55.55", content)
         export_log = ExportLog.objects.get(module="purchase_orders")
         self.assertEqual(export_log.row_count, 1)
+
+    def test_purchase_order_list_scope_defaults_to_mine_without_global_permission(self):
+        self.user.roles.clear()
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        other_user = get_user_model().objects.create_user(username="other-purchase-owner", password="x")
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-MINE-SCOPE",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            purchase_owner=self.user,
+            total_amount=Decimal("10.00"),
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-OTHER-SCOPE",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            purchase_owner=other_user,
+            total_amount=Decimal("20.00"),
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-UNASSIGNED-SCOPE",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            total_amount=Decimal("30.00"),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/purchase/orders/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "PO-MINE-SCOPE")
+        self.assertNotContains(response, "PO-OTHER-SCOPE")
+        self.assertNotContains(response, "PO-UNASSIGNED-SCOPE")
+        self.assertContains(response, "scope=mine")
+        self.assertNotContains(response, "scope=all")
+        self.assertNotContains(response, "scope=unassigned")
+
+    def test_purchase_order_list_global_permission_can_filter_unassigned(self):
+        other_user = get_user_model().objects.create_user(username="scope-other-global", password="x")
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-GLOBAL-MINE",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            purchase_owner=self.user,
+            total_amount=Decimal("10.00"),
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-GLOBAL-OTHER",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            purchase_owner=other_user,
+            total_amount=Decimal("20.00"),
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-GLOBAL-UNASSIGNED",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            total_amount=Decimal("30.00"),
+        )
+        self.client.force_login(self.user)
+
+        all_response = self.client.get("/purchase/orders/")
+        unassigned_response = self.client.get("/purchase/orders/?scope=unassigned")
+
+        self.assertContains(all_response, "scope=all")
+        self.assertContains(all_response, "scope=mine")
+        self.assertContains(all_response, "scope=unassigned")
+        self.assertContains(all_response, "PO-GLOBAL-MINE")
+        self.assertContains(all_response, "PO-GLOBAL-OTHER")
+        self.assertContains(all_response, "PO-GLOBAL-UNASSIGNED")
+        self.assertContains(unassigned_response, "PO-GLOBAL-UNASSIGNED")
+        self.assertNotContains(unassigned_response, "PO-GLOBAL-MINE")
+        self.assertNotContains(unassigned_response, "PO-GLOBAL-OTHER")
 
     def test_purchase_order_export_shows_amount_with_finance_permission(self):
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
@@ -1577,6 +1696,51 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(PurchaseReceipt.objects.exists())
 
+    def test_purchase_receipt_confirm_denies_other_purchase_owner(self):
+        self.user.roles.clear()
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        other_user = get_user_model().objects.create_user(username="other-receipt-owner", password="x")
+        order = PurchaseOrder.objects.create(
+            purchase_order_no="PO-OTHER-RECEIPT",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            purchase_owner=other_user,
+        )
+        order_item = PurchaseOrderItem.objects.create(
+            purchase_order=order,
+            line_no=1,
+            material=self.raw,
+            order_qty=Decimal("5.0000"),
+            received_qty=Decimal("0.0000"),
+            unit_price=Decimal("2.000000"),
+            line_amount=Decimal("10.00"),
+        )
+        receipt = PurchaseReceipt.objects.create(
+            purchase_receipt_no="GR-OTHER-RECEIPT",
+            purchase_order=order,
+            supplier=self.supplier,
+            receipt_date=timezone.localdate(),
+            status=PurchaseReceipt.Status.PENDING_RECEIVE,
+        )
+        PurchaseReceiptItem.objects.create(
+            purchase_receipt=receipt,
+            purchase_order_item=order_item,
+            material=self.raw,
+            received_qty=Decimal("5.0000"),
+            accepted_qty=Decimal("5.0000"),
+            unit_price=Decimal("2.000000"),
+            location=self.location,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(f"/purchase/receipts/{receipt.id}/confirm/", {"current_password": "x"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/purchase/receipts/")
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.status, PurchaseReceipt.Status.PENDING_RECEIVE)
+
     def test_purchase_request_detail_generates_purchase_order(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.PURCHASE_PROCESS)
@@ -1641,10 +1805,21 @@ class PurchaseReceiptServiceTests(TestCase):
     def test_purchase_request_create_view_creates_manual_request(self):
         self.client.force_login(self.user)
 
+        page_response = self.client.get("/purchase/requests/new/")
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context["form"].fields["needed_date"].widget.attrs["data-erp-date"], "1")
+        self.assertEqual(
+            page_response.context["item_formset"].forms[0].fields["needed_date"].widget.attrs["data-erp-date"],
+            "1",
+        )
+        self.assertContains(page_response, 'name="needed_date"')
+        self.assertContains(page_response, 'name="items-0-needed_date"')
+        self.assertContains(page_response, 'type="date"')
+
         response = self.client.post(
             "/purchase/requests/new/",
             {
-                "needed_date": timezone.localdate().isoformat(),
+                "needed_date": "2026/7/6",
                 "remark": "人工需求",
                 "items-TOTAL_FORMS": "3",
                 "items-INITIAL_FORMS": "0",
@@ -1653,7 +1828,7 @@ class PurchaseReceiptServiceTests(TestCase):
                 "items-0-material": self.raw.id,
                 "items-0-request_qty": "7",
                 "items-0-suggested_supplier": self.supplier.id,
-                "items-0-needed_date": "",
+                "items-0-needed_date": "2026.07.08",
                 "items-1-material": "",
                 "items-1-request_qty": "",
                 "items-1-suggested_supplier": "",
@@ -1672,9 +1847,21 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(purchase_request.source_type, PurchaseRequest.SourceType.MANUAL)
         self.assertEqual(purchase_request.status, PurchaseRequest.Status.DRAFT)
         self.assertEqual(purchase_request.requested_by, self.user)
+        self.assertEqual(purchase_request.needed_date, date(2026, 7, 6))
         item = purchase_request.items.get()
         self.assertEqual(item.request_qty, Decimal("7.0000"))
         self.assertEqual(item.suggested_supplier, self.supplier)
+        self.assertEqual(item.needed_date, date(2026, 7, 8))
+
+    def test_purchase_request_create_material_options_show_spec(self):
+        self.client.force_login(self.user)
+        self.raw.spec = "10K 1%"
+        self.raw.save(update_fields=["spec"])
+
+        response = self.client.get("/purchase/requests/new/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "RM001｜原料 1｜规格型号：10K 1%")
 
     def test_purchase_request_submit_requires_purchase_process_permission(self):
         self.client.force_login(self.user)
@@ -1935,11 +2122,98 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"/purchase/supplier-returns/{supplier_return.id}/")
         self.assertEqual(supplier_return.status, SupplierReturn.Status.DRAFT)
+        self.assertEqual(supplier_return.supplier, self.supplier)
         self.assertEqual(supplier_return.created_by, self.user)
         self.assertEqual(supplier_return.return_amount, Decimal("4.00"))
         self.assertEqual(return_item.material, self.raw)
         self.assertEqual(return_item.unit_price, Decimal("1.000000"))
         self.assertEqual(return_item.batch, batch)
+
+    def test_supplier_return_create_view_filters_recent_receipts_by_default(self):
+        self.client.force_login(self.user)
+
+        def create_received_receipt(suffix, receipt_date):
+            order = PurchaseOrder.objects.create(
+                purchase_order_no=f"PO-SR-{suffix}",
+                supplier=self.supplier,
+                status=PurchaseOrder.Status.RECEIVED,
+                order_date=receipt_date,
+                total_amount=Decimal("3.00"),
+            )
+            order_item = PurchaseOrderItem.objects.create(
+                purchase_order=order,
+                line_no=1,
+                material=self.raw,
+                order_qty=Decimal("3.0000"),
+                received_qty=Decimal("3.0000"),
+                unit_price=Decimal("1.000000"),
+                line_amount=Decimal("3.00"),
+                line_status=PurchaseOrderItem.LineStatus.RECEIVED,
+            )
+            receipt = PurchaseReceipt.objects.create(
+                purchase_receipt_no=f"GR-SR-{suffix}",
+                purchase_order=order,
+                supplier=self.supplier,
+                receipt_date=receipt_date,
+                status=PurchaseReceipt.Status.RECEIVED,
+            )
+            PurchaseReceiptItem.objects.create(
+                purchase_receipt=receipt,
+                purchase_order_item=order_item,
+                material=self.raw,
+                received_qty=Decimal("3.0000"),
+                accepted_qty=Decimal("3.0000"),
+                unit_price=Decimal("1.000000"),
+                location=self.location,
+            )
+            return receipt
+
+        recent_receipt = create_received_receipt("RECENT", timezone.localdate())
+        old_receipt = create_received_receipt("OLD", timezone.localdate() - timedelta(days=10))
+
+        response = self.client.get("/purchase/supplier-returns/new/")
+        show_all_response = self.client.get("/purchase/supplier-returns/new/?show_all_receipts=1")
+
+        self.assertContains(response, recent_receipt.purchase_receipt_no)
+        self.assertNotContains(response, old_receipt.purchase_receipt_no)
+        self.assertContains(show_all_response, recent_receipt.purchase_receipt_no)
+        self.assertContains(show_all_response, old_receipt.purchase_receipt_no)
+
+    def test_supplier_return_receipt_items_endpoint_returns_returnable_materials(self):
+        self.client.force_login(self.user)
+        self.raw.spec = "测试规格 10A"
+        self.raw.save(update_fields=["spec"])
+        order, order_item, receipt, receipt_item = self._purchase_receipt(accepted_qty=Decimal("20.0000"))
+        receipt.status = PurchaseReceipt.Status.RECEIVED
+        receipt.save(update_fields=["status"])
+        batch = InventoryBatch.objects.create(
+            batch_no="B-SR-ENDPOINT",
+            material=self.raw,
+            location=self.location,
+            inventory_type=InventoryBatch.InventoryType.AVAILABLE,
+            received_at=timezone.now(),
+            initial_qty=Decimal("20.0000"),
+            remaining_qty=Decimal("20.0000"),
+            batch_status=InventoryBatch.BatchStatus.IN_STOCK,
+        )
+        receipt_item.batch = batch
+        receipt_item.save(update_fields=["batch"])
+
+        response = self.client.get(f"/purchase/supplier-returns/receipt-items/?purchase_receipt={receipt.id}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["supplier"]["id"], self.supplier.id)
+        self.assertEqual(len(payload["items"]), 1)
+        item = payload["items"][0]
+        self.assertEqual(item["id"], receipt_item.id)
+        self.assertEqual(item["material_id"], self.raw.id)
+        self.assertEqual(item["batch_id"], batch.id)
+        self.assertEqual(item["location_id"], self.location.id)
+        self.assertEqual(item["unit_price"], "1.000000")
+        self.assertEqual(item["returnable_qty"], "20.0000")
+        self.assertIn(self.raw.material_code, item["label"])
+        self.assertIn("测试规格 10A", item["label"])
 
     def test_supplier_return_submit_requires_purchase_process_permission(self):
         self.client.force_login(self.user)

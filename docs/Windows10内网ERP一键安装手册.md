@@ -647,7 +647,30 @@ TcpTestSucceeded : False
 
 不建议。请先运行 `ERP-Uninstall.exe` 删除服务和计划任务，再由技术人员决定是否删除数据。
 
-### 20.6 ERP-Setup.exe 闪退怎么办
+### 20.6 服务器每 5 分钟弹出黑色 CMD 窗口
+
+这是 ERP 的“处理事务后事件”计划任务在运行。旧版本计划任务直接调用 `python.exe`，Windows 可能会在服务器桌面弹出一个黑色窗口，约 1 秒后关闭。
+
+新版安装器已经改为隐藏后台执行。已安装过的服务器可以按下面方法修复一次：
+
+1. 在服务器上打开 `Windows PowerShell`。
+2. 右键选择 `以管理员身份运行`。
+3. 执行：
+
+```powershell
+cd D:\ERP\app
+.\installer\register-scheduled-tasks.ps1 -InstallDir D:\ERP\app
+```
+
+如果 ERP 安装在其他目录，把 `D:\ERP\app` 改成实际目录。
+
+修复后：
+
+- 不应再每 5 分钟弹出黑色 CMD 窗口。
+- 计划任务仍会正常运行。
+- 运行日志会写入 `D:\ERP\app\logs\scheduled-process_pending_events.log`。
+
+### 20.7 ERP-Setup.exe 闪退怎么办
 
 如果现场双击 `ERP-Setup.exe` 后窗口闪一下就消失，通常不是 ERP 已安装完成，而是安装器启动失败或中途报错。
 

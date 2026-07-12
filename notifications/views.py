@@ -28,6 +28,11 @@ class SystemMessageListView(ErpListView):
     search_fields = ("title", "source_doc_no", "source_doc_type")
     status_filter_field = "status"
     filter_fields = (("级别", "level", SystemMessage.Level.choices),)
+    field_filters = (
+        {"label": "标题", "param": "title", "field": "title", "placeholder": "消息标题"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+    )
 
     def get_queryset(self):
         refresh_due_snoozed_messages(self.request.user.id)

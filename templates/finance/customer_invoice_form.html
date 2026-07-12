@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title|default:"新建客户开票" }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:customer_invoice_list' %}">返回列表</a>
+</div>
+
+<section class="panel" style="margin-bottom: 16px;">
+  <h2>选择开票范围</h2>
+  <form method="get" style="padding: 14px;">
+    <div class="form-grid">
+      <label class="form-row">客户
+        <select name="customer">
+          <option value="">请选择</option>
+          {% for customer in customers %}
+            <option value="{{ customer.pk }}" {% if selected_customer_id == customer.pk %}selected{% endif %}>
+              {{ customer.customer_no }} {{ customer.customer_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-row">关联对账单
+        <select name="reconciliation">
+          <option value="">不关联对账单，按销售订单开票</option>
+          {% for reconciliation in reconciliations %}
+            <option value="{{ reconciliation.pk }}" {% if selected_reconciliation_id == reconciliation.pk %}selected{% endif %}>
+              {{ reconciliation.reconciliation_no }} / {{ reconciliation.period_start }} 至 {{ reconciliation.period_end }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">显示可开票明细</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>开票信息</h2>
+  <form method="post" style="padding: 14px;">
+    {% csrf_token %}
+    <input type="hidden" name="customer" value="{{ selected_customer_id|default:'' }}">
+    <input type="hidden" name="reconciliation" value="{{ selected_reconciliation_id|default:'' }}">
+    <div class="form-grid">
+      <label class="form-row">开票日期
+        <input type="date" name="invoice_date" value="{{ today|date:'Y-m-d' }}" data-erp-date="1" placeholder="YYYY-MM-DD" title="请选择日期，或输入 2026-07-04、2026/07/04、2026.07.04、2026年07月04日">
+      </label>
+      <label class="form-row">发票号码
+        <input type="text" name="external_invoice_no" placeholder="纸质或电子发票上的号码">
+      </label>
+      <label class="form-row">备注
+        <input type="text" name="remark">
+      </label>
+    </div>
+
+    <h3>可开票明细</h3>
+    <div class="table-wrap" style="border: 0; border-radius: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>销售订单</th>
+            <th>日期</th>
+            <th>可开票基数</th>
+            <th>已开票</th>
+            <th>未开票</th>
+            <th>本次开票金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                <a href="{% url 'sales:sales_order_detail' row.sales_order_id %}">{{ row.source_no }}</a>
+                <input type="hidden" name="sales_order_id" value="{{ row.sales_order_id }}">
+                <input type="hidden" name="reconciliation_item_id" value="{{ row.reconciliation_item_id|default:'' }}">
+              </td>
+              <td>{{ row.source_date }}</td>
+              <td>{{ row.total_amount }}</td>
+              <td>{{ row.invoiced_amount }}</td>
+              <td>{{ row.available_amount }}</td>
+              <td><input type="text" name="invoice_item_amount" value="{{ row.suggested_amount }}"></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">请选择客户后显示可开票明细</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button class="button primary" type="submit" {% if not rows %}disabled{% endif %}>保存开票单</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

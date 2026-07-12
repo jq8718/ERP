@@ -22,6 +22,13 @@
       <button class="button primary" type="submit">审核确认</button>
     </form>
   {% endif %}
+  {% if can_return_for_revision %}
+    <form method="post" action="{% url 'sales:sales_order_return_for_revision' order.pk %}">
+      {% csrf_token %}
+      <input type="text" name="return_reason" placeholder="退回修改原因" required style="width: 180px;">
+      <button class="button" type="submit">退回修改</button>
+    </form>
+  {% endif %}
   {% if can_recheck_bom %}
     <form method="post" action="{% url 'sales:sales_order_recheck_shortage' order.pk %}">
       {% csrf_token %}
@@ -74,6 +81,18 @@
     <div class="detail-value">{% if can_view_amount %}{{ order.total_amount }}{% else %}******{% endif %}</div>
   </div>
   <div class="detail-cell">
+    <div class="detail-label">开票状态</div>
+    <div class="detail-value">{{ invoice_summary.status_label }}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">已开票金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ invoice_summary.invoiced_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
+    <div class="detail-label">未开票金额</div>
+    <div class="detail-value">{% if can_view_amount %}{{ invoice_summary.uninvoiced_amount }}{% else %}******{% endif %}</div>
+  </div>
+  <div class="detail-cell">
     <div class="detail-label">审核人</div>
     <div class="detail-value">{{ order.approved_by|default:"" }}</div>
   </div>
@@ -94,8 +113,8 @@
       <thead>
         <tr>
           <th>行号</th>
-          <th>客户产品</th>
-          <th>成品</th>
+          <th>公司内部型号</th>
+          <th>客户型号/备注</th>
           <th>数量</th>
           <th>已发货</th>
           <th>单价</th>
@@ -109,8 +128,16 @@
         {% for item in order.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.customer_product.customer_product_name }}</td>
-            <td>{{ item.finished_material.material_code }}</td>
+            <td>
+              {{ item.finished_material.material_code }} {{ item.finished_material.material_name }}
+              {% if item.finished_material.spec %}<div class="muted">{{ item.finished_material.spec }}</div>{% endif %}
+            </td>
+            <td>
+              {{ item.customer_model_remark|default:"" }}
+              {% if not item.customer_model_remark and item.customer_product %}
+                {{ item.customer_product.customer_product_no }} {{ item.customer_product.customer_product_name }}
+              {% endif %}
+            </td>
             <td>{{ item.order_qty }}</td>
             <td>{{ item.shipped_qty }}</td>
             <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>

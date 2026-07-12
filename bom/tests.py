@@ -43,6 +43,23 @@ class BomViewTests(TestCase):
         self.user.roles.add(role)
         return role
 
+    def _bom_form_data(self, **overrides):
+        data = {
+            "bom_no": "BOM001",
+            "finished_material_code": self.finished.material_code,
+            "finished_material_name": self.finished.material_name,
+            "finished_material_spec": self.finished.spec,
+            "finished_material_base_unit": self.finished.base_unit,
+            "finished_material_qty_precision": str(self.finished.qty_precision),
+            "bom_version": "V1",
+            "base_qty": "1",
+            "effective_date": "",
+            "expiry_date": "",
+            "remark": "页面创建",
+        }
+        data.update(overrides)
+        return data
+
     def test_bom_list_renders(self):
         self.client.force_login(self.user)
 
@@ -100,16 +117,7 @@ class BomViewTests(TestCase):
 
         response = self.client.post(
             "/bom/new/",
-            {
-                "bom_no": "BOM001",
-                "finished_material": self.finished.id,
-                "bom_version": "V1",
-                "base_qty": "1",
-                "effective_date": "",
-                "expiry_date": "",
-                "is_default": "on",
-                "remark": "页面创建",
-            },
+            self._bom_form_data(is_default="on"),
         )
 
         bom = Bom.objects.get()
@@ -118,6 +126,8 @@ class BomViewTests(TestCase):
         self.assertEqual(bom.created_by, self.user)
         self.assertEqual(bom.status, Bom.BomStatus.DRAFT)
         self.assertFalse(bom.is_default)
+        self.finished.refresh_from_db()
+        self.assertEqual(bom.finished_material, self.finished)
         audit_log = AuditLog.objects.get(action="bom_create")
         self.assertEqual(audit_log.source_doc_id, bom.id)
         self.assertEqual(audit_log.after_snapshot["bom_no"], "BOM001")
@@ -125,21 +135,56 @@ class BomViewTests(TestCase):
         self.assertContains(detail_response, "BOM001")
         self.assertContains(detail_response, self.finished.material_code)
 
+    def test_bom_create_can_create_finished_material_and_items(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+
+        response = self.client.post(
+            "/bom/new/",
+            self._bom_form_data(
+                bom_no="BOM-NEW-FG",
+                finished_material_code="FG-NEW",
+                finished_material_name="新成品",
+                finished_material_spec="双9V电源板",
+                finished_material_base_unit="pcs",
+                **{
+                    "items-TOTAL_FORMS": "1",
+                    "items-INITIAL_FORMS": "0",
+                    "items-MIN_NUM_FORMS": "0",
+                    "items-MAX_NUM_FORMS": "1000",
+                    "items-0-line_no": "1",
+                    "items-0-component_material": self.raw.id,
+                    "items-0-usage_qty": "2",
+                    "items-0-usage_unit": "pcs",
+                    "items-0-loss_rate": "0",
+                    "items-0-is_required": "on",
+                    "items-0-remark": "主原料",
+                },
+            ),
+        )
+
+        bom = Bom.objects.get(bom_no="BOM-NEW-FG")
+        finished = Material.objects.get(material_code="FG-NEW")
+        item = bom.items.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/bom/{bom.id}/")
+        self.assertEqual(finished.material_type, Material.MaterialType.FINISHED)
+        self.assertEqual(finished.material_name, "新成品")
+        self.assertEqual(finished.spec, "双9V电源板")
+        self.assertEqual(bom.finished_material, finished)
+        self.assertEqual(item.component_material, self.raw)
+        self.assertEqual(item.usage_unit, "pcs")
+        audit_log = AuditLog.objects.get(action="bom_create")
+        self.assertEqual(audit_log.after_snapshot["finished_material_code"], "FG-NEW")
+        self.assertEqual(len(audit_log.after_snapshot["items"]), 1)
+
     def test_bom_create_rejects_non_positive_base_qty(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.BOM_PROCESS)
 
         response = self.client.post(
             "/bom/new/",
-            {
-                "bom_no": "BOM-ZERO",
-                "finished_material": self.finished.id,
-                "bom_version": "V1",
-                "base_qty": "0",
-                "effective_date": "",
-                "expiry_date": "",
-                "remark": "错误基准数量",
-            },
+            self._bom_form_data(bom_no="BOM-ZERO", base_qty="0", remark="错误基准数量"),
         )
 
         self.assertEqual(response.status_code, 200)
@@ -179,15 +224,12 @@ class BomViewTests(TestCase):
 
         response = self.client.post(
             "/bom/new/",
-            {
-                "bom_no": "BOM-DATE-MANUAL",
-                "finished_material": self.finished.id,
-                "bom_version": "V1",
-                "base_qty": "1",
-                "effective_date": "2026/7/4",
-                "expiry_date": "2026年12月31日",
-                "remark": "兼容手工日期",
-            },
+            self._bom_form_data(
+                bom_no="BOM-DATE-MANUAL",
+                effective_date="2026/7/4",
+                expiry_date="2026年12月31日",
+                remark="兼容手工日期",
+            ),
         )
 
         self.assertEqual(response.status_code, 302)
@@ -201,15 +243,12 @@ class BomViewTests(TestCase):
 
         response = self.client.post(
             "/bom/new/",
-            {
-                "bom_no": "BOM-DATE-RANGE",
-                "finished_material": self.finished.id,
-                "bom_version": "V1",
-                "base_qty": "1",
-                "effective_date": "2026-07-05",
-                "expiry_date": "2026-07-04",
-                "remark": "日期倒挂",
-            },
+            self._bom_form_data(
+                bom_no="BOM-DATE-RANGE",
+                effective_date="2026-07-05",
+                expiry_date="2026-07-04",
+                remark="日期倒挂",
+            ),
         )
 
         self.assertEqual(response.status_code, 200)
@@ -232,7 +271,11 @@ class BomViewTests(TestCase):
             f"/bom/{bom.id}/edit/",
             {
                 "bom_no": "BOM001-EDIT",
-                "finished_material": self.finished.id,
+                "finished_material_code": self.finished.material_code,
+                "finished_material_name": "成品 1 改",
+                "finished_material_spec": "新版规格",
+                "finished_material_base_unit": "pcs",
+                "finished_material_qty_precision": "0",
                 "bom_version": "V1A",
                 "base_qty": "2",
                 "effective_date": "",
@@ -251,6 +294,9 @@ class BomViewTests(TestCase):
         self.assertEqual(bom.remark, "已编辑")
         self.assertEqual(bom.updated_by, self.user)
         self.assertEqual(bom.version, 2)
+        self.finished.refresh_from_db()
+        self.assertEqual(self.finished.material_name, "成品 1 改")
+        self.assertEqual(self.finished.spec, "新版规格")
         audit_log = AuditLog.objects.get(action="bom_update")
         self.assertEqual(audit_log.before_snapshot["bom_no"], "BOM001")
         self.assertEqual(audit_log.after_snapshot["bom_no"], "BOM001-EDIT")
@@ -660,15 +706,7 @@ class BomViewTests(TestCase):
             self.client.get("/bom/new/"),
             self.client.post(
                 "/bom/new/",
-                {
-                    "bom_no": "BOM002",
-                    "finished_material": self.finished.id,
-                    "bom_version": "V2",
-                    "base_qty": "1",
-                    "effective_date": "",
-                    "expiry_date": "",
-                    "remark": "无权限创建",
-                },
+                self._bom_form_data(bom_no="BOM002", bom_version="V2", remark="无权限创建"),
             ),
             self.client.get(f"/bom/{bom.id}/edit/"),
             self.client.post(f"/bom/{bom.id}/items/new/", {"line_no": "2", "component_material": self.raw.id, "usage_qty": "1", "usage_unit": "pcs"}),

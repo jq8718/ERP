@@ -31,9 +31,15 @@ class SalesOrderAdmin(admin.ModelAdmin):
 
 @admin.register(SalesOrderItem)
 class SalesOrderItemAdmin(admin.ModelAdmin):
-    list_display = ("sales_order", "line_no", "customer_product", "finished_material", "order_qty", "line_status", "inventory_check_status")
+    list_display = ("sales_order", "line_no", "finished_material", "customer_model_remark", "order_qty", "line_status", "inventory_check_status")
     list_filter = ("line_status", "inventory_check_status")
-    search_fields = ("sales_order__sales_order_no", "finished_material__material_code", "customer_product__customer_product_name")
+    search_fields = (
+        "sales_order__sales_order_no",
+        "finished_material__material_code",
+        "finished_material__material_name",
+        "customer_model_remark",
+        "customer_product__customer_product_name",
+    )
 
 
 @admin.register(SalesOrderChangeLog)

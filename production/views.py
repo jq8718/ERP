@@ -67,6 +67,12 @@ class ProductionOrderListView(ErpListView):
     }
     search_fields = ("production_order_no", "finished_material__material_code", "finished_material__material_name")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "生产单号", "param": "production_order_no", "field": "production_order_no", "placeholder": "生产单号"},
+        {"label": "成品编码", "param": "material_code", "field": "finished_material__material_code", "placeholder": "成品编码"},
+        {"label": "成品名称", "param": "material_name", "field": "finished_material__material_name", "placeholder": "成品名称"},
+        {"label": "型号", "param": "material_spec", "field": "finished_material__spec", "placeholder": "规格型号"},
+    )
     sortable_fields = {
         "production_order_no": "production_order_no",
         "finished_material.material_code": "finished_material__material_code",
@@ -448,6 +454,15 @@ class ProductionMaterialRequisitionListView(ErpListView):
     }
     search_fields = ("requisition_no", "production_order__production_order_no")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "领料单号", "param": "requisition_no", "field": "requisition_no", "placeholder": "领料单号"},
+        {"label": "生产单号", "param": "production_order_no", "field": "production_order__production_order_no", "placeholder": "生产单号"},
+        {"label": "物料编码", "param": "material_code", "field": "items__material__material_code", "placeholder": "领料物料编码", "distinct": True},
+        {"label": "物料名称", "param": "material_name", "field": "items__material__material_name", "placeholder": "领料物料名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__material__spec", "placeholder": "规格型号", "distinct": True},
+        {"label": "批次号", "param": "batch_no", "field": "items__batch__batch_no", "placeholder": "批次号", "distinct": True},
+        {"label": "库位", "param": "location_code", "field": "items__location__location_code", "placeholder": "库位编码", "distinct": True},
+    )
 
 
 class ProductionCsvExportView(LoginRequiredMixin, View):
@@ -469,6 +484,7 @@ class ProductionCsvExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_search(queryset)
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
+        queryset = list_view.apply_field_filters(queryset)
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -799,6 +815,15 @@ class ProductionReceiptListView(ErpListView):
     }
     search_fields = ("production_receipt_no", "production_order__production_order_no")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "入库单号", "param": "production_receipt_no", "field": "production_receipt_no", "placeholder": "生产入库单号"},
+        {"label": "生产单号", "param": "production_order_no", "field": "production_order__production_order_no", "placeholder": "生产单号"},
+        {"label": "成品编码", "param": "material_code", "field": "items__finished_material__material_code", "placeholder": "成品编码", "distinct": True},
+        {"label": "成品名称", "param": "material_name", "field": "items__finished_material__material_name", "placeholder": "成品名称", "distinct": True},
+        {"label": "型号", "param": "material_spec", "field": "items__finished_material__spec", "placeholder": "规格型号", "distinct": True},
+        {"label": "批次号", "param": "batch_no", "field": "items__batch_no", "placeholder": "批次号", "distinct": True},
+        {"label": "库位", "param": "location_code", "field": "items__location__location_code", "placeholder": "库位编码", "distinct": True},
+    )
 
 
 class ProductionReceiptExportView(ProductionCsvExportView):

@@ -67,8 +67,9 @@ class SalesOrderItem(models.Model):
 
     sales_order = models.ForeignKey(SalesOrder, on_delete=models.CASCADE, related_name="items")
     line_no = models.PositiveIntegerField()
-    customer_product = models.ForeignKey(CustomerProduct, on_delete=models.PROTECT)
+    customer_product = models.ForeignKey(CustomerProduct, null=True, blank=True, on_delete=models.PROTECT)
     finished_material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    customer_model_remark = models.CharField(max_length=200, blank=True)
     order_qty = models.DecimalField(max_digits=14, decimal_places=4)
     shipped_qty = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     unit_price = models.DecimalField(max_digits=14, decimal_places=4)
@@ -94,7 +95,8 @@ class SalesOrderItem(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.sales_order.sales_order_no} 第{self.line_no}行 - {self.customer_product}"
+        material = self.finished_material if self.finished_material_id else self.customer_product
+        return f"{self.sales_order.sales_order_no} 第{self.line_no}行 - {material}"
 
 
 class SalesOrderChangeLog(models.Model):

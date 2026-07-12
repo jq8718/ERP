@@ -84,6 +84,13 @@ class PurchaseOrder(models.Model):
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    purchase_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="owned_purchase_orders",
+    )
     remark = models.TextField(blank=True)
 
     class Meta:
@@ -91,6 +98,7 @@ class PurchaseOrder(models.Model):
         indexes = [
             models.Index(fields=["supplier", "status"]),
             models.Index(fields=["order_date"]),
+            models.Index(fields=["purchase_owner", "status"]),
         ]
 
     def __str__(self):

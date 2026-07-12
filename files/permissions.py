@@ -310,6 +310,31 @@ def _customer_receipt_no(source_doc_id: int) -> str:
     return CustomerReceipt.objects.filter(id=source_doc_id).values_list("receipt_no", flat=True).first()
 
 
+def _customer_invoice(user, source_doc_id: int) -> bool:
+    from finance.models import CustomerInvoice
+
+    if not (
+        user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
+        or user_has_permission(user, PermissionCode.SALES_PROCESS)
+    ):
+        return False
+    queryset = CustomerInvoice.objects.filter(id=source_doc_id)
+    if user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL):
+        return queryset.exists()
+    return queryset.filter(
+        Q(customer__sales_owner=user)
+        | Q(customer__created_by=user)
+        | Q(customer__sales_orders__created_by=user)
+        | Q(created_by=user)
+    ).exists()
+
+
+def _customer_invoice_no(source_doc_id: int) -> str:
+    from finance.models import CustomerInvoice
+
+    return CustomerInvoice.objects.filter(id=source_doc_id).values_list("invoice_no", flat=True).first()
+
+
 def _supplier_payment(user, source_doc_id: int) -> bool:
     from finance.models import SupplierPayment
 
@@ -408,6 +433,7 @@ _SOURCE_CHECKERS = {
     "location_transfer": _location_transfer,
     "stock_count": _stock_count,
     "customer_receipt": _customer_receipt,
+    "customer_invoice": _customer_invoice,
     "supplier_payment": _supplier_payment,
     "customer_credit_balance": _customer_credit_balance,
     "supplier_credit_balance": _supplier_credit_balance,
@@ -433,6 +459,7 @@ _SOURCE_NO_RESOLVERS = {
     "location_transfer": _location_transfer_no,
     "stock_count": _stock_count_no,
     "customer_receipt": _customer_receipt_no,
+    "customer_invoice": _customer_invoice_no,
     "supplier_payment": _supplier_payment_no,
     "customer_credit_balance": _customer_credit_balance_no,
     "supplier_credit_balance": _supplier_credit_balance_no,
@@ -463,6 +490,7 @@ _SOURCE_ID_RESOLVERS = {
     "location_transfer": lambda value: _doc_id("inventory", "LocationTransfer", "transfer_no", value),
     "stock_count": lambda value: _doc_id("inventory", "StockCount", "stock_count_no", value),
     "customer_receipt": lambda value: _doc_id("finance", "CustomerReceipt", "receipt_no", value),
+    "customer_invoice": lambda value: _doc_id("finance", "CustomerInvoice", "invoice_no", value),
     "supplier_payment": lambda value: _doc_id("finance", "SupplierPayment", "payment_no", value),
     "customer_credit_balance": lambda value: _doc_id("finance", "CustomerCreditBalance", "source_doc_no", value),
     "supplier_credit_balance": lambda value: _doc_id("finance", "SupplierCreditBalance", "source_doc_no", value),
@@ -488,6 +516,7 @@ _SOURCE_DETAIL_ROUTES = {
     "location_transfer": "inventory:location_transfer_detail",
     "stock_count": "inventory:stock_count_detail",
     "customer_receipt": "finance:customer_receipt_detail",
+    "customer_invoice": "finance:customer_invoice_detail",
     "supplier_payment": "finance:supplier_payment_detail",
     "customer_credit_balance": "finance:customer_credit_balance_detail",
     "supplier_credit_balance": "finance:supplier_credit_balance_detail",
@@ -523,6 +552,8 @@ def _can_upload_source_type(user, source_doc_type: str) -> bool:
         "expense_record",
     }:
         return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
+    if source_doc_type == "customer_invoice":
+        return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT) or user_has_permission(user, PermissionCode.SALES_PROCESS)
     if source_doc_type == "approval":
         return True
     return False

@@ -55,7 +55,8 @@
       <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
-            <th>客户产品</th>
+            <th>公司内部型号</th>
+            <th>客户型号/备注</th>
             <th>数量</th>
             {% if can_view_amount %}<th>单价</th>{% endif %}
             <th>删除</th>
@@ -64,7 +65,8 @@
         <tbody>
           {% for item_form in item_formset.forms %}
             <tr data-formset-row>
-              <td>{{ item_form.customer_product }}{{ item_form.customer_product.errors }}</td>
+              <td>{{ item_form.finished_material }}{{ item_form.finished_material.errors }}</td>
+              <td>{{ item_form.customer_model_remark }}{{ item_form.customer_model_remark.errors }}</td>
               <td>{{ item_form.order_qty }}{{ item_form.order_qty.errors }}</td>
               {% if can_view_amount %}
                 <td>{{ item_form.unit_price }}{{ item_form.unit_price.errors }}</td>
@@ -83,7 +85,8 @@
     </div>
     <template data-formset-empty>
       <tr data-formset-row>
-        <td>{{ item_formset.empty_form.customer_product }}</td>
+        <td>{{ item_formset.empty_form.finished_material }}</td>
+        <td>{{ item_formset.empty_form.customer_model_remark }}</td>
         <td>{{ item_formset.empty_form.order_qty }}</td>
         {% if can_view_amount %}
           <td>{{ item_formset.empty_form.unit_price }}</td>
@@ -114,4 +117,82 @@
     {% endif %}
   </div>
 </form>
+
+<script>
+(function () {
+  var customerSelect = document.getElementById("{{ form.customer.id_for_label }}");
+  var addressSelect = document.getElementById("{{ form.customer_address.id_for_label }}");
+  var addressOptionsUrl = "{% url 'sales:customer_address_options' %}";
+  if (!customerSelect || !addressSelect) {
+    return;
+  }
+  var selectedAddressId = addressSelect.value;
+  var requestSeq = 0;
+
+  function option(label, value) {
+    var element = document.createElement("option");
+    element.value = value;
+    element.textContent = label;
+    return element;
+  }
+
+  function renderAddresses(addresses) {
+    var choices = addresses || [];
+    addressSelect.innerHTML = "";
+    addressSelect.appendChild(option("系统自动选择默认收货地址", ""));
+    choices.forEach(function (item) {
+      var element = option(item.label, item.id);
+      element.dataset.isDefault = item.is_default ? "1" : "0";
+      addressSelect.appendChild(element);
+    });
+    var hasSelected = choices.some(function (item) {
+      return String(item.id) === String(selectedAddressId);
+    });
+    if (hasSelected) {
+      addressSelect.value = selectedAddressId;
+      return;
+    }
+    var defaultChoice = choices.find(function (item) { return item.is_default; }) || choices[0];
+    addressSelect.value = defaultChoice ? String(defaultChoice.id) : "";
+  }
+
+  function refreshAddresses() {
+    var customerId = customerSelect.value;
+    var seq = ++requestSeq;
+    if (!customerId) {
+      renderAddresses([]);
+      return;
+    }
+    fetch(addressOptionsUrl + "?customer=" + encodeURIComponent(customerId), {
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("address request failed");
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (seq === requestSeq) {
+          renderAddresses(data.addresses || []);
+        }
+      })
+      .catch(function () {
+        if (seq === requestSeq) {
+          renderAddresses([]);
+        }
+      });
+  }
+
+  addressSelect.addEventListener("change", function () {
+    selectedAddressId = addressSelect.value;
+  });
+  customerSelect.addEventListener("change", function () {
+    selectedAddressId = "";
+    refreshAddresses();
+  });
+  refreshAddresses();
+})();
+</script>
 {% endblock %}

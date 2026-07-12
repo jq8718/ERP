@@ -63,6 +63,21 @@ class AttachmentListView(ErpListView):
         "uploaded_by__username",
     )
     status_filter_field = "status"
+    field_filters = (
+        {"label": "附件号", "param": "attachment_no", "field": "attachment_no", "placeholder": "附件号"},
+        {"label": "文件名", "param": "original_filename", "field": "original_filename", "placeholder": "文件名"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "上传人", "param": "uploaded_by", "field": "uploaded_by__username", "placeholder": "上传人账号"},
+        {
+            "label": "扫描状态",
+            "param": "scan_status",
+            "field": "scan_status",
+            "lookup": "exact",
+            "type": "select",
+            "choices": Attachment.ScanStatus.choices,
+        },
+    )
 
     def get_queryset(self):
         return filter_attachments_for_user(super().get_queryset(), self.request.user).select_related("uploaded_by")
@@ -147,6 +162,11 @@ class ImportJobListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["-created_at"]
     search_fields = ("job_no", "template_type", "created_by__username")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "任务号", "param": "job_no", "field": "job_no", "placeholder": "任务号"},
+        {"label": "模板类型", "param": "template_type", "field": "template_type", "placeholder": "模板类型"},
+        {"label": "创建人", "param": "created_by", "field": "created_by__username", "placeholder": "创建人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("created_by")
@@ -171,6 +191,12 @@ class InitializationJobListView(ErpPermissionRequiredMixin, ErpListView):
     ordering = ["-created_at"]
     search_fields = ("job_no", "template_type", "created_by__username", "confirmed_by__username")
     status_filter_field = "status"
+    field_filters = (
+        {"label": "任务号", "param": "job_no", "field": "job_no", "placeholder": "任务号"},
+        {"label": "模板类型", "param": "template_type", "field": "template_type", "placeholder": "模板类型"},
+        {"label": "创建人", "param": "created_by", "field": "created_by__username", "placeholder": "创建人账号"},
+        {"label": "确认人", "param": "confirmed_by", "field": "confirmed_by__username", "placeholder": "确认人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("created_by", "confirmed_by")
@@ -248,6 +274,11 @@ class ExportLogListView(ErpPermissionRequiredMixin, ErpListView):
     )
     ordering = ["-created_at"]
     search_fields = ("export_no", "module", "exported_by__username")
+    field_filters = (
+        {"label": "导出号", "param": "export_no", "field": "export_no", "placeholder": "导出号"},
+        {"label": "模块", "param": "module", "field": "module", "placeholder": "模块"},
+        {"label": "导出人", "param": "exported_by", "field": "exported_by__username", "placeholder": "导出人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("exported_by")
@@ -316,6 +347,13 @@ class PrintLogListView(ErpPermissionRequiredMixin, ErpListView):
     )
     ordering = ["-created_at"]
     search_fields = ("print_no", "template_type", "source_doc_type", "source_doc_no", "printed_by__username")
+    field_filters = (
+        {"label": "打印号", "param": "print_no", "field": "print_no", "placeholder": "打印号"},
+        {"label": "模板", "param": "template_type", "field": "template_type", "placeholder": "模板"},
+        {"label": "来源类型", "param": "source_doc_type", "field": "source_doc_type", "placeholder": "来源类型"},
+        {"label": "来源单号", "param": "source_doc_no", "field": "source_doc_no", "placeholder": "来源单号"},
+        {"label": "打印人", "param": "printed_by", "field": "printed_by__username", "placeholder": "打印人账号"},
+    )
 
     def get_queryset(self):
         return super().get_queryset().select_related("printed_by")

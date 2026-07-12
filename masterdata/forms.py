@@ -91,6 +91,19 @@ class MaterialForm(forms.ModelForm):
         ]
         widgets = {"remark": forms.Textarea(attrs={"rows": 3})}
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        material_type_field = self.fields["material_type"]
+        if self.instance and self.instance.pk and self.instance.material_type == Material.MaterialType.FINISHED:
+            material_type_field.choices = Material.MaterialType.choices
+        else:
+            material_type_field.choices = [
+                choice
+                for choice in Material.MaterialType.choices
+                if choice[0] != Material.MaterialType.FINISHED
+            ]
+            material_type_field.help_text = "成品请在“产品组成清单”新建页面维护。"
+
     def clean_min_stock_qty(self):
         value = self.cleaned_data.get("min_stock_qty")
         if value is not None and value < Decimal("0"):

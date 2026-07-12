@@ -3,6 +3,8 @@ from django.contrib import admin
 from .models import (
     CustomerCreditBalance,
     CustomerCreditBalanceTransaction,
+    CustomerInvoice,
+    CustomerInvoiceItem,
     CustomerReceipt,
     CustomerReceiptAllocation,
     CustomerReceiptReversal,
@@ -31,6 +33,25 @@ class ReconciliationItemAdmin(admin.ModelAdmin):
     list_display = ("reconciliation", "line_no", "source_type", "source_no", "source_date", "open_amount")
     list_filter = ("source_type",)
     search_fields = ("reconciliation__reconciliation_no", "source_no")
+
+
+class CustomerInvoiceItemInline(admin.TabularInline):
+    model = CustomerInvoiceItem
+    extra = 0
+
+
+@admin.register(CustomerInvoice)
+class CustomerInvoiceAdmin(admin.ModelAdmin):
+    list_display = ("invoice_no", "external_invoice_no", "customer", "invoice_date", "invoice_amount", "status")
+    list_filter = ("status", "invoice_date")
+    search_fields = ("invoice_no", "external_invoice_no", "customer__customer_name", "reconciliation__reconciliation_no")
+    inlines = [CustomerInvoiceItemInline]
+
+
+@admin.register(CustomerInvoiceItem)
+class CustomerInvoiceItemAdmin(admin.ModelAdmin):
+    list_display = ("customer_invoice", "line_no", "sales_order", "invoice_amount")
+    search_fields = ("customer_invoice__invoice_no", "sales_order__sales_order_no")
 
 
 @admin.register(CustomerReceipt)

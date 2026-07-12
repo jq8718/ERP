@@ -69,7 +69,10 @@
       <thead>
         <tr>
           <th>行号</th>
-          <th>物料</th>
+          <th>物料编码</th>
+          <th>物料名称</th>
+          <th>规格型号</th>
+          <th>单位</th>
           <th>需求数量</th>
           <th>建议供应商</th>
           <th>需求日期</th>
@@ -82,7 +85,10 @@
         {% for item in purchase_request.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material.material_code }}</td>
+            <td>{{ item.material.material_name }}</td>
+            <td>{{ item.material.spec|default:"" }}</td>
+            <td>{{ item.material.base_unit }}</td>
             <td>{{ item.request_qty }}</td>
             <td>{{ item.suggested_supplier|default:"" }}</td>
             <td>{{ item.needed_date|default:"" }}</td>
@@ -97,7 +103,7 @@
             <td>{{ item.get_line_status_display }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="8" class="empty">暂无明细</td></tr>
+          <tr><td colspan="11" class="empty">暂无明细</td></tr>
         {% endfor %}
       </tbody>
     </table>

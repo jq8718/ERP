@@ -457,16 +457,41 @@ class StockCountAdjustmentServiceTests(TestCase):
 
     def test_inventory_export_creates_csv_and_log(self):
         self._batch_and_inventory()
+        self.material.spec = "10K 1%"
+        self.material.save(update_fields=["spec"])
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("inventory:inventory_export"))
         content = _streaming_text(response)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("物料,库位,库存类型,数量", content)
+        self.assertIn("物料编码,名称,规格型号,库位编码,库位名称,库存类型,数量", content)
         self.assertIn(self.material.material_code, content)
+        self.assertIn(self.material.material_name, content)
+        self.assertIn("10K 1%", content)
+        self.assertIn(self.location.location_name, content)
         export_log = ExportLog.objects.get(module="inventory")
         self.assertEqual(export_log.row_count, 1)
+
+    def test_inventory_list_shows_name_spec_location_and_qty(self):
+        self._batch_and_inventory(qty=Decimal("12.5000"))
+        self.material.spec = "0603 1uF"
+        self.material.save(update_fields=["spec"])
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("inventory:inventory_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "物料编码")
+        self.assertContains(response, "名称")
+        self.assertContains(response, "规格型号")
+        self.assertContains(response, "库位名称")
+        self.assertContains(response, self.material.material_code)
+        self.assertContains(response, self.material.material_name)
+        self.assertContains(response, "0603 1uF")
+        self.assertContains(response, self.location.location_code)
+        self.assertContains(response, self.location.location_name)
+        self.assertContains(response, "12.5000")
 
     def test_inventory_list_filter_and_export_share_query(self):
         self._batch_and_inventory()

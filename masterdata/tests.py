@@ -172,6 +172,8 @@ class MasterdataViewTests(TestCase):
         self.assertContains(response, 'class="record-field medium"')
         self.assertContains(response, 'class="record-field short"')
         self.assertContains(response, 'select name="material_type"')
+        self.assertNotContains(response, '<option value="finished">成品</option>')
+        self.assertContains(response, '成品请在“产品组成清单”新建页面维护。')
         self.assertContains(response, 'select name="status"')
 
     def test_material_edit_updates_material_and_increments_version(self):
@@ -234,11 +236,29 @@ class MasterdataViewTests(TestCase):
         self.assertContains(response, "导入供应商价格")
         self.assertContains(response, "/masterdata/materials/supplier-prices/import/")
 
+    def test_material_list_shows_model_column(self):
+        Material.objects.create(
+            material_code="RM-MODEL",
+            material_name="型号显示原料",
+            material_type=Material.MaterialType.RAW,
+            spec="MODEL-0805",
+            base_unit="pcs",
+            status=Material.MaterialStatus.ACTIVE,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/masterdata/materials/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "型号")
+        self.assertContains(response, "MODEL-0805")
+
     def test_material_export_creates_csv_and_log(self):
         Material.objects.create(
             material_code="RM-EXP",
             material_name="导出原料",
             material_type=Material.MaterialType.RAW,
+            spec="EXP-0603",
             base_unit="pcs",
             status=Material.MaterialStatus.ACTIVE,
         )
@@ -249,9 +269,10 @@ class MasterdataViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv")
-        self.assertIn("编码,名称,类型,单位,状态", content)
+        self.assertIn("编码,名称,型号,类型,单位,状态", content)
         self.assertIn("RM-EXP", content)
         self.assertIn("导出原料", content)
+        self.assertIn("EXP-0603", content)
         export_log = ExportLog.objects.get(module="materials")
         self.assertEqual(export_log.row_count, 1)
         self.assertEqual(export_log.exported_by, self.user)
@@ -261,30 +282,41 @@ class MasterdataViewTests(TestCase):
             material_code="RM-FILTER-KEEP",
             material_name="筛选保留原料",
             material_type=Material.MaterialType.RAW,
+            spec="KEEP-0805",
             base_unit="pcs",
             status=Material.MaterialStatus.ACTIVE,
         )
         Material.objects.create(
             material_code="RM-FILTER-HIDE",
             material_name="筛选隐藏原料",
-            material_type=Material.MaterialType.RAW,
+            material_type=Material.MaterialType.PART,
+            spec="HIDE-1206",
             base_unit="pcs",
             status=Material.MaterialStatus.INACTIVE,
         )
         self.client.force_login(self.user)
 
-        list_response = self.client.get("/masterdata/materials/?q=KEEP&status=active")
-        export_response = self.client.get("/masterdata/materials/export/?q=KEEP&status=active")
+        query_string = "material_code=KEEP&material_name=保留&spec=KEEP-0805&material_type=raw&status=active"
+        list_response = self.client.get(f"/masterdata/materials/?{query_string}")
+        export_response = self.client.get(f"/masterdata/materials/export/?{query_string}")
         content = _streaming_text(export_response)
 
         self.assertContains(list_response, "RM-FILTER-KEEP")
+        self.assertContains(list_response, "物料编码")
+        self.assertContains(list_response, "物料名称")
+        self.assertContains(list_response, "规格型号")
+        self.assertContains(list_response, "全部类型")
         self.assertNotContains(list_response, "RM-FILTER-HIDE")
-        self.assertContains(list_response, "/masterdata/materials/export/?q=KEEP&amp;status=active")
+        self.assertContains(list_response, "material_code=KEEP")
+        self.assertContains(list_response, "material_type=raw")
         self.assertIn("RM-FILTER-KEEP", content)
         self.assertNotIn("RM-FILTER-HIDE", content)
         export_log = ExportLog.objects.get(module="materials")
         self.assertEqual(export_log.row_count, 1)
-        self.assertEqual(export_log.filter_json["query"]["q"], "KEEP")
+        self.assertEqual(export_log.filter_json["query"]["material_code"], "KEEP")
+        self.assertEqual(export_log.filter_json["query"]["material_name"], "保留")
+        self.assertEqual(export_log.filter_json["query"]["spec"], "KEEP-0805")
+        self.assertEqual(export_log.filter_json["query"]["material_type"], "raw")
         self.assertEqual(export_log.filter_json["query"]["status"], "active")
 
     def test_material_import_template_downloads_csv(self):

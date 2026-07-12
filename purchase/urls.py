@@ -37,6 +37,7 @@ from .views import (
     SupplierReturnImportView,
     SupplierReturnListView,
     SupplierReturnPrintView,
+    SupplierReturnReceiptItemsView,
     SupplierReturnUpdateView,
     SupplierReturnVoidView,
 )
@@ -76,6 +77,7 @@ urlpatterns = [
     path("supplier-returns/export/", SupplierReturnExportView.as_view(), name="supplier_return_export"),
     path("supplier-returns/import-template/", SupplierReturnImportTemplateView.as_view(), name="supplier_return_import_template"),
     path("supplier-returns/import/", SupplierReturnImportView.as_view(), name="supplier_return_import"),
+    path("supplier-returns/receipt-items/", SupplierReturnReceiptItemsView.as_view(), name="supplier_return_receipt_items"),
     path("supplier-returns/new/", SupplierReturnCreateView.as_view(), name="supplier_return_create"),
     path("supplier-returns/<int:pk>/", SupplierReturnDetailView.as_view(), name="supplier_return_detail"),
     path("supplier-returns/<int:pk>/edit/", SupplierReturnUpdateView.as_view(), name="supplier_return_edit"),

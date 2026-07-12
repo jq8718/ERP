@@ -9,14 +9,20 @@
   <section class="panel" style="padding: 14px; margin-bottom: 16px;">
     <div class="form-grid">
       <div class="form-row">
-        <label for="{{ form.customer.id_for_label }}">客户</label>
-        {{ form.customer }}
-        {{ form.customer.errors }}
-      </div>
-      <div class="form-row">
         <label for="{{ form.sales_order.id_for_label }}">来源销售订单</label>
         {{ form.sales_order }}
         {{ form.sales_order.errors }}
+        <div class="muted" style="margin-top: 4px;">
+          默认显示最近一周已发货/已完成订单。
+          <label style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;">
+            {{ form.show_all_orders }} 显示全部销售订单
+          </label>
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="{{ form.customer.id_for_label }}">客户</label>
+        {{ form.customer }}
+        {{ form.customer.errors }}
       </div>
       <div class="form-row">
         <label for="{{ form.return_date.id_for_label }}">退货日期</label>
@@ -40,8 +46,7 @@
       <table class="inline-table" data-formset-table data-formset-prefix="{{ item_formset.prefix }}">
         <thead>
           <tr>
-            <th>来源销售行</th>
-            <th>退货物料</th>
+            <th>退货规格/型号</th>
             <th>退货数量</th>
             {% if can_view_amount %}<th>退货单价</th>{% endif %}
             <th>入库库位</th>
@@ -53,8 +58,7 @@
         <tbody>
           {% for item_form in item_formset.forms %}
             <tr data-formset-row>
-              <td>{{ item_form.sales_order_item }}{{ item_form.sales_order_item.errors }}</td>
-              <td>{{ item_form.material }}{{ item_form.material.errors }}</td>
+              <td>{{ item_form.sales_order_item }}{{ item_form.sales_order_item.errors }}{{ item_form.material.errors }}</td>
               <td>{{ item_form.return_qty }}{{ item_form.return_qty.errors }}</td>
               {% if can_view_amount %}
                 <td>{{ item_form.unit_price }}{{ item_form.unit_price.errors }}</td>
@@ -77,7 +81,6 @@
     <template data-formset-empty>
       <tr data-formset-row>
         <td>{{ item_formset.empty_form.sales_order_item }}</td>
-        <td>{{ item_formset.empty_form.material }}</td>
         <td>{{ item_formset.empty_form.return_qty }}</td>
         {% if can_view_amount %}
           <td>{{ item_formset.empty_form.unit_price }}</td>
@@ -111,4 +114,131 @@
     {% endif %}
   </div>
 </form>
+<script>
+(function () {
+  var orderSelect = document.getElementById("{{ form.sales_order.id_for_label }}");
+  var customerSelect = document.getElementById("{{ form.customer.id_for_label }}");
+  var showAll = document.getElementById("{{ form.show_all_orders.id_for_label }}");
+  var itemsUrl = "{% url 'sales:customer_return_sales_order_items' %}";
+  var itemOptions = [];
+  var requestSeq = 0;
+
+  function option(label, value) {
+    var element = document.createElement("option");
+    element.value = value;
+    element.textContent = label;
+    return element;
+  }
+
+  function itemSelects() {
+    return Array.prototype.slice.call(document.querySelectorAll('select[name$="-sales_order_item"]'));
+  }
+
+  function rowInput(select, suffix) {
+    var prefix = select.name.replace(/sales_order_item$/, "");
+    return document.querySelector('[name="' + prefix + suffix + '"]');
+  }
+
+  function applyLineDefaults(select) {
+    var selected = itemOptions.find(function (item) {
+      return String(item.id) === String(select.value);
+    });
+    var materialInput = rowInput(select, "material");
+    var unitPriceInput = rowInput(select, "unit_price");
+    if (materialInput) {
+      materialInput.value = selected ? String(selected.material_id) : "";
+    }
+    if (selected && unitPriceInput && !unitPriceInput.value) {
+      unitPriceInput.value = selected.unit_price;
+    }
+  }
+
+  function renderSelect(select) {
+    var selectedValue = select.value || select.dataset.selectedValue || "";
+    select.innerHTML = "";
+    select.appendChild(option("请选择退货规格/型号", ""));
+    itemOptions.forEach(function (item) {
+      var element = option(item.label, item.id);
+      element.dataset.materialId = item.material_id;
+      element.dataset.unitPrice = item.unit_price;
+      element.dataset.returnableQty = item.returnable_qty;
+      select.appendChild(element);
+    });
+    if (itemOptions.some(function (item) { return String(item.id) === String(selectedValue); })) {
+      select.value = selectedValue;
+    }
+    applyLineDefaults(select);
+  }
+
+  function renderAllSelects() {
+    itemSelects().forEach(renderSelect);
+  }
+
+  function loadSalesItems() {
+    if (!orderSelect || !orderSelect.value) {
+      itemOptions = [];
+      renderAllSelects();
+      return;
+    }
+    var seq = ++requestSeq;
+    fetch(itemsUrl + "?sales_order=" + encodeURIComponent(orderSelect.value), {
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("sales order items request failed");
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (seq !== requestSeq) {
+          return;
+        }
+        itemOptions = data.items || [];
+        if (customerSelect && data.customer && data.customer.id) {
+          customerSelect.value = String(data.customer.id);
+        }
+        renderAllSelects();
+      })
+      .catch(function () {
+        if (seq === requestSeq) {
+          itemOptions = [];
+          renderAllSelects();
+        }
+      });
+  }
+
+  if (showAll) {
+    showAll.addEventListener("change", function () {
+      var url = new URL(window.location.href);
+      if (showAll.checked) {
+        url.searchParams.set("show_all_orders", "1");
+      } else {
+        url.searchParams.delete("show_all_orders");
+      }
+      window.location.href = url.toString();
+    });
+  }
+  if (orderSelect) {
+    orderSelect.addEventListener("change", loadSalesItems);
+  }
+  document.addEventListener("change", function (event) {
+    if (event.target && event.target.matches && event.target.matches('select[name$="-sales_order_item"]')) {
+      event.target.dataset.selectedValue = event.target.value;
+      applyLineDefaults(event.target);
+    }
+  });
+  var tableBody = document.querySelector("[data-formset-table] tbody");
+  if (tableBody && window.MutationObserver) {
+    new MutationObserver(function () {
+      renderAllSelects();
+    }).observe(tableBody, {childList: true});
+  }
+  itemSelects().forEach(function (select) {
+    select.dataset.selectedValue = select.value || "";
+  });
+  loadSalesItems();
+})();
+</script>
 {% endblock %}
