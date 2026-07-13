@@ -79,7 +79,7 @@
                 第 {{ item_form.instance.sales_order_item.line_no }} 行
                 {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
               </td>
-              <td>{{ item_form.instance.material.material_code }} {{ item_form.instance.material.material_name }}</td>
+              <td>{{ item_form.instance.material }}</td>
               <td>{{ item_form.shipment_qty }}{{ item_form.shipment_qty.errors }}</td>
               <td>{{ item_form.batch }}{{ item_form.batch.errors }}</td>
               <td>{{ item_form.location }}{{ item_form.location.errors }}</td>

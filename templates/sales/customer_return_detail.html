@@ -80,8 +80,7 @@
         {% for item in customer_return.items.all %}
           <tr>
             <td>
-              {{ item.material.material_code }} {{ item.material.material_name }}
-              {% if item.material.spec %}<div class="muted">{{ item.material.spec }}</div>{% endif %}
+              {{ item.material }}
               {% if item.sales_order_item.customer_model_remark %}
                 <div class="muted">客户型号/备注：{{ item.sales_order_item.customer_model_remark }}</div>
               {% endif %}

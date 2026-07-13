@@ -27,11 +27,13 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>生产指令单</h1>
 
   <section class="meta">
     <div class="cell"><div class="label">生产单号</div><div class="value">{{ production_order.production_order_no }}</div></div>
-    <div class="cell"><div class="label">成品</div><div class="value">{{ production_order.finished_material.material_code }} {{ production_order.finished_material.material_name }}</div></div>
+    <div class="cell"><div class="label">成品</div><div class="value">{{ production_order.finished_material }}</div></div>
     <div class="cell"><div class="label">生产数量</div><div class="value">{{ production_order.production_qty }}</div></div>
     <div class="cell"><div class="label">已入库</div><div class="value">{{ production_order.received_qty }}</div></div>
     <div class="cell"><div class="label">状态</div><div class="value">{{ production_order.get_status_display }}</div></div>
@@ -59,7 +61,7 @@
       {% for item in production_order.locked_bom.items.all %}
         <tr>
           <td>{{ item.line_no }}</td>
-          <td>{{ item.component_material.material_code }} {{ item.component_material.material_name }}</td>
+          <td>{{ item.component_material }}</td>
           <td>{{ item.usage_qty }}</td>
           <td>{{ item.usage_unit }}</td>
           <td>{{ item.loss_rate }}</td>
@@ -78,3 +80,4 @@
   </section>
 </body>
 </html>
+

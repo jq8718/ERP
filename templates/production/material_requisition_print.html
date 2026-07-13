@@ -83,6 +83,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>生产领料单</h1>
 
   <section class="meta">
@@ -116,7 +118,7 @@
     </div>
     <div class="cell">
       <div class="label">成品</div>
-      <div class="value">{{ requisition.production_order.finished_material.material_code }}</div>
+      <div class="value">{{ requisition.production_order.finished_material }}</div>
     </div>
   </section>
 
@@ -135,7 +137,7 @@
       {% for item in requisition.items.all %}
         <tr>
           <td>{{ item.line_no }}</td>
-          <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+          <td>{{ item.material }}</td>
           <td>{{ item.required_qty }}</td>
           <td>{{ item.issued_qty }}</td>
           <td>{{ item.batch.batch_no }}</td>
@@ -154,3 +156,4 @@
   </section>
 </body>
 </html>
+

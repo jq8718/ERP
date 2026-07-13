@@ -28,7 +28,7 @@
 <section class="detail-grid">
   <div class="detail-cell">
     <div class="detail-label">成品</div>
-    <div class="detail-value">{{ production_order.finished_material.material_code }}</div>
+    <div class="detail-value">{{ production_order.finished_material }}</div>
   </div>
   <div class="detail-cell">
     <div class="detail-label">生产数量</div>
@@ -112,7 +112,7 @@
         {% for item in production_order.locked_bom.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.component_material.material_code }} {{ item.component_material.material_name }}</td>
+            <td>{{ item.component_material }}</td>
             <td>{{ item.usage_qty }}</td>
             <td>{{ item.usage_unit }}</td>
             <td>{{ item.is_required|yesno:"是,否" }}</td>

@@ -27,6 +27,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>供应商退货单</h1>
 
   <section class="meta">
@@ -57,8 +59,7 @@
       {% for item in supplier_return.items.all %}
         <tr>
           <td>
-            {{ item.material.material_code }} {{ item.material.material_name }}
-            {% if item.material.spec %}<br>规格型号：{{ item.material.spec }}{% endif %}
+            {{ item.material }}
           </td>
           <td>{{ item.return_qty }}</td>
           <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
@@ -81,3 +82,4 @@
   </section>
 </body>
 </html>
+

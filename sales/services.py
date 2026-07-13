@@ -50,7 +50,7 @@ def confirm_sales_order(
             items = list(
                 SalesOrderItem.objects.select_for_update()
                 .filter(sales_order=sales_order)
-                .select_related("finished_material", "customer_product")
+                .select_related("finished_material")
                 .order_by("line_no")
             )
             if not items:

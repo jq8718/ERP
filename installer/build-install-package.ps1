@@ -146,6 +146,7 @@ $required = @(
     "installer\wheels\psycopg_binary-3.3.4-cp312-cp312-win_amd64.whl",
     "installer\templates\intranet.env.template",
     "installer\run-scheduled-task.ps1",
+    "installer\run-scheduled-task-hidden.js",
     "installer\logs\README.txt",
     "installer\tools\nssm.exe",
     (Join-Path "docs" $manualFileName)

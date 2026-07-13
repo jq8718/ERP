@@ -244,6 +244,40 @@ class SalesServiceTests(TestCase):
         self.assertTrue(alert.is_required)
         self.assertTrue(PendingEvent.objects.filter(event_type="shortage_created").exists())
 
+    def test_confirm_sales_order_accepts_internal_model_without_customer_product(self):
+        self._batch(self.raw, Decimal("1"))
+        order = SalesOrder.objects.create(
+            sales_order_no="SO-NO-CP",
+            customer=self.customer,
+            order_date=timezone.localdate(),
+            status=SalesOrder.Status.PENDING_APPROVAL,
+            total_amount=Decimal("20.00"),
+        )
+        item = SalesOrderItem.objects.create(
+            sales_order=order,
+            line_no=1,
+            customer_product=None,
+            finished_material=self.finished,
+            customer_model_remark="客户型号备注",
+            order_qty=Decimal("2.0000"),
+            unit_price=Decimal("10.0000"),
+            line_amount=Decimal("20.00"),
+            line_status=SalesOrderItem.LineStatus.PENDING_APPROVAL,
+        )
+
+        result = confirm_sales_order(order.id, self.user.id)
+
+        self.assertTrue(result.success)
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertIsNone(item.customer_product)
+        self.assertEqual(item.locked_bom, self.bom)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SHORTAGE)
+        alert = ShortageAlert.objects.get()
+        self.assertEqual(alert.material, self.raw)
+        self.assertEqual(alert.shortage_qty, Decimal("3.0000"))
+
     def test_confirm_sales_order_uses_bom_base_qty_and_loss_rate_for_shortage(self):
         self.bom.base_qty = Decimal("2.0000")
         self.bom.save(update_fields=["base_qty"])
@@ -732,7 +766,7 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.get("/sales/orders/new/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "公司内部型号")
+        self.assertContains(response, "产品/物料")
         self.assertContains(response, "FG001｜成品 1")
         self.assertNotContains(response, "客户产品 1")
         self.assertNotContains(response, "深圳市测试路 1 号")
@@ -1715,7 +1749,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertFalse(order.shortage_alerts.exists())
 
         detail_response = self.client.get(f"/sales/orders/{order.id}/")
-        self.assertContains(detail_response, "BOM 已维护，重新检查欠料")
+        self.assertContains(detail_response, "库存/BOM 已更新，重新检查可发货状态")
 
         self.bom.status = Bom.BomStatus.ENABLED
         self.bom.enabled_at = timezone.now()
@@ -1746,6 +1780,30 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(alert.shortage_qty, Decimal("15.0000"))
         audit_log = AuditLog.objects.get(action="sales_order_recheck_shortage", source_doc_id=order.id)
         self.assertEqual(audit_log.source_doc_no, order.sales_order_no)
+
+    def test_confirmed_shortage_order_can_recheck_after_finished_stock_received(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SHORTAGE)
+
+        detail_response = self.client.get(f"/sales/orders/{order.id}/")
+        self.assertContains(detail_response, "库存/BOM 已更新，重新检查可发货状态")
+
+        self._batch(self.finished, Decimal("10"))
+        response = self.client.post(f"/sales/orders/{order.id}/recheck-shortage/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/sales/orders/{order.id}/")
+        order.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(order.status, SalesOrder.Status.CONFIRMED)
+        self.assertEqual(item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SUFFICIENT)
+        self.assertTrue(order.shortage_alerts.filter(status=ShortageAlert.Status.CLOSED).exists())
 
     def test_pending_bom_recheck_handles_invalid_bom_without_server_error(self):
         self.client.force_login(self.user)
@@ -1780,7 +1838,7 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.get(f"/sales/orders/{order.id}/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "BOM 已维护，重新检查欠料")
+        self.assertNotContains(response, "库存/BOM 已更新，重新检查可发货状态")
 
     def test_sales_order_edit_updates_draft_order_and_writes_logs(self):
         self.client.force_login(self.user)

@@ -44,7 +44,7 @@
         <tbody>
           {% for item_form in item_formset.forms %}
             <tr>
-              <td>{{ item_form.instance.finished_material.material_code }} {{ item_form.instance.finished_material.material_name }}</td>
+              <td>{{ item_form.instance.finished_material }}</td>
               <td>{{ item_form.receipt_qty }}{{ item_form.receipt_qty.errors }}</td>
               <td>{{ item_form.location }}{{ item_form.location.errors }}</td>
               <td>{{ item_form.batch_no }}{{ item_form.batch_no.errors }}</td>

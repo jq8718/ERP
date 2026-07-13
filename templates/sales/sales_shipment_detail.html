@@ -94,7 +94,7 @@
         {% for item in shipment.items.all %}
           <tr>
             <td>{{ item.sales_order_item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material }}</td>
             <td>{{ item.shipment_qty }}</td>
             <td>{{ item.batch.batch_no }}</td>
             <td>{{ item.location.location_code }}</td>

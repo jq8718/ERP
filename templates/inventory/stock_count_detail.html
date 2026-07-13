@@ -62,7 +62,7 @@
       <tbody>
         {% for item in stock_count.items.all %}
           <tr>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material }}</td>
             <td>{{ item.batch.batch_no|default:"" }}</td>
             <td>{{ item.location.location_code }}</td>
             <td>{{ item.book_qty }}</td>
@@ -88,7 +88,7 @@
           <select name="material">
             <option value="">请选择</option>
             {% for material in materials %}
-              <option value="{{ material.pk }}">{{ material.material_code }} {{ material.material_name }}</option>
+              <option value="{{ material.pk }}">{{ material }}</option>
             {% endfor %}
           </select>
         </label>
@@ -104,7 +104,7 @@
           <select name="batch">
             <option value="">无批次盘盈</option>
             {% for batch in batches %}
-              <option value="{{ batch.pk }}">{{ batch.batch_no }} / {{ batch.material.material_code }} / {{ batch.location.location_code }} / {{ batch.remaining_qty }}</option>
+              <option value="{{ batch.pk }}">{{ batch.batch_no }} / {{ batch.material }} / {{ batch.location.location_code }} / {{ batch.remaining_qty }}</option>
             {% endfor %}
           </select>
         </label>

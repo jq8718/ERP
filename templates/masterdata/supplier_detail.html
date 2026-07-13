@@ -56,7 +56,7 @@
       <tbody>
         {% for row in supplier.material_prices.all %}
           <tr>
-            <td><a href="{% url 'masterdata:material_detail' row.material.pk %}">{{ row.material.material_code }} {{ row.material.material_name }}</a></td>
+            <td><a href="{% url 'masterdata:material_detail' row.material.pk %}">{{ row.material }}</a></td>
             <td>{% if can_view_amount %}{{ row.purchase_price }}{% else %}******{% endif %}</td>
             <td>{{ row.currency }}</td>
             <td>{{ row.is_default|yesno:"是,否" }}</td>

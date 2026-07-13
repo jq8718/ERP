@@ -169,7 +169,7 @@ class SalesOrderItemForm(forms.ModelForm):
         self.can_edit_amount = kwargs.pop("can_edit_amount", True)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
-        self.fields["finished_material"].label = "公司内部型号"
+        self.fields["finished_material"].label = "产品/物料"
         self.fields["finished_material"].required = False
         self.fields["finished_material"].queryset = (
             Material.objects.filter(
@@ -201,7 +201,7 @@ class SalesOrderItemForm(forms.ModelForm):
         else:
             self._legacy_customer_product = None
         if not finished_material and (order_qty or unit_price):
-            self.add_error("finished_material", "公司内部型号不能为空")
+            self.add_error("finished_material", "产品/物料不能为空")
         if finished_material and finished_material.material_type != Material.MaterialType.FINISHED:
             self.add_error("finished_material", "销售订单只能选择成品物料")
         if order_qty is not None and order_qty <= 0:
@@ -276,7 +276,7 @@ class BaseSalesOrderItemFormSet(BaseInlineFormSet):
             customer_product = form.cleaned_data.get("customer_product")
             material_id = finished_material.id if finished_material else customer_product.finished_material_id
             if material_id in seen_finished_materials:
-                form.add_error("finished_material", "同一销售订单中公司内部型号不能重复")
+                form.add_error("finished_material", "同一销售订单中产品/物料不能重复")
             seen_finished_materials.add(material_id)
 
     def save(self, commit=True):

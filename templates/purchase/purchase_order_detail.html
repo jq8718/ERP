@@ -135,8 +135,7 @@
             <option value="">请选择</option>
             {% for material in materials %}
               <option value="{{ material.pk }}">
-                {{ material.material_code }} {{ material.material_name }}
-                {% if material.spec %}｜规格型号：{{ material.spec }}{% endif %}
+                {{ material }}
                 {% if material.base_unit %}｜单位：{{ material.base_unit }}{% endif %}
               </option>
             {% endfor %}

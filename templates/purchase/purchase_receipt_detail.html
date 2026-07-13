@@ -67,7 +67,7 @@
       <tbody>
         {% for item in receipt.items.all %}
           <tr>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material }}</td>
             <td>{{ item.received_qty }}</td>
             <td>{{ item.accepted_qty }}</td>
             <td>{{ item.rejected_qty }}</td>

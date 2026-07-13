@@ -83,6 +83,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>生产入库单</h1>
 
   <section class="meta">
@@ -135,7 +137,7 @@
       {% for item in receipt.items.all %}
         <tr>
           <td>{{ item.line_no }}</td>
-          <td>{{ item.finished_material.material_code }} {{ item.finished_material.material_name }}</td>
+          <td>{{ item.finished_material }}</td>
           <td>{{ item.receipt_qty }}</td>
           <td>{{ item.location.location_code }}</td>
           <td>{{ item.batch.batch_no|default:item.batch_no }}</td>
@@ -154,3 +156,4 @@
   </section>
 </body>
 </html>
+

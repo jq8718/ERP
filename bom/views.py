@@ -177,14 +177,14 @@ class BomListView(ErpListView):
     detail_url_name = "bom:bom_detail"
     columns = (
         ("清单编号", "bom_no"),
-        ("成品", "finished_material.material_code"),
+        ("成品", "finished_material"),
         ("版本", "bom_version"),
         ("状态", "get_status_display"),
         ("默认", "is_default"),
     )
     ordering = ["-created_at"]
     page_actions = (("导出CSV", "bom:bom_export", ""),)
-    search_fields = ("bom_no", "finished_material__material_code", "finished_material__material_name", "bom_version")
+    search_fields = ("bom_no", "finished_material__material_code", "finished_material__material_name", "finished_material__spec", "bom_version")
     status_filter_field = "status"
     field_filters = (
         {"label": "清单编号", "param": "bom_no", "field": "bom_no", "placeholder": "BOM/清单编号"},
@@ -193,6 +193,13 @@ class BomListView(ErpListView):
         {"label": "型号", "param": "material_spec", "field": "finished_material__spec", "placeholder": "规格型号"},
         {"label": "版本", "param": "bom_version", "field": "bom_version", "placeholder": "版本"},
     )
+    sortable_fields = {
+        "bom_no": "bom_no",
+        "finished_material": "finished_material__material_code",
+        "bom_version": "bom_version",
+        "get_status_display": "status",
+        "is_default": "is_default",
+    }
 
     def get_queryset(self):
         return super().get_queryset().select_related("finished_material")

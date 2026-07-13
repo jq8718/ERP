@@ -93,7 +93,12 @@ class Material(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.material_code} {self.material_name}"
+        parts = [self.material_code, self.material_name]
+        if self.spec:
+            parts.append(f"规格型号：{self.spec}")
+        if self.base_unit:
+            parts.append(f"单位：{self.base_unit}")
+        return "｜".join(part for part in parts if part)
 
 
 class MaterialUnitConversion(TimeStampedModel):

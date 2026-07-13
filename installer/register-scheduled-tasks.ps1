@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $python = Join-Path $InstallDir ".venv\Scripts\python.exe"
 $manage = Join-Path $InstallDir "manage.py"
 $runner = Join-Path $PSScriptRoot "run-scheduled-task.ps1"
+$hiddenRunner = Join-Path $PSScriptRoot "run-scheduled-task-hidden.js"
 if (-not (Test-Path -LiteralPath $python)) {
     throw "Python virtualenv not found: $python"
 }
@@ -15,6 +16,9 @@ if (-not (Test-Path -LiteralPath $manage)) {
 }
 if (-not (Test-Path -LiteralPath $runner)) {
     throw "Scheduled task runner not found: $runner"
+}
+if (-not (Test-Path -LiteralPath $hiddenRunner)) {
+    throw "Hidden scheduled task runner not found: $hiddenRunner"
 }
 
 function Register-ErpTask {
@@ -28,7 +32,7 @@ function Register-ErpTask {
     )
 
     $taskName = "ERP $Name"
-    $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runner`" -InstallDir `"$InstallDir`" -CommandName `"$Arguments`""
+    $command = "wscript.exe `"$hiddenRunner`" `"$runner`" `"$InstallDir`" `"$Arguments`""
     $args = @("/Create", "/TN", $taskName, "/SC", $Schedule, "/TR", $command, "/F")
     if ($Time) {
         $args += @("/ST", $Time)

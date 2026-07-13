@@ -27,6 +27,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>客户退货单</h1>
 
   <section class="meta">
@@ -57,8 +59,7 @@
       {% for item in customer_return.items.all %}
         <tr>
           <td>
-            {{ item.material.material_code }} {{ item.material.material_name }}
-            {% if item.material.spec %}<br>{{ item.material.spec }}{% endif %}
+            {{ item.material }}
             {% if item.sales_order_item.customer_model_remark %}<br>客户型号/备注：{{ item.sales_order_item.customer_model_remark }}{% endif %}
           </td>
           <td>{{ item.return_qty }}</td>
@@ -82,3 +83,4 @@
   </section>
 </body>
 </html>
+

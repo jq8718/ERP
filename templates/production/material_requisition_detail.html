@@ -63,7 +63,7 @@
         {% for item in requisition.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material }}</td>
             <td>{{ item.required_qty }}</td>
             <td>{{ item.issued_qty }}</td>
             <td>{{ item.batch.batch_no }}</td>

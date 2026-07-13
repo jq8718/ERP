@@ -449,7 +449,7 @@ class SalesOrderDetailView(LoginRequiredMixin, DetailView):
         ]
         context["can_process_sales"] = can_process_sales
         context["can_confirm"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_APPROVAL
-        context["can_recheck_bom"] = can_process_sales and self.object.status == SalesOrder.Status.PENDING_BOM
+        context["can_recheck_inventory"] = can_process_sales and _sales_order_can_recheck_inventory(self.object)
         context["can_create_shipment"] = can_process_sales and _sales_order_has_shippable_items(self.object)
         context["invoice_summary"] = _sales_order_invoice_summary(self.object)
         context["attachment_panel"] = build_attachment_panel(
@@ -665,8 +665,8 @@ class SalesOrderRecheckShortageView(LoginRequiredMixin, View):
             messages.error(request, "销售订单不存在或无权限操作")
             return redirect("sales:sales_order_list")
 
-        if order.status != SalesOrder.Status.PENDING_BOM:
-            messages.error(request, "只有待 BOM 处理的销售订单需要重新检查欠料")
+        if not _sales_order_can_recheck_inventory(order):
+            messages.error(request, "当前销售订单无需重新检查库存/BOM")
             return redirect("sales:sales_order_detail", pk=pk)
 
         item_ids = list(order.items.values_list("id", flat=True))
@@ -814,14 +814,14 @@ class ShortageAlertListView(ErpListView):
     columns = (
         ("欠料号", "shortage_no"),
         ("销售订单", "sales_order.sales_order_no"),
-        ("物料", "material.material_code"),
+        ("物料", "material"),
         ("需求数量", "required_qty"),
         ("可用数量", "available_qty"),
         ("欠料数量", "shortage_qty"),
         ("状态", "get_status_display"),
     )
     ordering = ["-created_at"]
-    search_fields = ("shortage_no", "sales_order__sales_order_no", "material__material_code", "material__material_name")
+    search_fields = ("shortage_no", "sales_order__sales_order_no", "material__material_code", "material__material_name", "material__spec")
     status_filter_field = "status"
     field_filters = (
         {"label": "欠料号", "param": "shortage_no", "field": "shortage_no", "placeholder": "欠料号"},
@@ -833,7 +833,7 @@ class ShortageAlertListView(ErpListView):
     sortable_fields = {
         "shortage_no": "shortage_no",
         "sales_order.sales_order_no": "sales_order__sales_order_no",
-        "material.material_code": "material__material_code",
+        "material": "material__material_code",
         "required_qty": "required_qty",
         "available_qty": "available_qty",
         "shortage_qty": "shortage_qty",
@@ -2324,6 +2324,24 @@ def _sales_order_can_return_for_revision(order: SalesOrder) -> bool:
     if any(item.shipped_qty > 0 for item in order.items.all()):
         return False
     return not order.shipments.exclude(status=SalesShipment.Status.VOIDED).exists()
+
+
+def _sales_order_can_recheck_inventory(order: SalesOrder) -> bool:
+    if order.status not in [SalesOrder.Status.PENDING_BOM, SalesOrder.Status.CONFIRMED]:
+        return False
+    if any(item.shipped_qty > 0 for item in order.items.all()):
+        return False
+    return any(
+        item.line_status == SalesOrderItem.LineStatus.CONFIRMED
+        and item.inventory_check_status
+        in [
+            SalesOrderItem.InventoryCheckStatus.PENDING_BOM,
+            SalesOrderItem.InventoryCheckStatus.SHORTAGE,
+            SalesOrderItem.InventoryCheckStatus.KITTED,
+        ]
+        and item.order_qty > item.shipped_qty
+        for item in order.items.all()
+    )
 
 
 def _sales_order_has_shippable_items(order: SalesOrder) -> bool:

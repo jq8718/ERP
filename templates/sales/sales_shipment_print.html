@@ -33,12 +33,6 @@
       margin-bottom: 12px;
       color: #374151;
     }
-    .company strong {
-      display: block;
-      color: #111827;
-      font-size: 16px;
-      margin-bottom: 2px;
-    }
     .meta {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -95,9 +89,10 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>送货单</h1>
   <div class="company">
-    {% if company_info.name %}<strong>{{ company_info.name }}</strong>{% endif %}
     {% if company_info.address %}<span>地址：{{ company_info.address }}</span>{% endif %}
     {% if company_info.phone %}<span> 电话：{{ company_info.phone }}</span>{% endif %}
     {% if company_info.contact %}<span> 联系人：{{ company_info.contact }}</span>{% endif %}
@@ -165,7 +160,7 @@
       {% for item in shipment.items.all %}
         <tr>
           <td>{{ forloop.counter }}</td>
-          <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+          <td>{{ item.material }}</td>
           <td>{{ item.material.spec }}</td>
           <td>{{ item.material.base_unit }}</td>
           <td>{{ item.shipment_qty }}</td>
@@ -192,3 +187,4 @@
   </section>
 </body>
 </html>
+

@@ -75,8 +75,7 @@
           <tr>
             <td>{{ item.line_no }}</td>
             <td>
-              {{ item.material.material_code }} {{ item.material.material_name }}
-              {% if item.material.spec %}<br><span class="muted">型号：{{ item.material.spec }}</span>{% endif %}
+              {{ item.material }}
             </td>
             <td>{{ item.loan_qty }}</td>
             <td>{{ item.returned_qty }}</td>
@@ -147,7 +146,7 @@
           <select name="sample_loan_item">
             <option value="">请选择</option>
             {% for row in convertible_items %}
-              <option value="{{ row.item.pk }}">第 {{ row.item.line_no }} 行 / {{ row.item.material.material_code }} / 可转 {{ row.available_qty }}</option>
+              <option value="{{ row.item.pk }}">第 {{ row.item.line_no }} 行 / {{ row.item.material }} / 可转 {{ row.available_qty }}</option>
             {% endfor %}
           </select>
         </label>

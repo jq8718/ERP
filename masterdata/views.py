@@ -1005,7 +1005,7 @@ class CustomerProductListView(ErpListView):
         ("客户", "customer.customer_name"),
         ("客户产品编号", "customer_product_no"),
         ("客户产品名称", "customer_product_name"),
-        ("关联成品", "finished_material.material_code"),
+        ("关联成品", "finished_material"),
         ("状态", "get_status_display"),
     )
     ordering = ["customer_id", "customer_product_no"]
@@ -1015,6 +1015,7 @@ class CustomerProductListView(ErpListView):
         "customer_product_name",
         "finished_material__material_code",
         "finished_material__material_name",
+        "finished_material__spec",
     )
     status_filter_field = "status"
     field_filters = (
@@ -1024,6 +1025,13 @@ class CustomerProductListView(ErpListView):
         {"label": "成品编码", "param": "finished_material_code", "field": "finished_material__material_code", "placeholder": "成品编码"},
         {"label": "成品型号", "param": "finished_material_spec", "field": "finished_material__spec", "placeholder": "成品型号"},
     )
+    sortable_fields = {
+        "customer.customer_name": "customer__customer_name",
+        "customer_product_no": "customer_product_no",
+        "customer_product_name": "customer_product_name",
+        "finished_material": "finished_material__material_code",
+        "get_status_display": "status",
+    }
     page_actions = (
         ("导出CSV", "masterdata:customer_product_export", ""),
         ("下载导入模板", "masterdata:customer_product_import_template", ""),

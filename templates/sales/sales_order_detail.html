@@ -29,10 +29,10 @@
       <button class="button" type="submit">退回修改</button>
     </form>
   {% endif %}
-  {% if can_recheck_bom %}
+  {% if can_recheck_inventory %}
     <form method="post" action="{% url 'sales:sales_order_recheck_shortage' order.pk %}">
       {% csrf_token %}
-      <button class="button primary" type="submit">BOM 已维护，重新检查欠料</button>
+      <button class="button primary" type="submit">库存/BOM 已更新，重新检查可发货状态</button>
     </form>
   {% endif %}
   {% if can_create_shipment %}
@@ -113,7 +113,7 @@
       <thead>
         <tr>
           <th>行号</th>
-          <th>公司内部型号</th>
+          <th>产品/物料</th>
           <th>客户型号/备注</th>
           <th>数量</th>
           <th>已发货</th>
@@ -129,8 +129,7 @@
           <tr>
             <td>{{ item.line_no }}</td>
             <td>
-              {{ item.finished_material.material_code }} {{ item.finished_material.material_name }}
-              {% if item.finished_material.spec %}<div class="muted">{{ item.finished_material.spec }}</div>{% endif %}
+              {{ item.finished_material }}
             </td>
             <td>
               {{ item.customer_model_remark|default:"" }}
@@ -172,7 +171,7 @@
         {% for shortage in order.shortage_alerts.all %}
           <tr>
             <td>{{ shortage.shortage_no }}</td>
-            <td>{{ shortage.material.material_code }}</td>
+            <td>{{ shortage.material }}</td>
             <td>{{ shortage.required_qty }}</td>
             <td>{{ shortage.available_qty }}</td>
             <td>{{ shortage.shortage_qty }}</td>

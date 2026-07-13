@@ -83,6 +83,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>借样归还单</h1>
 
   <section class="meta">
@@ -136,7 +138,7 @@
       {% for item in sample_return.items.all %}
         <tr>
           <td>{{ item.sample_loan_item.line_no }}</td>
-          <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+          <td>{{ item.material }}</td>
           <td>{{ item.return_qty }}</td>
           <td>{{ item.location.location_code }}</td>
           <td>{{ item.inventory_type }}</td>
@@ -156,3 +158,4 @@
   </section>
 </body>
 </html>
+

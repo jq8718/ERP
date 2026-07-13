@@ -52,7 +52,7 @@
     {% if shortages %}
       <ul class="panel-list">
         {% for shortage in shortages %}
-          <li>{{ shortage.shortage_no }} · {{ shortage.material.material_code }} · 欠 {{ shortage.shortage_qty }}</li>
+          <li>{{ shortage.shortage_no }} · {{ shortage.material }} · 欠 {{ shortage.shortage_qty }}</li>
         {% endfor %}
       </ul>
     {% else %}

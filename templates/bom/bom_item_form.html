@@ -19,7 +19,7 @@
         <select name="component_material">
           {% for material in component_materials %}
             <option value="{{ material.pk }}" {% if material.pk == item.component_material_id %}selected{% endif %}>
-              {{ material.material_code }} {{ material.material_name }}
+              {{ material }}
             </option>
           {% endfor %}
         </select>

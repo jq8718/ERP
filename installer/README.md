@@ -53,5 +53,5 @@ http://服务器IP:8000/
 - 轻量安装器默认不自动安装 Python/PostgreSQL/Git，因为这些安装过程需要管理员权限和现场确认。
 - 如果 `preflight-prerequisites.ps1` 提示缺少组件，可从 `installer/packages/` 中手动安装对应安装包。
 - `install-erp.ps1` 可以重复执行；它会复用现有 `.env`，不会覆盖已有管理员密码。
-- `register-scheduled-tasks.ps1` 会通过隐藏 PowerShell 运行计划任务，避免服务器桌面每 5 分钟弹出 CMD 黑色窗口；任务输出写入 `logs\scheduled-*.log`。
+- `register-scheduled-tasks.ps1` 会通过 `wscript.exe` 调用 `run-scheduled-task-hidden.js` 隐藏运行计划任务，避免服务器桌面每 5 分钟弹出 CMD 黑色窗口；任务输出写入 `logs\scheduled-*.log`。
 - `ERP-Setup.exe` 和 `ERP-Uninstall.exe` 是小型启动器，不包含全部安装包和项目文件；复制到服务器时必须保留完整项目目录和 `installer\packages\`。

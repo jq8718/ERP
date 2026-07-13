@@ -60,7 +60,7 @@
           <tr>
             <td><a href="{% url 'masterdata:customer_product_detail' product.pk %}">{{ product.customer_product_no }}</a></td>
             <td>{{ product.customer_product_name }}</td>
-            <td>{{ product.finished_material.material_code|default:"" }}</td>
+            <td>{{ product.finished_material|default:"" }}</td>
             <td>{% if can_view_amount %}{{ product.default_sale_price|default:"" }}{% else %}******{% endif %}</td>
             <td>{{ product.get_status_display }}</td>
           </tr>

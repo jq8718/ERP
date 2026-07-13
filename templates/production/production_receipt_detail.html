@@ -63,7 +63,7 @@
         {% for item in receipt.items.all %}
           <tr>
             <td>{{ item.line_no }}</td>
-            <td>{{ item.finished_material.material_code }} {{ item.finished_material.material_name }}</td>
+            <td>{{ item.finished_material }}</td>
             <td>{{ item.receipt_qty }}</td>
             <td>{{ item.location.location_code }}</td>
             <td>{{ item.batch.batch_no|default:"" }}</td>

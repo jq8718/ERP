@@ -85,6 +85,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>销售订单</h1>
 
   <section class="meta">
@@ -126,7 +128,7 @@
     <thead>
       <tr>
         <th>行号</th>
-        <th>公司内部型号</th>
+        <th>产品/物料</th>
         <th>客户型号/备注</th>
         <th>数量</th>
         <th>已发货</th>
@@ -140,8 +142,7 @@
         <tr>
           <td>{{ item.line_no }}</td>
           <td>
-            {{ item.finished_material.material_code }} {{ item.finished_material.material_name }}
-            {% if item.finished_material.spec %}<br>{{ item.finished_material.spec }}{% endif %}
+            {{ item.finished_material }}
           </td>
           <td>
             {{ item.customer_model_remark|default:"" }}
@@ -168,3 +169,4 @@
   </section>
 </body>
 </html>
+

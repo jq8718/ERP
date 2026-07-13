@@ -83,6 +83,8 @@
     <button type="button" onclick="window.close()">关闭</button>
   </div>
 
+  {% include "common/print_company_header.html" %}
+
   <h1>库位移库单</h1>
 
   <section class="meta">
@@ -104,7 +106,7 @@
     </div>
     <div class="cell">
       <div class="label">物料</div>
-      <div class="value">{{ transfer.material.material_code }} {{ transfer.material.material_name }}</div>
+      <div class="value">{{ transfer.material }}</div>
     </div>
     <div class="cell">
       <div class="label">批次</div>
@@ -125,6 +127,7 @@
       <tr>
         <th>物料编码</th>
         <th>物料名称</th>
+        <th>规格型号</th>
         <th>批次</th>
         <th>原库位</th>
         <th>目标库位</th>
@@ -135,6 +138,7 @@
       <tr>
         <td>{{ transfer.material.material_code }}</td>
         <td>{{ transfer.material.material_name }}</td>
+        <td>{{ transfer.material.spec|default:"" }}</td>
         <td>{{ transfer.batch.batch_no }}</td>
         <td>{{ transfer.from_location.location_code }}</td>
         <td>{{ transfer.to_location.location_code }}</td>
@@ -150,3 +154,4 @@
   </section>
 </body>
 </html>
+

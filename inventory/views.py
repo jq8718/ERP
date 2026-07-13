@@ -288,7 +288,7 @@ class InventoryBatchListView(ErpListView):
     detail_url_name = "inventory:inventory_batch_detail"
     columns = (
         ("批次号", "batch_no"),
-        ("物料", "material.material_code"),
+        ("物料", "material"),
         ("库位", "location.location_code"),
         ("库存类型", "get_inventory_type_display"),
         ("剩余数量", "remaining_qty"),
@@ -296,7 +296,7 @@ class InventoryBatchListView(ErpListView):
     )
     ordering = ["material_id", "location_id", "received_at"]
     page_actions = (("导出CSV", "inventory:inventory_batch_export", ""),)
-    search_fields = ("batch_no", "material__material_code", "material__material_name", "location__location_code")
+    search_fields = ("batch_no", "material__material_code", "material__material_name", "material__spec", "location__location_code")
     status_filter_field = "batch_status"
     field_filters = (
         {"label": "批次号", "param": "batch_no", "field": "batch_no", "placeholder": "批次号"},
@@ -315,7 +315,7 @@ class InventoryBatchListView(ErpListView):
     )
     sortable_fields = {
         "batch_no": "batch_no",
-        "material.material_code": "material__material_code",
+        "material": "material__material_code",
         "location.location_code": "location__location_code",
         "get_inventory_type_display": "inventory_type",
         "remaining_qty": "remaining_qty",
@@ -356,7 +356,7 @@ class InventoryTransactionListView(ErpListView):
     columns = (
         ("流水号", "transaction_no"),
         ("类型", "get_transaction_type_display"),
-        ("物料", "material.material_code"),
+        ("物料", "material"),
         ("库位", "location.location_code"),
         ("数量变化", "qty_delta"),
         ("创建时间", "created_at"),
@@ -369,6 +369,7 @@ class InventoryTransactionListView(ErpListView):
         "source_doc_type",
         "material__material_code",
         "material__material_name",
+        "material__spec",
         "location__location_code",
         "batch__batch_no",
     )
@@ -386,11 +387,12 @@ class InventoryTransactionListView(ErpListView):
     sortable_fields = {
         "transaction_no": "transaction_no",
         "get_transaction_type_display": "transaction_type",
-        "material.material_code": "material__material_code",
+        "material": "material__material_code",
         "location.location_code": "location__location_code",
         "qty_delta": "qty_delta",
         "created_at": "created_at",
     }
+
 
 
 class InventoryTransactionDetailView(LoginRequiredMixin, DetailView):
@@ -640,7 +642,7 @@ class LocationTransferListView(ErpListView):
     detail_url_name = "inventory:location_transfer_detail"
     columns = (
         ("移库单号", "transfer_no"),
-        ("物料", "material.material_code"),
+        ("物料", "material"),
         ("批次", "batch.batch_no"),
         ("原库位", "from_location.location_code"),
         ("目标库位", "to_location.location_code"),
@@ -649,7 +651,15 @@ class LocationTransferListView(ErpListView):
     )
     ordering = ["-created_at"]
     page_actions = (("导出CSV", "inventory:location_transfer_export", ""),)
-    search_fields = ("transfer_no", "material__material_code", "batch__batch_no", "from_location__location_code", "to_location__location_code")
+    search_fields = (
+        "transfer_no",
+        "material__material_code",
+        "material__material_name",
+        "material__spec",
+        "batch__batch_no",
+        "from_location__location_code",
+        "to_location__location_code",
+    )
     status_filter_field = "status"
     field_filters = (
         {"label": "移库单号", "param": "transfer_no", "field": "transfer_no", "placeholder": "移库单号"},
@@ -660,6 +670,15 @@ class LocationTransferListView(ErpListView):
         {"label": "原库位", "param": "from_location_code", "field": "from_location__location_code", "placeholder": "原库位"},
         {"label": "目标库位", "param": "to_location_code", "field": "to_location__location_code", "placeholder": "目标库位"},
     )
+    sortable_fields = {
+        "transfer_no": "transfer_no",
+        "material": "material__material_code",
+        "batch.batch_no": "batch__batch_no",
+        "from_location.location_code": "from_location__location_code",
+        "to_location.location_code": "to_location__location_code",
+        "transfer_qty": "transfer_qty",
+        "get_status_display": "status",
+    }
 
 
 class LocationTransferExportView(InventoryCsvExportView):

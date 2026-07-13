@@ -70,7 +70,7 @@
         {% for item in sample_return.items.all %}
           <tr>
             <td>{{ item.sample_loan_item.line_no }}</td>
-            <td>{{ item.material.material_code }} {{ item.material.material_name }}</td>
+            <td>{{ item.material }}</td>
             <td>{{ item.return_qty }}</td>
             <td>{{ item.location.location_code }}</td>
             <td>{{ item.inventory_type }}</td>

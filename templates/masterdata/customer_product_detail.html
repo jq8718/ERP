@@ -26,7 +26,7 @@
     <div class="detail-label">关联成品</div>
     <div class="detail-value">
       {% if product.finished_material %}
-        <a href="{% url 'masterdata:material_detail' product.finished_material.pk %}">{{ product.finished_material.material_code }} {{ product.finished_material.material_name }}</a>
+        <a href="{% url 'masterdata:material_detail' product.finished_material.pk %}">{{ product.finished_material }}</a>
       {% else %}
         -
       {% endif %}

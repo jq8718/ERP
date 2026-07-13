@@ -50,7 +50,7 @@ class ProductionOrderListView(ErpListView):
     detail_url_name = "production:production_order_detail"
     columns = (
         ("生产单号", "production_order_no"),
-        ("成品", "finished_material.material_code"),
+        ("成品", "finished_material"),
         ("生产数量", "production_qty"),
         ("已入库", "received_qty"),
         ("状态", "get_status_display"),
@@ -65,7 +65,7 @@ class ProductionOrderListView(ErpListView):
         "production:production_order_import_template": PermissionCode.PRODUCTION_PROCESS,
         "production:production_order_import": PermissionCode.PRODUCTION_PROCESS,
     }
-    search_fields = ("production_order_no", "finished_material__material_code", "finished_material__material_name")
+    search_fields = ("production_order_no", "finished_material__material_code", "finished_material__material_name", "finished_material__spec")
     status_filter_field = "status"
     field_filters = (
         {"label": "生产单号", "param": "production_order_no", "field": "production_order_no", "placeholder": "生产单号"},
@@ -75,7 +75,7 @@ class ProductionOrderListView(ErpListView):
     )
     sortable_fields = {
         "production_order_no": "production_order_no",
-        "finished_material.material_code": "finished_material__material_code",
+        "finished_material": "finished_material__material_code",
         "production_qty": "production_qty",
         "received_qty": "received_qty",
         "get_status_display": "status",
