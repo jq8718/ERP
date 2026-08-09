@@ -734,7 +734,8 @@ class FinanceServiceTests(TestCase):
 
         self.assertContains(receipt_response, "/finance/customer-receipts/new/")
         self.assertContains(payment_response, "/finance/supplier-payments/new/")
-        self.assertContains(reconciliation_response, "/finance/reconciliations/new/")
+        self.assertContains(reconciliation_response, "/finance/customer-reconciliations/new/")
+        self.assertContains(reconciliation_response, "/finance/production-reconciliations/new/")
 
     def test_customer_receipt_export_masks_amount_and_filter_matches_list(self):
         self.client.force_login(self.user)
@@ -1594,6 +1595,9 @@ class FinanceServiceTests(TestCase):
 
         detail_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/")
         self.assertContains(detail_response, order.sales_order_no)
+        self.assertContains(detail_response, self.finished.material_code)
+        self.assertContains(detail_response, self.finished.material_name)
+        self.assertContains(detail_response, "展开")
         self.assertContains(detail_response, "70.00")
         self.assertContains(detail_response, f"/finance/reconciliations/{reconciliation.id}/print/")
 
@@ -1772,11 +1776,29 @@ class FinanceServiceTests(TestCase):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.SALES_PROCESS)
         order = self._sales_order(no="SO-SALES-REC", amount=Decimal("100.00"))
+        inactive_customer = Customer.objects.create(
+            customer_no="C-INACTIVE-REC",
+            customer_name="停用客户",
+            status=Customer.CustomerStatus.INACTIVE,
+            sales_owner=self.user,
+        )
+        SalesOrder.objects.create(
+            sales_order_no="SO-INACTIVE-REC",
+            customer=inactive_customer,
+            order_date=timezone.localdate(),
+            status=SalesOrder.Status.SHIPPED,
+            total_amount=Decimal("50.00"),
+        )
+
+        candidate_response = self.client.get("/finance/customer-reconciliations/new/")
+
+        self.assertContains(candidate_response, self.customer.customer_name)
+        self.assertContains(candidate_response, "SO-SALES-REC", count=0)
+        self.assertNotContains(candidate_response, inactive_customer.customer_name)
 
         response = self.client.post(
-            "/finance/reconciliations/new/",
+            "/finance/customer-reconciliations/new/",
             {
-                "party_type": Reconciliation.PartyType.CUSTOMER,
                 "customer": self.customer.id,
                 "period_start": timezone.localdate().isoformat(),
                 "period_end": timezone.localdate().isoformat(),
@@ -1796,6 +1818,11 @@ class FinanceServiceTests(TestCase):
         self.assertContains(print_response, order.sales_order_no)
         self.assertContains(print_response, "KBL-500-600-W-OP")
         self.assertContains(print_response, "本期应确认金额")
+
+        detail_response = self.client.get(f"/finance/reconciliations/{reconciliation.id}/")
+        self.assertContains(detail_response, self.finished.material_code)
+        self.assertContains(detail_response, "10.0000")
+        self.assertContains(detail_response, "10.0000")
 
     def test_sales_process_cannot_create_supplier_reconciliation(self):
         self.client.force_login(self.user)
@@ -1822,10 +1849,14 @@ class FinanceServiceTests(TestCase):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.PURCHASE_PROCESS)
 
+        candidate_response = self.client.get("/finance/production-reconciliations/new/")
+        self.assertContains(candidate_response, own_receipt.supplier.supplier_name)
+        self.assertContains(candidate_response, "100.00")
+        self.assertNotContains(candidate_response, other_receipt.purchase_receipt_no)
+
         response = self.client.post(
-            "/finance/reconciliations/new/",
+            "/finance/production-reconciliations/new/",
             {
-                "party_type": Reconciliation.PartyType.SUPPLIER,
                 "supplier": self.supplier.id,
                 "period_start": timezone.localdate().isoformat(),
                 "period_end": timezone.localdate().isoformat(),

@@ -3,6 +3,11 @@
 {% block content %}
 <h1>{{ page_title }}</h1>
 
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:customer_return_workbench' %}">从销售单选择</a>
+  <a class="button" href="{% url 'sales:customer_return_list' %}">退货单记录</a>
+</div>
+
 <form method="post">
   {% csrf_token %}
   {{ form.non_field_errors }}
@@ -12,12 +17,6 @@
         <label for="{{ form.sales_order.id_for_label }}">来源销售订单</label>
         {{ form.sales_order }}
         {{ form.sales_order.errors }}
-        <div class="muted" style="margin-top: 4px;">
-          默认显示最近一周已发货/已完成订单。
-          <label style="display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;">
-            {{ form.show_all_orders }} 显示全部销售订单
-          </label>
-        </div>
       </div>
       <div class="form-row">
         <label for="{{ form.customer.id_for_label }}">客户</label>
@@ -118,7 +117,6 @@
 (function () {
   var orderSelect = document.getElementById("{{ form.sales_order.id_for_label }}");
   var customerSelect = document.getElementById("{{ form.customer.id_for_label }}");
-  var showAll = document.getElementById("{{ form.show_all_orders.id_for_label }}");
   var itemsUrl = "{% url 'sales:customer_return_sales_order_items' %}";
   var itemOptions = [];
   var requestSeq = 0;
@@ -209,17 +207,6 @@
       });
   }
 
-  if (showAll) {
-    showAll.addEventListener("change", function () {
-      var url = new URL(window.location.href);
-      if (showAll.checked) {
-        url.searchParams.set("show_all_orders", "1");
-      } else {
-        url.searchParams.delete("show_all_orders");
-      }
-      window.location.href = url.toString();
-    });
-  }
   if (orderSelect) {
     orderSelect.addEventListener("change", loadSalesItems);
   }

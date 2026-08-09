@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load erp_extras %}
 
 {% block content %}
 <h1>{{ customer_return.return_no }}</h1>
@@ -89,7 +90,7 @@
             <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
             <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
             <td>{{ item.location.location_code|default:"" }}</td>
-            <td>{{ item.inventory_type }}</td>
+            <td>{{ item.inventory_type|inventory_type_name }}</td>
             <td>
               {% if item.sales_order_item %}
                 <a href="{% url 'sales:sales_order_detail' item.sales_order_item.sales_order.pk %}">

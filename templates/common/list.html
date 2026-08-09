@@ -61,7 +61,7 @@
       {% endfor %}
       <button class="button primary" type="submit">筛选</button>
       {% if active_query_string %}
-        <a class="button" href="{{ request.path }}">清除</a>
+        <a class="button" href="{{ clear_filter_url }}">清除</a>
       {% endif %}
     </div>
   </form>
@@ -159,7 +159,7 @@
   {% else %}
     <div class="empty">
       <strong>{% if is_filtered_list %}筛选无结果{% else %}暂无数据{% endif %}</strong>
-      <p>{{ empty_message }}</p>
+      <p>{% if active_scope_label %}当前范围：{{ active_scope_label }}。{% endif %}{{ empty_message }}</p>
       <div class="form-actions" style="justify-content: center;">
         {% if empty_clear_url %}
           <a class="button" href="{{ empty_clear_url }}">清除筛选</a>

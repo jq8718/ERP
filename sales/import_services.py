@@ -55,13 +55,14 @@ SAMPLE_LOAN_IMPORT_COLUMNS = (
     "batch_no",
     "location_code",
     "line_expected_return_date",
+    "line_remark",
     "remark",
 )
 
 SAMPLE_LOAN_IMPORT_TEMPLATE_ROWS = (
     csv_import_header_row(SAMPLE_LOAN_IMPORT_COLUMNS),
-    ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG001", "2", "BATCH001", "A01", "2026-06-20", "示例行，导入前可删除"),
-    ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG002", "1", "", "", "2026-06-22", ""),
+    ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG001", "2", "BATCH001", "A01", "2026-06-20", "样品外观完好", "示例行，导入前可删除"),
+    ("SL-INIT-001", "C001", "2026-06-10", "2026-06-20", "FG002", "1", "", "", "2026-06-22", "待仓库配批次", ""),
 )
 
 CUSTOMER_RETURN_IMPORT_COLUMNS = (
@@ -190,6 +191,7 @@ def import_sample_loans_from_csv(file_obj: TextIOBase, operator_id: int | None =
                         batch=line["batch"],
                         location=line["location"],
                         line_status=SampleLoanItem.LineStatus.OUT,
+                        remark=line["remark"],
                     )
                 created_count += 1
         return _import_success(job, created_count, "借样单导入完成")
@@ -535,6 +537,7 @@ def _validate_sample_loan_rows(rows: list[dict]) -> tuple[list[dict], OrderedDic
                 "expected_return_date": line_expected_return_date,
                 "batch": batch,
                 "location": location,
+                "remark": _clean(row.get("line_remark")),
             }
         )
 

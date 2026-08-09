@@ -825,6 +825,8 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn("物料编码,库位编码,批次号,库存类型,期初数量", content)
         self.assertIn("OPEN-RM001-A01-001", content)
+        self.assertIn("可用", content)
+        self.assertNotIn("available", content)
 
     def test_initial_inventory_import_template_requires_inventory_process_permission(self):
         self.client.force_login(self.user)
@@ -840,8 +842,8 @@ class StockCountAdjustmentServiceTests(TestCase):
             "initial_inventory.csv",
             (
                 "物料编码,库位编码,批次号,库存类型,期初数量,成本单价,入库时间\n"
-                "RM001,A01,OPEN-RM001-A01,available,12.5000,3.210000,2026-06-09\n"
-                "RM001,B01,,sample,2.0000,,2026-06-09T09:30:00\n"
+                "RM001,A01,OPEN-RM001-A01,可用,12.5000,3.210000,2026-06-09\n"
+                "RM001,B01,,样品,2.0000,,2026-06-09T09:30:00\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
         )
@@ -860,6 +862,9 @@ class StockCountAdjustmentServiceTests(TestCase):
         detail_response = self.client.get(reverse("files:initialization_job_detail", kwargs={"pk": job.id}))
         self.assertContains(detail_response, "确认入账")
         self.assertContains(detail_response, "OPEN-RM001-A01")
+        self.assertContains(detail_response, "可用")
+        self.assertContains(detail_response, "样品")
+        self.assertNotContains(detail_response, ">available<", html=False)
 
         confirm_response = self.client.post(
             reverse("inventory:initial_inventory_confirm", kwargs={"pk": job.id}),

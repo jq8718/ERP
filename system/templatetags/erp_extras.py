@@ -44,6 +44,13 @@ def field_name(value):
     return field_label(value)
 
 
+@register.filter
+def inventory_type_name(value):
+    from inventory.models import InventoryBatch
+
+    return dict(InventoryBatch.InventoryType.choices).get(value, value or "")
+
+
 @register.simple_tag
 def source_doc_url(user, source_doc_type, source_doc_id):
     from files.permissions import can_access_source_doc, resolve_source_doc_url

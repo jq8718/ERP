@@ -1,4 +1,3 @@
-from datetime import timedelta
 from decimal import Decimal
 
 from django import forms
@@ -44,6 +43,23 @@ def sample_loan_batch_label(batch: InventoryBatch) -> str:
             parts.append(batch.location.location_name)
     parts.append(f"可用：{batch.remaining_qty}")
     return "｜".join(part for part in parts if part)
+
+
+def sample_loan_item_label(item: "SampleLoanItem") -> str:
+    material = item.material
+    available_qty = item.loan_qty - item.returned_qty - item.sold_qty
+    parts = [f"第 {item.line_no} 行", material.material_code, material.material_name]
+    if material.spec:
+        parts.append(f"型号：{material.spec}")
+    if item.batch_id:
+        parts.append(f"批次：{item.batch.batch_no}")
+    if item.location_id:
+        parts.append(f"库位：{item.location.location_code}")
+    parts.append(f"借出：{item.loan_qty}")
+    parts.append(f"已归还：{item.returned_qty}")
+    parts.append(f"已转销售：{item.sold_qty}")
+    parts.append(f"可归还：{available_qty}")
+    return "｜".join(str(part) for part in parts if part not in [None, ""])
 
 
 def customer_return_sales_order_label(order: SalesOrder) -> str:
@@ -339,8 +355,6 @@ def _money(value: Decimal) -> Decimal:
 
 
 class CustomerReturnForm(forms.ModelForm):
-    show_all_orders = forms.BooleanField(required=False, label="显示全部销售订单")
-
     class Meta:
         model = CustomerReturn
         fields = ["customer", "sales_order", "return_date", "remark"]
@@ -353,8 +367,6 @@ class CustomerReturnForm(forms.ModelForm):
         sales_order_queryset = kwargs.pop("sales_order_queryset", None)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
-        show_all_orders = self._show_all_orders()
-        selected_order_id = self._selected_sales_order_id()
         self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["customer"].required = False
         if sales_order_queryset is None:
@@ -363,29 +375,10 @@ class CustomerReturnForm(forms.ModelForm):
                 .filter(status__in=[SalesOrder.Status.SHIPPED, SalesOrder.Status.COMPLETED], items__shipped_qty__gt=0)
                 .distinct()
             )
-        if not show_all_orders:
-            recent_from = timezone.localdate() - timedelta(days=7)
-            date_filter = Q(order_date__gte=recent_from)
-            if selected_order_id:
-                date_filter |= Q(pk=selected_order_id)
-            sales_order_queryset = sales_order_queryset.filter(date_filter)
         self.fields["sales_order"].queryset = sales_order_queryset.select_related("customer").order_by("-order_date", "-id")
         self.fields["sales_order"].label_from_instance = customer_return_sales_order_label
         self.fields["sales_order"].required = True
-        self.fields["show_all_orders"].initial = show_all_orders
         self.fields["return_date"].initial = self.fields["return_date"].initial or timezone.localdate()
-
-    def _show_all_orders(self) -> bool:
-        if self.is_bound:
-            return self.data.get(self.add_prefix("show_all_orders")) in ["1", "true", "on", "yes"]
-        return bool(self.initial.get("show_all_orders"))
-
-    def _selected_sales_order_id(self):
-        if self.is_bound:
-            return self.data.get(self.add_prefix("sales_order")) or None
-        if self.instance and self.instance.pk:
-            return self.instance.sales_order_id
-        return self.initial.get("sales_order")
 
     def clean(self):
         cleaned = super().clean()
@@ -462,6 +455,8 @@ class CustomerReturnItemForm(forms.ModelForm):
             status=WarehouseLocation.LocationStatus.ACTIVE
         ).order_by("location_code")
         self.fields["location"].required = False
+        self.fields["inventory_type"].choices = InventoryBatch.InventoryType.choices
+        self.fields["inventory_type"].widget = forms.Select(choices=InventoryBatch.InventoryType.choices)
         self.fields["inventory_type"].initial = self.fields["inventory_type"].initial or InventoryBatch.InventoryType.AVAILABLE
 
     def clean(self):
@@ -754,18 +749,25 @@ class SampleLoanForm(forms.ModelForm):
 
 
 class SampleLoanItemForm(forms.ModelForm):
+    material_search = forms.CharField(required=False)
+
     class Meta:
         model = SampleLoanItem
-        fields = ["material", "loan_qty", "expected_return_date", "batch", "location"]
-        widgets = {"expected_return_date": forms.DateInput(attrs={"type": "date"})}
+        fields = ["material", "loan_qty", "expected_return_date", "batch", "location", "remark"]
+        widgets = {
+            "expected_return_date": forms.DateInput(attrs={"type": "date"}),
+            "remark": forms.Textarea(attrs={"rows": 2}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         set_form_labels(self)
+        self.fields["material_search"].label = "物料名称/编码/型号"
         self.fields["material"].queryset = Material.objects.filter(
             status=Material.MaterialStatus.ACTIVE,
             material_type=Material.MaterialType.FINISHED,
         ).order_by("material_code")
+        self.fields["material"].required = False
         self.fields["material"].label_from_instance = material_choice_label
         self.fields["material"].widget.attrs["style"] = "display:none;"
         self.fields["batch"].queryset = InventoryBatch.objects.filter(
@@ -782,15 +784,27 @@ class SampleLoanItemForm(forms.ModelForm):
         ).order_by("location_code")
         self.fields["location"].widget.attrs["style"] = "display:none;"
         self.fields["location"].required = False
+        if self.instance and self.instance.pk and self.instance.material_id:
+            self.fields["material_search"].initial = material_choice_label(self.instance.material)
 
     def clean(self):
         cleaned = super().clean()
         material = cleaned.get("material")
+        material_search = (cleaned.get("material_search") or "").strip()
         loan_qty = cleaned.get("loan_qty")
         batch = cleaned.get("batch")
         location = cleaned.get("location")
+        has_line_input = bool(material or material_search or loan_qty or batch or location or cleaned.get("expected_return_date") or cleaned.get("remark"))
+        if not material and material_search:
+            material = self._material_from_search(material_search)
+            if material:
+                cleaned["material"] = material
+        if not material and has_line_input:
+            self.add_error("material_search", "请选择借出样品；输入后如出现多个候选，请点选其中一项")
         if loan_qty is not None and loan_qty <= 0:
             self.add_error("loan_qty", "借出数量必须大于 0")
+        if material and loan_qty in [None, ""]:
+            self.add_error("loan_qty", "借出数量不能为空")
         if batch:
             if material and batch.material_id != material.id:
                 self.add_error("batch", "批次物料必须与借样物料一致")
@@ -800,6 +814,18 @@ class SampleLoanItemForm(forms.ModelForm):
                 self.add_error("loan_qty", "借样数量不能超过批次剩余数量")
             cleaned["location"] = batch.location
         return cleaned
+
+    def _material_from_search(self, keyword: str):
+        queryset = self.fields["material"].queryset.filter(
+            Q(material_code__icontains=keyword)
+            | Q(material_name__icontains=keyword)
+            | Q(spec__icontains=keyword)
+        )
+        exact = queryset.filter(Q(material_code__iexact=keyword) | Q(material_name__iexact=keyword) | Q(spec__iexact=keyword))
+        candidates = list((exact or queryset)[:2])
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
 
     def save(self, commit=True):
         item = super().save(commit=False)
@@ -849,7 +875,7 @@ SampleLoanItemFormSet = inlineformset_factory(
     SampleLoanItem,
     form=SampleLoanItemForm,
     formset=BaseSampleLoanItemFormSet,
-    fields=["material", "loan_qty", "expected_return_date", "batch", "location"],
+    fields=["material", "loan_qty", "expected_return_date", "batch", "location", "remark"],
     extra=1,
     can_delete=True,
 )
@@ -909,6 +935,7 @@ class SampleLoanReturnItemForm(forms.ModelForm):
         else:
             item_queryset = item_queryset.none()
         self.fields["sample_loan_item"].queryset = item_queryset.order_by("line_no", "id")
+        self.fields["sample_loan_item"].label_from_instance = sample_loan_item_label
         self.fields["location"].queryset = WarehouseLocation.objects.filter(
             status=WarehouseLocation.LocationStatus.ACTIVE
         ).order_by("location_code")

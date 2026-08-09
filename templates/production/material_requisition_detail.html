@@ -17,6 +17,19 @@
       <button class="button primary" type="submit">确认领料出库</button>
     </form>
   {% endif %}
+  {% if can_create_receipt %}
+    <form method="post" action="{% url 'production:production_order_create_receipt' requisition.production_order.pk %}">
+      {% csrf_token %}
+      <select class="filter-select" name="location" required>
+        <option value="">入库库位</option>
+        {% for location in locations %}
+          <option value="{{ location.pk }}">{{ location.location_code }} {{ location.location_name }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="batch_no" value="{{ requisition.production_order.production_order_no }}-01" placeholder="批次号" style="width: 160px;">
+      <button class="button primary" type="submit">生成生产入库单</button>
+    </form>
+  {% endif %}
 </div>
 
 <section class="detail-grid">

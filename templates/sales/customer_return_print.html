@@ -1,4 +1,5 @@
 <!doctype html>
+{% load erp_extras %}
 <html lang="zh-Hans">
 <head>
   <meta charset="utf-8">
@@ -66,7 +67,7 @@
           <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
           <td>{% if can_view_amount %}{{ item.return_amount }}{% else %}******{% endif %}</td>
           <td>{{ item.location.location_code|default:"" }}</td>
-          <td>{{ item.inventory_type }}</td>
+          <td>{{ item.inventory_type|inventory_type_name }}</td>
           <td>{{ item.sales_order_item.sales_order.sales_order_no|default:"" }}</td>
           <td>{{ item.return_reason }}</td>
         </tr>

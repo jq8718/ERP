@@ -1077,6 +1077,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_purchase_order_create_and_detail_views(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.raw.spec = "10K 1%"
         self.raw.save(update_fields=["spec"])
@@ -1163,8 +1164,7 @@ class PurchaseReceiptServiceTests(TestCase):
             },
         )
 
-        self.assertEqual(get_response.status_code, 200)
-        self.assertNotContains(get_response, "保存并提交审核")
+        self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
         self.assertFalse(PurchaseOrder.objects.exists())
 
@@ -1290,6 +1290,165 @@ class PurchaseReceiptServiceTests(TestCase):
         self.assertEqual(audit_log.before_snapshot["status"], PurchaseOrder.Status.PENDING_APPROVAL)
         self.assertEqual(audit_log.after_snapshot["status"], PurchaseOrder.Status.VOIDED)
         self.assertEqual(audit_log.after_snapshot["operation_reason"], "测试作废")
+
+    def test_purchase_order_approve_pending_order_and_enables_receipt_action(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        order = PurchaseOrder.objects.create(
+            purchase_order_no="PO-APPROVE",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+            total_amount=Decimal("10.00"),
+        )
+        PurchaseOrderItem.objects.create(
+            purchase_order=order,
+            line_no=1,
+            material=self.raw,
+            order_qty=Decimal("5.0000"),
+            unit_price=Decimal("2.000000"),
+            line_amount=Decimal("10.00"),
+        )
+
+        page_response = self.client.get(f"/purchase/orders/{order.id}/")
+        self.assertContains(page_response, "审核通过采购单")
+        self.assertContains(page_response, "驳回采购单")
+        self.assertContains(page_response, "审核通过后可生成进货单")
+
+        response = self.client.post(f"/purchase/orders/{order.id}/approve/", {"current_password": "x"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/purchase/orders/{order.id}/")
+        order.refresh_from_db()
+        self.assertEqual(order.status, PurchaseOrder.Status.APPROVED)
+        detail_response = self.client.get(f"/purchase/orders/{order.id}/")
+        self.assertContains(detail_response, "生成进货单")
+        audit_log = AuditLog.objects.get(action="purchase_order_approve", source_doc_id=order.id)
+        self.assertEqual(audit_log.operator, self.user)
+        self.assertEqual(audit_log.before_snapshot["status"], PurchaseOrder.Status.PENDING_APPROVAL)
+        self.assertEqual(audit_log.after_snapshot["status"], PurchaseOrder.Status.APPROVED)
+
+    def test_purchase_order_approve_requires_purchase_process_permission(self):
+        self.client.force_login(self.user)
+        order = PurchaseOrder.objects.create(
+            purchase_order_no="PO-APPROVE-NOPERM",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+        PurchaseOrderItem.objects.create(
+            purchase_order=order,
+            line_no=1,
+            material=self.raw,
+            order_qty=Decimal("5.0000"),
+            unit_price=Decimal("2.000000"),
+            line_amount=Decimal("10.00"),
+        )
+
+        page_response = self.client.get(f"/purchase/orders/{order.id}/")
+        response = self.client.post(f"/purchase/orders/{order.id}/approve/", {"current_password": "x"})
+
+        self.assertNotContains(page_response, "审核通过采购单")
+        self.assertEqual(response.status_code, 403)
+        order.refresh_from_db()
+        self.assertEqual(order.status, PurchaseOrder.Status.PENDING_APPROVAL)
+        self.assertFalse(AuditLog.objects.filter(action="purchase_order_approve", source_doc_id=order.id).exists())
+
+    def test_purchase_order_reject_pending_order_and_writes_audit_log(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        order = PurchaseOrder.objects.create(
+            purchase_order_no="PO-REJECT",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+        PurchaseOrderItem.objects.create(
+            purchase_order=order,
+            line_no=1,
+            material=self.raw,
+            order_qty=Decimal("5.0000"),
+            unit_price=Decimal("2.000000"),
+            line_amount=Decimal("10.00"),
+        )
+
+        response = self.client.post(f"/purchase/orders/{order.id}/reject/", {"reject_reason": "价格需复核"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/purchase/orders/{order.id}/")
+        order.refresh_from_db()
+        self.assertEqual(order.status, PurchaseOrder.Status.REJECTED)
+        detail_response = self.client.get(f"/purchase/orders/{order.id}/")
+        self.assertContains(detail_response, "编辑")
+        audit_log = AuditLog.objects.get(action="purchase_order_reject", source_doc_id=order.id)
+        self.assertEqual(audit_log.before_snapshot["status"], PurchaseOrder.Status.PENDING_APPROVAL)
+        self.assertEqual(audit_log.after_snapshot["status"], PurchaseOrder.Status.REJECTED)
+        self.assertEqual(audit_log.after_snapshot["operation_reason"], "价格需复核")
+
+    def test_purchase_order_reject_requires_reason(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        order = PurchaseOrder.objects.create(
+            purchase_order_no="PO-REJECT-NO-REASON",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+
+        response = self.client.post(f"/purchase/orders/{order.id}/reject/", {"reject_reason": ""}, follow=True)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, PurchaseOrder.Status.PENDING_APPROVAL)
+        self.assertContains(response, "请填写采购单驳回原因")
+        self.assertFalse(AuditLog.objects.filter(action="purchase_order_reject", source_doc_id=order.id).exists())
+
+    def test_purchase_order_list_scope_filters_show_action_buckets(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        pending = PurchaseOrder.objects.create(
+            purchase_order_no="PO-SCOPE-PENDING",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+        approved = PurchaseOrder.objects.create(
+            purchase_order_no="PO-SCOPE-APPROVED",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-SCOPE-PARTIAL",
+            supplier=self.supplier,
+            status=PurchaseOrder.Status.PARTIAL_RECEIVED,
+            order_date=timezone.localdate(),
+            created_by=self.user,
+            purchase_owner=self.user,
+        )
+
+        page_response = self.client.get("/purchase/orders/")
+        pending_response = self.client.get("/purchase/orders/?scope=pending_approval")
+        approved_response = self.client.get("/purchase/orders/?scope=approved_open")
+
+        self.assertContains(page_response, "待审核")
+        self.assertContains(page_response, "已通过待到货")
+        self.assertContains(page_response, "部分到货")
+        self.assertContains(pending_response, pending.purchase_order_no)
+        self.assertNotContains(pending_response, approved.purchase_order_no)
+        self.assertContains(approved_response, approved.purchase_order_no)
+        self.assertNotContains(approved_response, pending.purchase_order_no)
 
     def test_purchase_order_void_requires_reason(self):
         self.client.force_login(self.user)
@@ -1804,6 +1963,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_purchase_request_create_view_creates_manual_request(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
 
         page_response = self.client.get("/purchase/requests/new/")
         self.assertEqual(page_response.status_code, 200)
@@ -1855,6 +2015,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_purchase_request_create_material_options_show_spec(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
         self.raw.spec = "10K 1%"
         self.raw.save(update_fields=["spec"])
 
@@ -1892,8 +2053,7 @@ class PurchaseReceiptServiceTests(TestCase):
             },
         )
 
-        self.assertEqual(get_response.status_code, 200)
-        self.assertNotContains(get_response, "保存并提交审核")
+        self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
         self.assertFalse(PurchaseRequest.objects.exists())
 
@@ -2059,6 +2219,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_supplier_return_create_view_saves_header_and_items(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
         order, order_item, receipt, receipt_item = self._purchase_receipt(accepted_qty=Decimal("20.0000"))
         receipt.status = PurchaseReceipt.Status.RECEIVED
         receipt.save(update_fields=["status"])
@@ -2131,6 +2292,7 @@ class PurchaseReceiptServiceTests(TestCase):
 
     def test_supplier_return_create_view_filters_recent_receipts_by_default(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
 
         def create_received_receipt(suffix, receipt_date):
             order = PurchaseOrder.objects.create(
@@ -2276,8 +2438,7 @@ class PurchaseReceiptServiceTests(TestCase):
             },
         )
 
-        self.assertEqual(get_response.status_code, 200)
-        self.assertNotContains(get_response, "保存并提交审核")
+        self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
         self.assertFalse(SupplierReturn.objects.exists())
 

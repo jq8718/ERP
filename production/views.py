@@ -4,6 +4,7 @@ from io import StringIO
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
+from django.db.models import F, Q
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -81,6 +82,24 @@ class ProductionOrderListView(ErpListView):
         "get_status_display": "status",
     }
 
+    def get_scope_filter_options(self):
+        can_process = _can_process_production(self.request.user)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+            {"value": "pending", "label": "待领料"},
+            {"value": "in_progress", "label": "生产中"},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status__in=[ProductionOrder.Status.PENDING, ProductionOrder.Status.IN_PROGRESS])
+        if scope_value == "pending":
+            return queryset.filter(status=ProductionOrder.Status.PENDING)
+        if scope_value == "in_progress":
+            return queryset.filter(status=ProductionOrder.Status.IN_PROGRESS)
+        return queryset
+
 
 class ProductionOrderCreateView(LoginRequiredMixin, CreateView):
     model = ProductionOrder
@@ -136,10 +155,13 @@ class ProductionOrderDetailView(LoginRequiredMixin, DetailView):
         context["can_edit"] = can_process_production and _can_edit_production_order(self.object)
         context["can_cancel"] = can_process_production and _can_edit_production_order(self.object)
         context["can_create_requisition"] = can_process_production and self.object.status == ProductionOrder.Status.PENDING
-        context["can_create_receipt"] = can_process_production and self.object.status in [
-            ProductionOrder.Status.PENDING,
-            ProductionOrder.Status.IN_PROGRESS,
-        ] and self.object.production_qty > self.object.received_qty
+        context["can_create_receipt"] = can_process_production and _production_order_can_create_receipt(self.object)
+        context["can_start_requisition_before_receipt"] = (
+            can_process_production
+            and self.object.status == ProductionOrder.Status.PENDING
+            and self.object.production_qty > self.object.received_qty
+            and not _production_order_has_issued_requisition(self.object)
+        )
         context["locations"] = WarehouseLocation.objects.filter(status=WarehouseLocation.LocationStatus.ACTIVE).order_by("location_code")
         context["today"] = timezone.localdate()
         context["attachment_panel"] = build_attachment_panel(
@@ -401,10 +423,15 @@ class ProductionOrderCreateReceiptView(LoginRequiredMixin, View):
 
         try:
             with transaction.atomic():
-                production_order = ProductionOrder.objects.select_for_update().select_related("finished_material").get(pk=pk)
+                production_order = (
+                    ProductionOrder.objects.select_for_update()
+                    .select_related("finished_material")
+                    .prefetch_related("material_requisitions")
+                    .get(pk=pk)
+                )
                 remaining_qty = production_order.production_qty - production_order.received_qty
-                if production_order.status not in [ProductionOrder.Status.PENDING, ProductionOrder.Status.IN_PROGRESS] or remaining_qty <= 0:
-                    messages.error(request, "当前生产指令不能生成入库单")
+                if not _production_order_can_create_receipt(production_order) or remaining_qty <= 0:
+                    messages.error(request, "请先确认生产领料后再生成入库单")
                     return redirect("production:production_order_detail", pk=pk)
                 receipt = ProductionReceipt.objects.create(
                     production_receipt_no=next_document_no("PI"),
@@ -421,6 +448,7 @@ class ProductionOrderCreateReceiptView(LoginRequiredMixin, View):
                     finished_material=production_order.finished_material,
                     receipt_qty=remaining_qty,
                     location=location,
+                    batch_no=request.POST.get("batch_no", "").strip(),
                 )
         except ProductionOrder.DoesNotExist:
             messages.error(request, "生产指令不存在")
@@ -464,6 +492,21 @@ class ProductionMaterialRequisitionListView(ErpListView):
         {"label": "库位", "param": "location_code", "field": "items__location__location_code", "placeholder": "库位编码", "distinct": True},
     )
 
+    def get_scope_filter_options(self):
+        can_process = _can_process_production(self.request.user)
+        return (
+            {"value": "todo", "label": "待确认", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+            {"value": "issued", "label": "已出库"},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=ProductionMaterialRequisition.Status.PENDING_CONFIRM)
+        if scope_value == "issued":
+            return queryset.filter(status=ProductionMaterialRequisition.Status.ISSUED)
+        return queryset
+
 
 class ProductionCsvExportView(LoginRequiredMixin, View):
     module = ""
@@ -485,6 +528,7 @@ class ProductionCsvExportView(LoginRequiredMixin, View):
         queryset = list_view.apply_status_filter(queryset)
         queryset = list_view.apply_extra_filters(queryset)
         queryset = list_view.apply_field_filters(queryset)
+        queryset = list_view.apply_scope_filter(queryset, list_view.current_scope_filter_value())
         if self.select_related:
             queryset = queryset.select_related(*self.select_related)
         queryset = queryset.order_by(*self.get_ordering(list_view))
@@ -642,6 +686,8 @@ class ProductionMaterialRequisitionDetailView(LoginRequiredMixin, DetailView):
             can_process_production
             and self.object.status == ProductionMaterialRequisition.Status.PENDING_CONFIRM
         )
+        context["can_create_receipt"] = can_process_production and _production_order_can_create_receipt(self.object.production_order)
+        context["locations"] = WarehouseLocation.objects.filter(status=WarehouseLocation.LocationStatus.ACTIVE).order_by("location_code")
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
             "production_material_requisition",
@@ -805,6 +851,7 @@ class ProductionReceiptListView(ErpListView):
     )
     ordering = ["-receipt_date", "-id"]
     page_actions = (
+        ("从生产指令新建入库", "production:production_receipt_workbench", "primary"),
         ("导出CSV", "production:production_receipt_export", ""),
         ("下载导入模板", "production:production_receipt_import_template", ""),
         ("导入CSV", "production:production_receipt_import", "primary"),
@@ -824,6 +871,111 @@ class ProductionReceiptListView(ErpListView):
         {"label": "批次号", "param": "batch_no", "field": "items__batch_no", "placeholder": "批次号", "distinct": True},
         {"label": "库位", "param": "location_code", "field": "items__location__location_code", "placeholder": "库位编码", "distinct": True},
     )
+
+    def get_scope_filter_options(self):
+        can_process = _can_process_production(self.request.user)
+        return (
+            {"value": "todo", "label": "待确认", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=ProductionReceipt.Status.PENDING_CONFIRM)
+        return queryset
+
+
+class ProductionReceiptWorkbenchView(LoginRequiredMixin, TemplateView):
+    template_name = "production/production_receipt_workbench.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_any_erp_permission(
+                request.user,
+                ProductionReceiptListView.view_permission_required,
+                "缺少生产数据查看权限",
+            )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        query_params = self.request.GET.copy()
+        query_params.pop("page", None)
+        rows = []
+        can_process_production = _can_process_production(self.request.user)
+        for production_order in self._queryset()[:200]:
+            remaining_qty = production_order.production_qty - production_order.received_qty
+            can_create_receipt = can_process_production and _production_order_can_create_receipt(production_order)
+            rows.append(
+                {
+                    "production_order": production_order,
+                    "remaining_qty": remaining_qty,
+                    "can_create_receipt": can_create_receipt,
+                    "status_hint": self._status_hint(production_order),
+                    "default_batch_no": f"{production_order.production_order_no}-01",
+                }
+            )
+        context.update(
+            {
+                "page_title": "生产入库",
+                "rows": rows,
+                "filters": self._filter_values(),
+                "order_status_choices": ProductionOrder.Status.choices,
+                "locations": WarehouseLocation.objects.filter(status=WarehouseLocation.LocationStatus.ACTIVE).order_by("location_code"),
+                "can_process_production": can_process_production,
+                "is_filtered_list": bool(query_params.urlencode()),
+            }
+        )
+        return context
+
+    def _filter_values(self):
+        return {
+            "q": self.request.GET.get("q", "").strip(),
+            "production_order_no": self.request.GET.get("production_order_no", "").strip(),
+            "material_code": self.request.GET.get("material_code", "").strip(),
+            "material_name": self.request.GET.get("material_name", "").strip(),
+            "material_spec": self.request.GET.get("material_spec", "").strip(),
+            "status": self.request.GET.get("status", "").strip(),
+        }
+
+    def _queryset(self):
+        queryset = (
+            ProductionOrder.objects.select_related("finished_material")
+            .prefetch_related("material_requisitions")
+            .filter(
+                status__in=[ProductionOrder.Status.PENDING, ProductionOrder.Status.IN_PROGRESS],
+                production_qty__gt=F("received_qty"),
+            )
+            .order_by("planned_finish_date", "production_order_no", "id")
+        )
+        filters = self._filter_values()
+        if filters["q"]:
+            queryset = queryset.filter(
+                Q(production_order_no__icontains=filters["q"])
+                | Q(finished_material__material_code__icontains=filters["q"])
+                | Q(finished_material__material_name__icontains=filters["q"])
+                | Q(finished_material__spec__icontains=filters["q"])
+            )
+        if filters["production_order_no"]:
+            queryset = queryset.filter(production_order_no__icontains=filters["production_order_no"])
+        if filters["material_code"]:
+            queryset = queryset.filter(finished_material__material_code__icontains=filters["material_code"])
+        if filters["material_name"]:
+            queryset = queryset.filter(finished_material__material_name__icontains=filters["material_name"])
+        if filters["material_spec"]:
+            queryset = queryset.filter(finished_material__spec__icontains=filters["material_spec"])
+        if filters["status"]:
+            queryset = queryset.filter(status=filters["status"])
+        return queryset
+
+    def _status_hint(self, production_order):
+        if _production_order_can_create_receipt(production_order):
+            return "可生成入库单"
+        if production_order.status == ProductionOrder.Status.PENDING:
+            return "请先生成并确认领料单"
+        if not _production_order_has_issued_requisition(production_order):
+            return "请先确认领料单"
+        return "当前生产单暂不能入库"
 
 
 class ProductionReceiptExportView(ProductionCsvExportView):
@@ -1049,6 +1201,21 @@ class ProductionReceiptConfirmView(LoginRequiredMixin, View):
 
 def _can_process_production(user) -> bool:
     return user_has_permission(user, PermissionCode.PRODUCTION_PROCESS)
+
+
+def _production_order_has_issued_requisition(production_order: ProductionOrder) -> bool:
+    requisitions = getattr(production_order, "_prefetched_objects_cache", {}).get("material_requisitions")
+    if requisitions is not None:
+        return any(requisition.status == ProductionMaterialRequisition.Status.ISSUED for requisition in requisitions)
+    return production_order.material_requisitions.filter(status=ProductionMaterialRequisition.Status.ISSUED).exists()
+
+
+def _production_order_can_create_receipt(production_order: ProductionOrder) -> bool:
+    return (
+        production_order.status == ProductionOrder.Status.IN_PROGRESS
+        and production_order.production_qty > production_order.received_qty
+        and _production_order_has_issued_requisition(production_order)
+    )
 
 
 def _can_edit_production_order(production_order: ProductionOrder) -> bool:

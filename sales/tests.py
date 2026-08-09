@@ -625,6 +625,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(response.status_code, 404)
 
     def test_create_sales_order_draft_from_form(self):
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
 
@@ -672,6 +673,7 @@ class SalesOrderViewTests(SalesServiceTests):
             address_encrypted="深圳市测试路 1 号",
             is_default=True,
         )
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
 
@@ -716,6 +718,7 @@ class SalesOrderViewTests(SalesServiceTests):
             receiver_phone_encrypted="13800000000",
             address_encrypted="其他地址",
         )
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
 
@@ -760,6 +763,7 @@ class SalesOrderViewTests(SalesServiceTests):
             receiver_phone_encrypted="13800000000",
             address_encrypted="其他地址",
         )
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self.client.force_login(self.user)
 
@@ -815,8 +819,7 @@ class SalesOrderViewTests(SalesServiceTests):
             },
         )
 
-        self.assertEqual(get_response.status_code, 200)
-        self.assertNotContains(get_response, "保存并提交审核")
+        self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
         self.assertFalse(SalesOrder.objects.exists())
 
@@ -1122,9 +1125,9 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sample_loans.csv",
             (
-                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,备注\n"
-                "SL-IMP-001,C001,2026-06-10,2026-06-20,FG001,2,SL-B001,SL-A01,2026-06-20,导入借样\n"
-                "SL-IMP-001,C001,2026-06-10,2026-06-20,FG002,1,,,2026-06-22,\n"
+                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,明细备注,备注\n"
+                "SL-IMP-001,C001,2026-06-10,2026-06-20,FG001,2,SL-B001,SL-A01,2026-06-20,外观完好,导入借样\n"
+                "SL-IMP-001,C001,2026-06-10,2026-06-20,FG002,1,,,2026-06-22,待配货,\n"
             ).encode("utf-8-sig"),
             content_type="text/csv",
         )
@@ -1143,7 +1146,9 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(first_item.loan_qty, Decimal("2"))
         self.assertEqual(first_item.batch, batch)
         self.assertEqual(first_item.location, location)
+        self.assertEqual(first_item.remark, "外观完好")
         self.assertEqual(second_item.expected_return_date.isoformat(), "2026-06-22")
+        self.assertEqual(second_item.remark, "待配货")
         batch.refresh_from_db()
         self.assertEqual(batch.remaining_qty, Decimal("10.0000"))
         job = ImportJob.objects.get(template_type="sample_loans")
@@ -1156,8 +1161,8 @@ class SalesOrderViewTests(SalesServiceTests):
         upload = SimpleUploadedFile(
             "sample_loans.csv",
             (
-                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,备注\n"
-                "SL-BAD,C001,bad-date,2026-06-01,RM-MISSING,-1,B-MISSING,L-MISSING,bad-line,错误\n"
+                "借样单号,客户编号,借样日期,预计归还日期,物料编码,借样数量,批次号,库位编码,明细预计归还日期,明细备注,备注\n"
+                "SL-BAD,C001,bad-date,2026-06-01,RM-MISSING,-1,B-MISSING,L-MISSING,bad-line,异常明细,错误\n"
             ).encode("utf-8"),
             content_type="text/csv",
         )
@@ -1512,6 +1517,7 @@ class SalesOrderViewTests(SalesServiceTests):
     def test_create_sales_order_without_amount_permission_uses_default_price(self):
         self.customer_product.default_sale_price = Decimal("8.5000")
         self.customer_product.save(update_fields=["default_sale_price"])
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         self.client.force_login(self.user)
 
         response = self.client.post(
@@ -2219,9 +2225,13 @@ class SalesOrderViewTests(SalesServiceTests):
         response = self.client.get(f"/sales/returns/{customer_return.id}/print/")
 
         self.assertContains(detail_response, "打印")
+        self.assertContains(detail_response, "可用")
+        self.assertNotContains(detail_response, ">available<", html=False)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "客户退货单")
         self.assertContains(response, "RT-PRINT")
+        self.assertContains(response, "可用")
+        self.assertNotContains(response, ">available<", html=False)
         self.assertContains(response, "******")
         self.assertNotContains(response, "20.00")
         print_log = PrintLog.objects.get(source_doc_type="customer_return", source_doc_id=customer_return.id)
@@ -2503,6 +2513,57 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(shipment_item.shipment_qty, Decimal("10.0000"))
         self.assertEqual(shipment_item.batch, batch)
 
+    def test_sales_shipment_workbench_lists_and_filters_shippable_sales_lines(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self._batch(self.finished, Decimal("10.0000"))
+        order, item = self._sales_order()
+        confirm_sales_order(order.id, self.user.id)
+
+        other_material = Material.objects.create(
+            material_code="FG-WB-OTHER",
+            material_name="工作台过滤成品",
+            material_type=Material.MaterialType.FINISHED,
+            base_unit="pcs",
+            qty_precision=0,
+        )
+        other_customer_product = CustomerProduct.objects.create(
+            customer=self.customer,
+            customer_product_no="CP-WB-OTHER",
+            customer_product_name="工作台过滤客户产品",
+            finished_material=other_material,
+            default_sale_price=Decimal("10.0000"),
+        )
+        other_order = SalesOrder.objects.create(
+            sales_order_no="SO-WB-OTHER",
+            customer=self.customer,
+            order_date=timezone.localdate(),
+            status=SalesOrder.Status.CONFIRMED,
+            created_by=self.user,
+        )
+        SalesOrderItem.objects.create(
+            sales_order=other_order,
+            line_no=1,
+            customer_product=other_customer_product,
+            finished_material=other_material,
+            order_qty=Decimal("3.0000"),
+            unit_price=Decimal("10.0000"),
+            line_amount=Decimal("30.00"),
+            line_status=SalesOrderItem.LineStatus.CONFIRMED,
+            inventory_check_status=SalesOrderItem.InventoryCheckStatus.SUFFICIENT,
+        )
+
+        response = self.client.get("/sales/shipments/workbench/")
+        filtered_response = self.client.get("/sales/shipments/workbench/?material_code=FG001")
+        empty_response = self.client.get("/sales/shipments/workbench/?material_code=NO-MATCH")
+
+        self.assertContains(response, order.sales_order_no)
+        self.assertContains(response, "SO-WB-OTHER")
+        self.assertContains(response, "生成该订单出库单")
+        self.assertContains(filtered_response, order.sales_order_no)
+        self.assertNotContains(filtered_response, "SO-WB-OTHER")
+        self.assertContains(empty_response, "筛选无结果")
+
     def test_sales_order_create_shipment_requires_sales_process_permission(self):
         self.client.force_login(self.user)
         self._batch(self.finished, Decimal("10.0000"))
@@ -2616,12 +2677,17 @@ class SalesOrderViewTests(SalesServiceTests):
 
     def test_customer_return_create_view_saves_header_and_items(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         order, item = self._sales_order()
         order.status = SalesOrder.Status.SHIPPED
         order.save(update_fields=["status"])
         item.shipped_qty = Decimal("10.0000")
         item.line_status = SalesOrderItem.LineStatus.SHIPPED
         item.save(update_fields=["shipped_qty", "line_status"])
+
+        page_response = self.client.get("/sales/returns/new/")
+        self.assertContains(page_response, '<option value="available" selected>可用</option>', html=True)
+        self.assertNotContains(page_response, ">available<", html=False)
 
         response = self.client.post(
             "/sales/returns/new/",
@@ -2671,6 +2737,7 @@ class SalesOrderViewTests(SalesServiceTests):
 
     def test_customer_return_create_can_infer_customer_from_sales_order(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         order, item = self._sales_order()
         order.status = SalesOrder.Status.SHIPPED
         order.save(update_fields=["status"])
@@ -2705,8 +2772,9 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(customer_return.customer, self.customer)
         self.assertEqual(customer_return.sales_order, order)
 
-    def test_customer_return_create_defaults_to_recent_orders_and_can_show_all(self):
+    def test_customer_return_create_lists_all_returnable_orders_by_default(self):
         self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
         recent_order, recent_item = self._sales_order()
         recent_order.sales_order_no = "SO-RECENT-RETURN"
         recent_order.status = SalesOrder.Status.SHIPPED
@@ -2721,15 +2789,44 @@ class SalesOrderViewTests(SalesServiceTests):
         old_item.shipped_qty = Decimal("1.0000")
         old_item.save(update_fields=["shipped_qty"])
 
-        recent_response = self.client.get("/sales/returns/new/")
-        all_response = self.client.get("/sales/returns/new/?show_all_orders=1")
+        response = self.client.get("/sales/returns/new/")
 
-        self.assertEqual(recent_response.status_code, 200)
-        self.assertContains(recent_response, "SO-RECENT-RETURN")
-        self.assertNotContains(recent_response, "SO-OLD-RETURN")
-        self.assertContains(recent_response, "默认显示最近一周")
-        self.assertContains(all_response, "SO-RECENT-RETURN")
-        self.assertContains(all_response, "SO-OLD-RETURN")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "SO-RECENT-RETURN")
+        self.assertContains(response, "SO-OLD-RETURN")
+        self.assertNotContains(response, "默认显示最近一周")
+
+    def test_customer_return_workbench_lists_filters_and_prefills_return(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.finished.spec = "退货测试型号"
+        self.finished.save(update_fields=["spec"])
+        order, item = self._sales_order()
+        order.sales_order_no = "SO-WORKBENCH-RETURN"
+        order.status = SalesOrder.Status.SHIPPED
+        order.order_date = timezone.localdate() - timedelta(days=30)
+        order.save(update_fields=["sales_order_no", "status", "order_date"])
+        item.shipped_qty = Decimal("6.0000")
+        item.customer_model_remark = "客户退货型号"
+        item.save(update_fields=["shipped_qty", "customer_model_remark"])
+
+        response = self.client.get("/sales/returns/workbench/?material_spec=退货测试型号")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "SO-WORKBENCH-RETURN")
+        self.assertContains(response, "客户退货型号")
+        self.assertContains(response, "6.0000")
+        self.assertIn(
+            f"/sales/returns/new/?sales_order={order.id}&amp;source_item={item.id}",
+            response.content.decode(),
+        )
+
+        create_response = self.client.get(f"/sales/returns/new/?sales_order={order.id}&source_item={item.id}")
+
+        self.assertEqual(create_response.status_code, 200)
+        self.assertEqual(create_response.context["form"].initial["sales_order"], order)
+        self.assertEqual(create_response.context["form"].initial["customer"], self.customer)
+        self.assertEqual(create_response.context["item_formset"].forms[0].initial["sales_order_item"], item)
 
     def test_customer_return_sales_order_items_endpoint_returns_selected_order_models(self):
         self.client.force_login(self.user)
@@ -2825,8 +2922,7 @@ class SalesOrderViewTests(SalesServiceTests):
             },
         )
 
-        self.assertEqual(get_response.status_code, 200)
-        self.assertNotContains(get_response, "保存并提交审核")
+        self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
         self.assertFalse(CustomerReturn.objects.exists())
 
@@ -3124,21 +3220,27 @@ class SalesOrderViewTests(SalesServiceTests):
                 "items-INITIAL_FORMS": "0",
                 "items-MIN_NUM_FORMS": "0",
                 "items-MAX_NUM_FORMS": "1000",
+                "items-0-material_search": "FG001 成品 1",
                 "items-0-material": self.finished.id,
                 "items-0-loan_qty": "2",
                 "items-0-expected_return_date": "",
                 "items-0-batch": batch.id,
                 "items-0-location": "",
+                "items-0-remark": "客户指定样品外观",
+                "items-1-material_search": "",
                 "items-1-material": "",
                 "items-1-loan_qty": "",
                 "items-1-expected_return_date": "",
                 "items-1-batch": "",
                 "items-1-location": "",
+                "items-1-remark": "",
+                "items-2-material_search": "",
                 "items-2-material": "",
                 "items-2-loan_qty": "",
                 "items-2-expected_return_date": "",
                 "items-2-batch": "",
                 "items-2-location": "",
+                "items-2-remark": "",
             },
         )
 
@@ -3152,6 +3254,43 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(item.loan_qty, Decimal("2"))
         self.assertEqual(item.batch, batch)
         self.assertEqual(item.location, self.location)
+        self.assertEqual(item.remark, "客户指定样品外观")
+
+    def test_sample_loan_create_view_allows_single_matched_model_without_batch(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.finished.spec = "XH-900"
+        self.finished.save(update_fields=["spec"])
+
+        response = self.client.post(
+            "/sales/sample-loans/new/",
+            {
+                "customer": self.customer.id,
+                "loan_date": timezone.localdate().isoformat(),
+                "expected_return_date": timezone.localdate().isoformat(),
+                "remark": "先登记，后配货",
+                "items-TOTAL_FORMS": "1",
+                "items-INITIAL_FORMS": "0",
+                "items-MIN_NUM_FORMS": "0",
+                "items-MAX_NUM_FORMS": "1000",
+                "items-0-material_search": "XH-900",
+                "items-0-material": "",
+                "items-0-loan_qty": "1",
+                "items-0-expected_return_date": "",
+                "items-0-batch": "",
+                "items-0-location": "",
+                "items-0-remark": "客户要看型号",
+            },
+        )
+
+        loan = SampleLoan.objects.order_by("-id").first()
+        item = loan.items.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/sales/sample-loans/{loan.id}/")
+        self.assertEqual(item.material, self.finished)
+        self.assertIsNone(item.batch)
+        self.assertIsNone(item.location)
+        self.assertEqual(item.remark, "客户要看型号")
 
     def test_sample_loan_create_view_uses_material_picker(self):
         self.client.force_login(self.user)
@@ -3162,6 +3301,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-sample-loan-search")
         self.assertContains(response, "data-sample-loan-stock")
+        self.assertContains(response, "data-sample-loan-batch-options")
         self.assertContains(response, "/sales/sample-loans/material-options/")
 
     def test_sample_loan_material_options_endpoint_filters_by_name_and_spec(self):
@@ -3185,12 +3325,12 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(len(payload["items"]), 1)
         item = payload["items"][0]
         self.assertEqual(item["material_id"], self.finished.id)
-        self.assertEqual(item["batch_id"], batch.id)
-        self.assertEqual(item["location_id"], self.location.id)
-        self.assertEqual(item["location_code"], self.location.location_code)
-        self.assertEqual(item["remaining_qty"], "5.0000")
-        self.assertIn("FG001", item["label"])
-        self.assertIn("双9V电源板", item["label"])
+        self.assertEqual(item["material_code"], "FG001")
+        self.assertEqual(item["available_qty"], "5.0000")
+        self.assertEqual(item["batches"][0]["batch_id"], batch.id)
+        self.assertEqual(item["batches"][0]["location_id"], self.location.id)
+        self.assertEqual(item["batches"][0]["location_code"], self.location.location_code)
+        self.assertEqual(item["batches"][0]["remaining_qty"], "5.0000")
 
     def test_sample_loan_create_requires_sales_process_permission(self):
         self.client.force_login(self.user)
@@ -3232,10 +3372,12 @@ class SalesOrderViewTests(SalesServiceTests):
             f"/sales/sample-loans/{loan.id}/items/new/",
             {
                 "items-0-material": self.finished.id,
+                "items-0-material_search": "FG001",
                 "items-0-loan_qty": "3",
                 "items-0-expected_return_date": "2026/7/8",
                 "items-0-batch": batch.id,
                 "items-0-location": "",
+                "items-0-remark": "后补明细",
             },
         )
 
@@ -3248,6 +3390,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(item.expected_return_date, date(2026, 7, 8))
         self.assertEqual(item.batch, batch)
         self.assertEqual(item.location, self.location)
+        self.assertEqual(item.remark, "后补明细")
 
     def test_sample_loan_confirm_out_view_deducts_inventory(self):
         self.client.force_login(self.user)
@@ -3280,6 +3423,46 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertEqual(loan.status, SampleLoan.Status.OUT)
         self.assertEqual(batch.remaining_qty, Decimal("3.0000"))
         self.assertEqual(inventory.qty, Decimal("3.0000"))
+
+    def test_sample_loan_confirm_out_view_allocates_batch_before_confirm(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        batch = self._batch(self.finished, Decimal("5.0000"))
+        loan = SampleLoan.objects.create(
+            sample_loan_no="SL-ALLOC",
+            customer=self.customer,
+            loan_date=timezone.localdate(),
+            expected_return_date=timezone.localdate(),
+            status=SampleLoan.Status.PENDING_APPROVAL,
+            created_by=self.user,
+        )
+        item = SampleLoanItem.objects.create(
+            sample_loan=loan,
+            line_no=1,
+            material=self.finished,
+            loan_qty=Decimal("2.0000"),
+        )
+
+        page_response = self.client.get(f"/sales/sample-loans/{loan.id}/")
+        self.assertContains(page_response, "确认出库配货")
+        self.assertContains(page_response, f'name="item-{item.id}-batch"')
+
+        response = self.client.post(
+            f"/sales/sample-loans/{loan.id}/confirm-out/",
+            {
+                "current_password": "x",
+                f"item-{item.id}-batch": batch.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        loan.refresh_from_db()
+        item.refresh_from_db()
+        batch.refresh_from_db()
+        self.assertEqual(loan.status, SampleLoan.Status.OUT)
+        self.assertEqual(item.batch, batch)
+        self.assertEqual(item.location, self.location)
+        self.assertEqual(batch.remaining_qty, Decimal("3.0000"))
 
     def test_sample_loan_convert_to_sales_view_creates_order(self):
         self.client.force_login(self.user)
@@ -3358,10 +3541,47 @@ class SalesOrderViewTests(SalesServiceTests):
         loan_item.refresh_from_db()
         self.assertEqual(loan_item.sold_qty, Decimal("0.0000"))
 
+    def test_sample_loan_outstanding_page_groups_by_customer_and_lists_items(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        batch = self._batch(self.finished, Decimal("5.0000"))
+        loan = SampleLoan.objects.create(
+            sample_loan_no="SL-OUTSTANDING",
+            customer=self.customer,
+            loan_date=timezone.localdate(),
+            expected_return_date=timezone.localdate() + timedelta(days=3),
+            status=SampleLoan.Status.PART_SOLD,
+            created_by=self.user,
+        )
+        SampleLoanItem.objects.create(
+            sample_loan=loan,
+            line_no=1,
+            material=self.finished,
+            loan_qty=Decimal("5.0000"),
+            returned_qty=Decimal("1.0000"),
+            sold_qty=Decimal("2.0000"),
+            batch=batch,
+            location=self.location,
+            line_status=SampleLoanItem.LineStatus.PART_SOLD,
+        )
+
+        list_response = self.client.get("/sales/sample-returns/")
+        self.assertContains(list_response, "/sales/sample-returns/outstanding/")
+
+        response = self.client.get(f"/sales/sample-returns/outstanding/?customer={self.customer.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.customer.customer_name)
+        self.assertContains(response, "SL-OUTSTANDING")
+        self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "2.0000")
+        self.assertContains(response, "登记归还")
+
     def test_sample_return_detail_renders_confirm_action(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.SALES_PROCESS)
         loan, loan_item, sample_return = self._sample_return()
+        sample_return.items.update(inventory_type=InventoryBatch.InventoryType.AVAILABLE)
 
         response = self.client.get(f"/sales/sample-returns/{sample_return.id}/")
 
@@ -3369,11 +3589,14 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, sample_return.sample_return_no)
         self.assertContains(response, "确认归还入库")
         self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "可用")
+        self.assertNotContains(response, ">available<", html=False)
         self.assertContains(response, f"/sales/sample-returns/{sample_return.id}/print/")
 
     def test_sample_return_print_writes_log(self):
         self.client.force_login(self.user)
         loan, loan_item, sample_return = self._sample_return()
+        sample_return.items.update(inventory_type=InventoryBatch.InventoryType.AVAILABLE)
 
         response = self.client.get(f"/sales/sample-returns/{sample_return.id}/print/")
 
@@ -3381,6 +3604,8 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, sample_return.sample_return_no)
         self.assertContains(response, "借样归还单")
         self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "可用")
+        self.assertNotContains(response, ">available<", html=False)
         print_log = PrintLog.objects.get(source_doc_type="sample_loan_return", source_doc_id=sample_return.id)
         self.assertEqual(print_log.template_type, "sample_loan_return")
         self.assertEqual(print_log.source_doc_no, sample_return.sample_return_no)

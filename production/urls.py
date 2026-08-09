@@ -28,6 +28,7 @@ from .views import (
     ProductionReceiptListView,
     ProductionReceiptPrintView,
     ProductionReceiptUpdateView,
+    ProductionReceiptWorkbenchView,
 )
 
 app_name = "production"
@@ -53,6 +54,7 @@ urlpatterns = [
     path("requisitions/<int:pk>/print/", ProductionMaterialRequisitionPrintView.as_view(), name="material_requisition_print"),
     path("requisitions/<int:pk>/confirm/", ProductionMaterialRequisitionConfirmView.as_view(), name="material_requisition_confirm"),
     path("receipts/", ProductionReceiptListView.as_view(), name="production_receipt_list"),
+    path("receipts/workbench/", ProductionReceiptWorkbenchView.as_view(), name="production_receipt_workbench"),
     path("receipts/export/", ProductionReceiptExportView.as_view(), name="production_receipt_export"),
     path("receipts/import-template/", ProductionReceiptImportTemplateView.as_view(), name="production_receipt_import_template"),
     path("receipts/import/", ProductionReceiptImportView.as_view(), name="production_receipt_import"),

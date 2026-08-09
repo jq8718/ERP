@@ -656,13 +656,16 @@ class ProductionServiceTests(TestCase):
     def test_production_order_detail_creates_production_receipt(self):
         self.client.force_login(self.user)
         self._grant_permission(PermissionCode.PRODUCTION_PROCESS)
+        batch = self._raw_stock()
+        requisition = self._requisition(batch)
+        confirm_material_requisition(requisition.id, self.user.id, "issue-before-receipt")
 
         page_response = self.client.get(f"/production/orders/{self.production_order.id}/")
         self.assertContains(page_response, "生成入库单")
 
         response = self.client.post(
             f"/production/orders/{self.production_order.id}/create-receipt/",
-            {"location": self.location.id},
+            {"location": self.location.id, "batch_no": "FG-MO001-01"},
         )
 
         receipt = ProductionReceipt.objects.get()
@@ -674,6 +677,55 @@ class ProductionServiceTests(TestCase):
         self.assertEqual(receipt.created_by, self.user)
         self.assertEqual(receipt_item.receipt_qty, Decimal("10.0000"))
         self.assertEqual(receipt_item.location, self.location)
+        self.assertEqual(receipt_item.batch_no, "FG-MO001-01")
+
+    def test_production_order_requires_issued_requisition_before_receipt(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PRODUCTION_PROCESS)
+
+        page_response = self.client.get(f"/production/orders/{self.production_order.id}/")
+        response = self.client.post(
+            f"/production/orders/{self.production_order.id}/create-receipt/",
+            {"location": self.location.id},
+            follow=True,
+        )
+
+        self.assertNotContains(page_response, "生成入库单")
+        self.assertContains(page_response, "需先生成并确认领料单")
+        self.assertContains(response, "请先确认生产领料后再生成入库单")
+        self.assertFalse(ProductionReceipt.objects.exists())
+
+    def test_production_receipt_workbench_lists_and_filters_orders(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PRODUCTION_PROCESS)
+        batch = self._raw_stock()
+        requisition = self._requisition(batch)
+        confirm_material_requisition(requisition.id, self.user.id, "issue-for-workbench")
+        other_finished = Material.objects.create(
+            material_code="FG-WB-HIDE",
+            material_name="工作台隐藏成品",
+            material_type=Material.MaterialType.FINISHED,
+            base_unit="pcs",
+        )
+        ProductionOrder.objects.create(
+            production_order_no="MO-WB-HIDE",
+            finished_material=other_finished,
+            production_qty=Decimal("3.0000"),
+            locked_bom=self.bom,
+            locked_bom_version=self.bom.bom_version,
+            status=ProductionOrder.Status.PENDING,
+        )
+
+        response = self.client.get("/production/receipts/workbench/")
+        filtered_response = self.client.get("/production/receipts/workbench/?material_code=FG001")
+
+        self.assertContains(response, self.production_order.production_order_no)
+        self.assertContains(response, "可生成入库单")
+        self.assertContains(response, "MO-WB-HIDE")
+        self.assertContains(response, "请先生成并确认领料单")
+        self.assertContains(response, "生成入库单")
+        self.assertContains(filtered_response, self.production_order.production_order_no)
+        self.assertNotContains(filtered_response, "MO-WB-HIDE")
 
     def test_material_requisition_detail_renders_confirm_action(self):
         self.client.force_login(self.user)
@@ -690,6 +742,10 @@ class ProductionServiceTests(TestCase):
         self.assertContains(response, self.raw.material_code)
         self.assertContains(response, "返回生产单")
         self.assertContains(response, f'href="/production/orders/{self.production_order.id}/"')
+
+        confirm_material_requisition(requisition.id, self.user.id, "issue-before-detail-receipt")
+        issued_response = self.client.get(f"/production/requisitions/{requisition.id}/")
+        self.assertContains(issued_response, "生成生产入库单")
 
     def test_material_requisition_edit_updates_pending_requisition_and_writes_audit_log(self):
         self.client.force_login(self.user)

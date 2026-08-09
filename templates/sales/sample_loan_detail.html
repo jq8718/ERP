@@ -6,7 +6,7 @@
 <div class="form-actions" style="margin-bottom: 16px;">
   <a class="button" href="{% url 'sales:sample_loan_list' %}">返回列表</a>
   <a class="button" href="{% url 'sales:sample_loan_print' loan.pk %}" target="_blank">打印</a>
-  {% if can_confirm_out %}
+  {% if can_quick_confirm_out %}
     <form method="post" action="{% url 'sales:sample_loan_confirm_out' loan.pk %}">
       {% csrf_token %}
       <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
@@ -67,6 +67,7 @@
           <th>预计归还</th>
           <th>批次</th>
           <th>库位</th>
+          <th>备注</th>
           <th>状态</th>
         </tr>
       </thead>
@@ -83,15 +84,66 @@
             <td>{{ item.expected_return_date|default:"" }}</td>
             <td>{{ item.batch.batch_no|default:"" }}</td>
             <td>{{ item.location.location_code|default:"" }}</td>
+            <td>{{ item.remark|default:"" }}</td>
             <td>{{ item.get_line_status_display }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="9" class="empty">暂无明细</td></tr>
+          <tr><td colspan="10" class="empty">暂无明细</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+
+{% if can_confirm_out %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>确认出库配货</h2>
+    <form method="post" action="{% url 'sales:sample_loan_confirm_out' loan.pk %}" style="padding: 14px;">
+      {% csrf_token %}
+      <div class="table-wrap" style="border: 0; border-radius: 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>行号</th>
+              <th>物料编码/名称/型号</th>
+              <th>借出数量</th>
+              <th>批次/库位</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in allocation_rows %}
+              <tr>
+                <td>{{ row.item.line_no }}</td>
+                <td>
+                  {{ row.item.material.material_code }} / {{ row.item.material.material_name }}
+                  {% if row.item.material.spec %} / {{ row.item.material.spec }}{% endif %}
+                </td>
+                <td>{{ row.item.loan_qty }}</td>
+                <td>
+                  <select class="filter-select" name="item-{{ row.item.id }}-batch" required>
+                    <option value="">请选择批次/库位</option>
+                    {% for batch in row.batches %}
+                      <option value="{{ batch.id }}" {% if row.item.batch_id == batch.id %}selected{% endif %}>
+                        {{ batch.batch_no }} / {{ batch.location.location_code }}{% if batch.location.location_name %} {{ batch.location.location_name }}{% endif %} / 可用 {{ batch.remaining_qty }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  {% if not row.batches %}
+                    <div class="muted" style="margin-top: 4px;">当前物料暂无可用批次，暂不能确认出库。</div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+        <button class="button primary" type="submit">保存配货并确认借样出库</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
 
 {% if can_add_item %}
   <section class="panel" style="margin-top: 18px;">
@@ -102,17 +154,18 @@
         <table class="inline-table">
           <thead>
             <tr>
-              <th>物料名称/型号</th>
+              <th>物料编码/名称/型号</th>
               <th>借出数量</th>
               <th>预计归还</th>
               <th>批次/库位</th>
+              <th>备注</th>
             </tr>
           </thead>
           <tbody>
             {% with item_form=item_formset.forms.0 %}
               <tr data-sample-loan-picker>
                 <td>
-                  <input class="filter-input" type="text" data-sample-loan-search autocomplete="off" placeholder="输入名称/编码/型号">
+                  <input class="filter-input" type="text" name="{{ item_form.material_search.html_name }}" value="" data-sample-loan-search autocomplete="off" placeholder="输入编码/名称/型号">
                   <select data-sample-loan-options hidden style="width: 100%; margin-top: 6px;"></select>
                   <div class="muted" data-sample-loan-selected style="margin-top: 4px;"></div>
                   {{ item_form.material }}
@@ -121,9 +174,11 @@
                 <td>{{ item_form.expected_return_date }}</td>
                 <td>
                   <div class="muted" data-sample-loan-stock></div>
+                  <select data-sample-loan-batch-options hidden style="width: 100%; margin-top: 6px;"></select>
                   {{ item_form.batch }}
                   {{ item_form.location }}
                 </td>
+                <td>{{ item_form.remark }}</td>
               </tr>
             {% endwith %}
           </tbody>

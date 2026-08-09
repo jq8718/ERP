@@ -22,6 +22,14 @@
       <div class="stat-value">{{ pending_purchase_requests }}</div>
     </div>
     <div class="stat">
+      <div class="stat-label">待审采购单</div>
+      <div class="stat-value">{{ pending_purchase_orders }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">已通过待到货采购单</div>
+      <div class="stat-value">{{ approved_open_purchase_orders }}</div>
+    </div>
+    <div class="stat">
       <div class="stat-label">待入库进货单</div>
       <div class="stat-value">{{ pending_purchase_receipts }}</div>
     </div>
@@ -33,6 +41,34 @@
     </div>
   {% endif %}
 </section>
+
+{% if task_groups %}
+  <section class="grid-2">
+    {% for group in task_groups %}
+      <div class="panel">
+        <h2>{{ group.title }}</h2>
+        <div class="task-grid">
+          {% for task in group.tasks %}
+            <a class="task-card {% if not task.count %}is-empty{% endif %}" href="{{ task.url }}">
+              <span class="task-main">
+                <span class="task-label">{{ task.label }}</span>
+                {% if task.hint %}<span class="task-hint">{{ task.hint }}</span>{% endif %}
+              </span>
+              <span class="task-count {% if not task.count %}is-zero{% endif %}">{{ task.count }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </section>
+{% else %}
+  <section class="panel" style="margin-bottom: 16px;">
+    <div class="empty">
+      <strong>暂无待处理事项</strong>
+      <p>当前账号没有紧急待办，可以从左侧菜单进入对应模块查看历史记录。</p>
+    </div>
+  </section>
+{% endif %}
 
 <section class="grid-2">
   <div class="panel">

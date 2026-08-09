@@ -1,4 +1,5 @@
 <!doctype html>
+{% load erp_extras %}
 <html lang="zh-Hans">
 <head>
   <meta charset="utf-8">
@@ -141,7 +142,7 @@
           <td>{{ item.material }}</td>
           <td>{{ item.return_qty }}</td>
           <td>{{ item.location.location_code }}</td>
-          <td>{{ item.inventory_type }}</td>
+          <td>{{ item.inventory_type|inventory_type_name }}</td>
           <td>{{ item.get_sample_condition_display }}</td>
           <td>{{ item.remark }}</td>
         </tr>

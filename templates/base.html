@@ -162,6 +162,56 @@
     .panel-list { list-style: none; padding: 0; margin: 0; }
     .panel-list li { padding: 10px 14px; border-bottom: 1px solid var(--line); }
     .panel-list li:last-child { border-bottom: 0; }
+    .task-grid {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+    }
+    .task-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .task-card:hover {
+      border-color: var(--accent);
+      background: #f7fcfb;
+    }
+    .task-card.is-empty {
+      background: #fbfcfd;
+      color: #52616d;
+    }
+    .task-main {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .task-label {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .task-hint {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .task-count {
+      min-width: 42px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e6f4f1;
+      color: var(--accent-strong);
+      font-weight: 700;
+      text-align: center;
+    }
+    .task-count.is-zero {
+      background: #eef1f4;
+      color: var(--muted);
+    }
     .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
     .auth-box { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
     .field { display: grid; gap: 6px; margin-bottom: 14px; }
@@ -477,10 +527,10 @@
           <div class="nav-items" id="nav-items-sales">
             <a class="nav-link" href="{% url 'sales:sales_order_list' %}">销售订单</a>
             <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
-            <a class="nav-link" href="{% url 'sales:sales_shipment_list' %}">销售出库</a>
+            <a class="nav-link" href="{% url 'sales:sales_shipment_workbench' %}">销售出库</a>
             <a class="nav-link" href="{% url 'sales:sample_loan_list' %}">借样</a>
             <a class="nav-link" href="{% url 'sales:sample_loan_return_list' %}">借样归还</a>
-            <a class="nav-link" href="{% url 'sales:customer_return_list' %}">客户退货</a>
+            <a class="nav-link" href="{% url 'sales:customer_return_workbench' %}">客户退货</a>
           </div>
         </div>
       {% endif %}
@@ -500,7 +550,7 @@
             {% if can_production_view or can_production_process %}
               <a class="nav-link" href="{% url 'production:production_order_list' %}">生产指令</a>
               <a class="nav-link" href="{% url 'production:material_requisition_list' %}">生产领料</a>
-              <a class="nav-link" href="{% url 'production:production_receipt_list' %}">生产入库</a>
+              <a class="nav-link" href="{% url 'production:production_receipt_workbench' %}">生产入库</a>
             {% endif %}
           </div>
         </div>
@@ -535,8 +585,14 @@
               <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
               <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
             {% endif %}
-            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process or can_purchase_process %}
-              <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">对账单</a>
+            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process %}
+              <a class="nav-link" href="{% url 'finance:customer_reconciliation_list' %}">销售对账</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process or can_purchase_process %}
+              <a class="nav-link" href="{% url 'finance:production_reconciliation_list' %}">生产对账</a>
+            {% endif %}
+            {% if can_finance_view_amount or can_finance_payment_process %}
+              <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">全部对账单</a>
             {% endif %}
             {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:expense_record_list' %}">管理费用</a>

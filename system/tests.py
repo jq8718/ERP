@@ -103,9 +103,56 @@ class ModelDisplayTests(TestCase):
         self.assertEqual(missing, [])
 
 
+class QuantityInputStepTests(TestCase):
+    def test_customer_return_inventory_type_uses_chinese_choices(self):
+        from sales.forms import CustomerReturnItemForm
+
+        widget_html = CustomerReturnItemForm()["inventory_type"].as_widget()
+
+        self.assertIn(">可用</option>", widget_html)
+        self.assertIn(">待处理</option>", widget_html)
+        self.assertIn(">不良</option>", widget_html)
+        self.assertIn(">样品</option>", widget_html)
+        self.assertNotIn(">available</option>", widget_html)
+
+    def test_quantity_fields_render_with_integer_spinner_step(self):
+        from inventory.forms import InitialInventoryManualForm, LocationTransferForm
+        from production.forms import ProductionOrderForm
+        from purchase.forms import PurchaseOrderItemForm
+        from sales.forms import CustomerReturnItemForm, SalesOrderItemForm
+
+        cases = [
+            (CustomerReturnItemForm(), "return_qty"),
+            (SalesOrderItemForm(), "order_qty"),
+            (PurchaseOrderItemForm(), "order_qty"),
+            (ProductionOrderForm(), "production_qty"),
+            (LocationTransferForm(), "transfer_qty"),
+            (InitialInventoryManualForm(), "initial_qty"),
+        ]
+
+        for form, field_name in cases:
+            with self.subTest(form=form.__class__.__name__, field=field_name):
+                self.assertIn('step="1"', form[field_name].as_widget())
+
+    def test_price_fields_keep_decimal_spinner_step(self):
+        from sales.forms import CustomerReturnItemForm, SalesOrderItemForm
+
+        self.assertNotIn('step="1"', CustomerReturnItemForm()["unit_price"].as_widget())
+        self.assertNotIn('step="1"', SalesOrderItemForm()["unit_price"].as_widget())
+
+
 class SystemDashboardTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="dashboard", password="x")
+
+    def _grant_permission(self, permission_code: str):
+        permission, _ = Permission.objects.get_or_create(
+            permission_code=permission_code,
+            defaults={"permission_name": permission_code, "permission_type": Permission.PermissionType.MODULE},
+        )
+        role = Role.objects.create(role_code=f"dashboard-role-{permission_code}", role_name=permission_code)
+        role.permissions.add(permission)
+        self.user.roles.add(role)
 
     def test_dashboard_requires_login(self):
         response = self.client.get("/")
@@ -120,6 +167,54 @@ class SystemDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "工作台")
+
+    def test_dashboard_keeps_role_shortcuts_when_task_counts_are_zero(self):
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "销售待办")
+        self.assertContains(response, "可处理销售出库")
+        self.assertContains(response, 'href="/sales/shipments/workbench/"')
+        self.assertNotContains(response, "暂无待处理事项")
+
+    def test_list_clear_filter_switches_default_todo_scope_to_all_when_available(self):
+        self._grant_permission(PermissionCode.PURCHASE_VIEW)
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/purchase/orders/?scope=todo&q=missing")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["clear_filter_url"], "/purchase/orders/?scope=all")
+        self.assertContains(response, 'href="/purchase/orders/?scope=all"')
+        self.assertContains(response, "当前范围：待处理")
+
+    def test_dashboard_shows_purchase_order_action_counts(self):
+        self._grant_permission(PermissionCode.PURCHASE_VIEW)
+        supplier = Supplier.objects.create(supplier_no="S-DASH", supplier_name="工作台供应商")
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-DASH-PENDING",
+            supplier=supplier,
+            status=PurchaseOrder.Status.PENDING_APPROVAL,
+            order_date=timezone.localdate(),
+        )
+        PurchaseOrder.objects.create(
+            purchase_order_no="PO-DASH-APPROVED",
+            supplier=supplier,
+            status=PurchaseOrder.Status.APPROVED,
+            order_date=timezone.localdate(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get("/")
+
+        self.assertContains(response, "待审采购单")
+        self.assertContains(response, "已通过待到货采购单")
+        self.assertEqual(response.context["pending_purchase_orders"], 1)
+        self.assertEqual(response.context["approved_open_purchase_orders"], 1)
 
     @override_settings(ERP_APP_VERSION="20260705_0150")
     def test_login_page_displays_app_version(self):
@@ -158,14 +253,14 @@ class SystemDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'href="/sales/orders/"')
-        self.assertContains(response, 'href="/sales/shipments/"')
+        self.assertContains(response, 'href="/sales/shipments/workbench/"')
         self.assertContains(response, 'href="/masterdata/customers/"')
         self.assertNotContains(response, 'href="/masterdata/customer-products/"')
         self.assertNotContains(response, 'href="/purchase/orders/"')
         self.assertNotContains(response, 'href="/production/orders/"')
         self.assertNotContains(response, 'href="/inventory/"')
         self.assertContains(response, 'href="/finance/customer-receipts/"')
-        self.assertContains(response, 'href="/finance/reconciliations/"')
+        self.assertContains(response, 'href="/finance/customer-reconciliations/"')
         self.assertNotContains(response, 'href="/finance/supplier-payments/"')
         self.assertNotContains(response, 'href="/finance/operations/"')
         self.assertNotContains(response, 'href="/roles/"')
@@ -198,7 +293,7 @@ class SystemDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'href="/purchase/orders/"')
         self.assertContains(response, 'href="/finance/supplier-payments/"')
-        self.assertContains(response, 'href="/finance/reconciliations/"')
+        self.assertContains(response, 'href="/finance/production-reconciliations/"')
         self.assertNotContains(response, 'href="/finance/customer-receipts/"')
         self.assertNotContains(response, 'href="/finance/operations/"')
 
@@ -255,12 +350,14 @@ class SystemDashboardTests(TestCase):
         _grant_permission(self.user, PermissionCode.SALES_PROCESS)
         self.assertEqual(self.client.get("/finance/customer-receipts/").status_code, 200)
         self.assertEqual(self.client.get("/finance/reconciliations/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/customer-reconciliations/").status_code, 200)
 
         other_user = get_user_model().objects.create_user(username="purchase-finance-menu", password="x")
         _grant_permission(other_user, PermissionCode.PURCHASE_PROCESS)
         self.client.force_login(other_user)
         self.assertEqual(self.client.get("/finance/supplier-payments/").status_code, 200)
         self.assertEqual(self.client.get("/finance/reconciliations/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/production-reconciliations/").status_code, 200)
 
     def test_readonly_module_permissions_do_not_show_create_or_import_actions(self):
         _grant_permission(self.user, PermissionCode.INVENTORY_VIEW)
@@ -407,7 +504,7 @@ class SystemDashboardTests(TestCase):
             "/approvals/",
             "/sales/orders/",
             "/sales/shortages/",
-            "/sales/shipments/",
+            "/sales/shipments/workbench/",
             "/sales/sample-loans/",
             "/sales/sample-returns/",
             "/sales/returns/",
@@ -417,7 +514,7 @@ class SystemDashboardTests(TestCase):
             "/purchase/supplier-returns/",
             "/production/orders/",
             "/production/requisitions/",
-            "/production/receipts/",
+            "/production/receipts/workbench/",
             "/inventory/",
             "/inventory/locations/",
             "/inventory/batches/",

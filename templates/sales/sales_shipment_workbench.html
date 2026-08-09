@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'sales:sales_shipment_list' %}">出库单记录</a>
+</div>
+
+<form method="get" class="panel filter-panel">
+  <div class="filter-controls">
+    <input class="filter-input" type="text" name="q" value="{{ filters.q }}" placeholder="综合搜索">
+    <input class="filter-input" type="text" name="sales_order_no" value="{{ filters.sales_order_no }}" placeholder="销售订单号">
+    <input class="filter-input" type="text" name="customer_name" value="{{ filters.customer_name }}" placeholder="客户名称">
+    <input class="filter-input" type="text" name="material_code" value="{{ filters.material_code }}" placeholder="物料编码">
+    <input class="filter-input" type="text" name="material_name" value="{{ filters.material_name }}" placeholder="物料名称">
+    <input class="filter-input" type="text" name="material_spec" value="{{ filters.material_spec }}" placeholder="型号">
+    <select class="filter-select" name="order_status">
+      <option value="">全部订单状态</option>
+      {% for value, label in order_status_choices %}
+        <option value="{{ value }}" {% if filters.order_status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="button primary" type="submit">筛选</button>
+    {% if is_filtered_list %}
+      <a class="button" href="{% url 'sales:sales_shipment_workbench' %}">清除</a>
+    {% endif %}
+  </div>
+</form>
+
+<div class="table-wrap">
+  {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>销售订单</th>
+          <th>客户</th>
+          <th>交期</th>
+          <th>行号</th>
+          <th>物料编码/名称/型号</th>
+          <th>订单数量</th>
+          <th>已出库</th>
+          <th>待出库</th>
+          <th>可用库存</th>
+          <th>批次概况</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td><a href="{% url 'sales:sales_order_detail' row.item.sales_order.pk %}">{{ row.item.sales_order.sales_order_no }}</a></td>
+            <td>{{ row.item.sales_order.customer.customer_name }}</td>
+            <td>{{ row.item.sales_order.delivery_date|default:"" }}</td>
+            <td>{{ row.item.line_no }}</td>
+            <td>
+              {{ row.item.finished_material.material_code }} / {{ row.item.finished_material.material_name }}
+              {% if row.item.finished_material.spec %}<br><span class="muted">{{ row.item.finished_material.spec }}</span>{% endif %}
+            </td>
+            <td>{{ row.item.order_qty }}</td>
+            <td>{{ row.item.shipped_qty }}</td>
+            <td>{{ row.remaining_qty }}</td>
+            <td>{{ row.available_qty }}</td>
+            <td>
+              {% for batch in row.batches %}
+                <div>{{ batch.batch_no }} / {{ batch.location.location_code }} / {{ batch.remaining_qty }}</div>
+              {% empty %}
+                <span class="muted">暂无可用批次</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if can_process_sales %}
+                <form method="post" action="{% url 'sales:sales_order_create_shipment' row.item.sales_order.pk %}">
+                  {% csrf_token %}
+                  <button class="button primary" type="submit">生成该订单出库单</button>
+                </form>
+              {% else %}
+                <span class="muted">无处理权限</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">
+      <strong>{% if is_filtered_list %}筛选无结果{% else %}暂无待出库销售明细{% endif %}</strong>
+      <p>{% if is_filtered_list %}没有符合当前条件的待出库明细，请调整条件后重试。{% else %}已确认且库存充足的未出库销售明细会显示在这里。{% endif %}</p>
+      {% if is_filtered_list %}
+        <div class="form-actions" style="justify-content: center;">
+          <a class="button" href="{% url 'sales:sales_shipment_workbench' %}">清除筛选</a>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

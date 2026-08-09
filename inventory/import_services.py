@@ -27,8 +27,8 @@ INITIAL_INVENTORY_IMPORT_COLUMNS = (
 
 INITIAL_INVENTORY_IMPORT_TEMPLATE_ROWS = (
     csv_import_header_row(INITIAL_INVENTORY_IMPORT_COLUMNS),
-    ("RM001", "A01", "OPEN-RM001-A01-001", "available", "100.0000", "12.345600", "2026-06-09"),
-    ("FG001", "A01", "", "available", "20.0000", "", "2026-06-09"),
+    ("RM001", "A01", "OPEN-RM001-A01-001", "可用", "100.0000", "12.345600", "2026-06-09"),
+    ("FG001", "A01", "", "可用", "20.0000", "", "2026-06-09"),
 )
 
 WAREHOUSE_LOCATION_IMPORT_COLUMNS = (
@@ -45,6 +45,7 @@ WAREHOUSE_LOCATION_IMPORT_TEMPLATE_ROWS = (
 )
 
 ZERO = Decimal("0")
+INVENTORY_TYPE_LABEL_TO_VALUE = {label: value for value, label in InventoryBatch.InventoryType.choices}
 
 
 def import_warehouse_locations_from_csv(file_obj: TextIOBase, operator_id: int | None = None) -> ServiceResult:
@@ -317,7 +318,7 @@ def _initial_inventory_preview_rows(
                 "location_code": location_code,
                 "location_name": location_map[location_code].location_name,
                 "batch_no": _clean(row.get("batch_no")),
-                "inventory_type": _clean(row.get("inventory_type")) or InventoryBatch.InventoryType.AVAILABLE,
+                "inventory_type": _normalize_inventory_type(row.get("inventory_type")),
                 "initial_qty": str(_parse_decimal(_clean(row.get("initial_qty"))) or ZERO),
                 "cost_price": str(_parse_decimal(_clean(row.get("cost_price"))) or "") if _clean(row.get("cost_price")) else "",
                 "received_at": _clean(row.get("received_at")),
@@ -371,9 +372,9 @@ def _validate_initial_inventory_rows(rows: list[dict[str, str]]) -> tuple[list[d
                 errors.append({"row": row_no, "field": "batch_no", "message": "批次号已存在"})
             seen_batch_nos.add(batch_no)
 
-        inventory_type = _clean(row.get("inventory_type")) or InventoryBatch.InventoryType.AVAILABLE
+        inventory_type = _normalize_inventory_type(row.get("inventory_type"))
         if inventory_type not in valid_inventory_types:
-            errors.append({"row": row_no, "field": "inventory_type", "message": "库存类型不合法"})
+            errors.append({"row": row_no, "field": "inventory_type", "message": "库存类型不合法，请填写：可用、待处理、不良、样品"})
 
         initial_qty = _parse_decimal(_clean(row.get("initial_qty")))
         if initial_qty is None:
@@ -407,7 +408,7 @@ def _create_initial_inventory_rows(
         key=lambda row: (
             _clean(row.get("material_code")),
             _clean(row.get("location_code")),
-            _clean(row.get("inventory_type")) or InventoryBatch.InventoryType.AVAILABLE,
+            _normalize_inventory_type(row.get("inventory_type")),
             _clean(row.get("batch_no")),
         ),
     )
@@ -415,7 +416,7 @@ def _create_initial_inventory_rows(
     for row in sorted_rows:
         material = material_map[_clean(row.get("material_code"))]
         location = location_map[_clean(row.get("location_code"))]
-        inventory_type = _clean(row.get("inventory_type")) or InventoryBatch.InventoryType.AVAILABLE
+        inventory_type = _normalize_inventory_type(row.get("inventory_type"))
         initial_qty = _parse_decimal(_clean(row.get("initial_qty"))) or ZERO
         cost_price = _parse_decimal(_clean(row.get("cost_price")))
         received_at = _parse_received_at(_clean(row.get("received_at"))) or timezone.now()
@@ -461,6 +462,13 @@ def _inventory_for_update(material_id: int, location_id: int, inventory_type: st
         )
     )
     return inventory
+
+
+def _normalize_inventory_type(value: str | None) -> str:
+    inventory_type = _clean(value)
+    if not inventory_type:
+        return InventoryBatch.InventoryType.AVAILABLE
+    return INVENTORY_TYPE_LABEL_TO_VALUE.get(inventory_type, inventory_type)
 
 
 def _parse_decimal(value: str) -> Decimal | None:

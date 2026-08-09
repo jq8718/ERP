@@ -9,6 +9,20 @@
     <a class="button primary" href="{% url 'purchase:purchase_order_edit' purchase_order.pk %}">编辑</a>
   {% endif %}
   <a class="button" href="{% url 'purchase:purchase_order_print' purchase_order.pk %}" target="_blank">打印</a>
+  {% if can_approve %}
+    <form method="post" action="{% url 'purchase:purchase_order_approve' purchase_order.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">审核通过采购单</button>
+    </form>
+  {% endif %}
+  {% if can_reject %}
+    <form method="post" action="{% url 'purchase:purchase_order_reject' purchase_order.pk %}">
+      {% csrf_token %}
+      <input type="text" name="reject_reason" placeholder="驳回原因" required style="width: 180px;">
+      <button class="button" type="submit">驳回采购单</button>
+    </form>
+  {% endif %}
   {% if can_void %}
     <form method="post" action="{% url 'purchase:purchase_order_void' purchase_order.pk %}">
       {% csrf_token %}
@@ -45,6 +59,12 @@
     <div class="detail-value">{{ purchase_order.remark }}</div>
   </div>
 </section>
+
+{% if can_approve %}
+  <section class="panel" style="padding: 12px; margin-bottom: 16px;">
+    <span class="muted">当前采购单待审核，审核通过后可生成进货单。</span>
+  </section>
+{% endif %}
 
 <section class="panel">
   <h2>采购明细</h2>

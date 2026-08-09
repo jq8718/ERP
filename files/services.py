@@ -55,6 +55,7 @@ CSV_IMPORT_COLUMN_LABELS = {
     "issued_qty": "实发数量",
     "latest_purchase_price": "最近采购价",
     "line_expected_return_date": "明细预计归还日期",
+    "line_remark": "明细备注",
     "line_needed_date": "明细需求日期",
     "loan_date": "借样日期",
     "loan_qty": "借样数量",

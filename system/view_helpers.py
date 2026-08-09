@@ -70,13 +70,20 @@ class ErpListView(LoginRequiredMixin, ListView):
         context["status_choices"] = self._status_choices()
         context["extra_filters"] = self._extra_filter_context()
         context["field_filters"] = self._field_filter_context()
-        context["scope_filters"] = self._scope_filter_context()
+        scope_filters = self._scope_filter_context()
+        active_scope = next((scope_filter for scope_filter in scope_filters if scope_filter["active"]), None)
         active_query_string = self._active_query_string()
+        is_scope_filtered = self._is_effective_scope_filtered()
+        is_filtered_list = bool(active_query_string or is_scope_filtered)
+        clear_filter_url = self._clear_filter_url(scope_filters)
+        context["scope_filters"] = scope_filters
+        context["active_scope_label"] = active_scope["label"] if active_scope else ""
         context["active_query_string"] = active_query_string
         context["sort_links"] = self._sort_link_context()
-        context["is_filtered_list"] = bool(active_query_string)
-        context["empty_message"] = self.get_empty_message(bool(active_query_string))
-        context["empty_clear_url"] = self.request.path if active_query_string else ""
+        context["is_filtered_list"] = is_filtered_list
+        context["empty_message"] = self.get_empty_message(is_filtered_list)
+        context["clear_filter_url"] = clear_filter_url
+        context["empty_clear_url"] = clear_filter_url if is_filtered_list else ""
         context["saved_filter_module"] = self._saved_filter_module()
         context["saved_filters"] = self._saved_filter_context()
         return context
@@ -258,6 +265,20 @@ class ErpListView(LoginRequiredMixin, ListView):
                 }
             )
         return rows
+
+    def _is_effective_scope_filtered(self) -> bool:
+        options = self.get_scope_filter_options()
+        if len(options) <= 1:
+            return False
+        current_value = self.current_scope_filter_value()
+        return bool(current_value and current_value != "all")
+
+    def _clear_filter_url(self, scope_filters: list[dict] | None = None) -> str:
+        scope_filters = scope_filters or self._scope_filter_context()
+        all_scope = next((scope_filter for scope_filter in scope_filters if scope_filter["value"] == "all"), None)
+        if all_scope:
+            return f"{self.request.path}?{urlencode({self.scope_filter_param: 'all'})}"
+        return self.request.path
 
     def _active_query_string(self):
         params = self.request.GET.copy()

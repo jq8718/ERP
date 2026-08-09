@@ -63,6 +63,7 @@ class BomForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
+        set_form_labels(self)
         if self.instance and self.instance.pk and self.instance.finished_material_id:
             material = self.instance.finished_material
             self.fields["finished_material_code"].initial = material.material_code

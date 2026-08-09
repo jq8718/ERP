@@ -33,30 +33,82 @@
     }
   }
 
-  function applyChoice(row, item) {
-    var material = field(row, "material");
+  function clearBatch(row) {
     var batch = field(row, "batch");
     var location = field(row, "location");
+    var batchOptions = row.querySelector("[data-sample-loan-batch-options]");
+    if (batch) {
+      batch.value = "";
+    }
+    if (location) {
+      location.value = "";
+    }
+    if (batchOptions) {
+      batchOptions.innerHTML = "";
+      batchOptions.hidden = true;
+    }
+  }
+
+  function applyBatch(row, item) {
+    var batch = field(row, "batch");
+    var location = field(row, "location");
+    if (batch) {
+      batch.value = item.batch_id || "";
+    }
+    if (location) {
+      location.value = item.location_id || "";
+    }
+    if (!item || !item.batch_id) {
+      setRowDisplay(row, row.dataset.sampleLoanMaterialLabel || "", "暂无可用批次，可先保存，确认出库前补批次");
+      return;
+    }
+    var stockLabel = "批次：" + item.batch_no + "｜库位：" + item.location_code + (item.location_name ? " " + item.location_name : "") + "｜可用：" + item.remaining_qty;
+    setRowDisplay(row, row.dataset.sampleLoanMaterialLabel || "", stockLabel);
+  }
+
+  function renderBatchOptions(row, batches) {
+    var batchOptions = row.querySelector("[data-sample-loan-batch-options]");
+    clearBatch(row);
+    if (!batchOptions) {
+      return;
+    }
+    if (!batches || !batches.length) {
+      setRowDisplay(row, row.dataset.sampleLoanMaterialLabel || "", "暂无可用批次，可先保存，确认出库前补批次");
+      return;
+    }
+    batchOptions.appendChild(option("选择批次/库位（可稍后补）", ""));
+    batches.forEach(function (batch) {
+      var label = "批次：" + batch.batch_no + "｜库位：" + batch.location_code + (batch.location_name ? " " + batch.location_name : "") + "｜可用：" + batch.remaining_qty;
+      var element = option(label, batch.batch_id);
+      element.dataset.item = JSON.stringify(batch);
+      batchOptions.appendChild(element);
+    });
+    batchOptions.hidden = false;
+    if (batches.length === 1) {
+      batchOptions.selectedIndex = 1;
+      applyBatch(row, batches[0]);
+    } else {
+      setRowDisplay(row, row.dataset.sampleLoanMaterialLabel || "", "请选择库存批次；也可先保存，确认出库前补批次");
+    }
+  }
+
+  function applyMaterial(row, item) {
+    var material = field(row, "material");
     var search = row.querySelector("[data-sample-loan-search]");
     var options = row.querySelector("[data-sample-loan-options]");
     if (material) {
       material.value = item.material_id;
     }
-    if (batch) {
-      batch.value = item.batch_id;
-    }
-    if (location) {
-      location.value = item.location_id || "";
-    }
     if (search) {
-      search.value = item.material_name;
+      search.value = item.material_code + " " + item.material_name + (item.material_spec ? " " + item.material_spec : "");
     }
     if (options) {
       options.hidden = true;
     }
-    var materialLabel = item.material_code + "｜" + item.material_name + (item.material_spec ? "｜型号：" + item.material_spec : "");
-    var stockLabel = "批次：" + item.batch_no + "｜库位：" + item.location_code + (item.location_name ? " " + item.location_name : "") + "｜可用：" + item.remaining_qty;
-    setRowDisplay(row, materialLabel, stockLabel);
+    var materialLabel = item.material_code + "｜" + item.material_name + (item.material_spec ? "｜型号：" + item.material_spec : "") + "｜总可用：" + item.available_qty + " " + item.base_unit;
+    row.dataset.sampleLoanMaterialLabel = materialLabel;
+    setRowDisplay(row, materialLabel, "");
+    renderBatchOptions(row, item.batches || []);
   }
 
   function renderOptions(row, items) {
@@ -70,7 +122,8 @@
       return;
     }
     items.forEach(function (item) {
-      var element = option(item.label, item.batch_id);
+      var label = item.material_code + "｜" + item.material_name + (item.material_spec ? "｜型号：" + item.material_spec : "") + "｜总可用：" + item.available_qty + " " + item.base_unit;
+      var element = option(label, item.material_id);
       element.dataset.item = JSON.stringify(item);
       options.appendChild(element);
     });
@@ -109,20 +162,17 @@
     row.dataset.sampleLoanPickerReady = "1";
     var search = row.querySelector("[data-sample-loan-search]");
     var options = row.querySelector("[data-sample-loan-options]");
+    var batchOptions = row.querySelector("[data-sample-loan-batch-options]");
     var material = field(row, "material");
     var batch = field(row, "batch");
+    var location = field(row, "location");
     if (search) {
       search.addEventListener("input", function () {
         if (material) {
           material.value = "";
         }
-        if (batch) {
-          batch.value = "";
-        }
-        var location = field(row, "location");
-        if (location) {
-          location.value = "";
-        }
+        clearBatch(row);
+        row.dataset.sampleLoanMaterialLabel = "";
         setRowDisplay(row, "", "");
         clearTimeout(timers.get(search));
         timers.set(search, setTimeout(function () { loadOptions(row); }, 180));
@@ -137,11 +187,29 @@
       options.addEventListener("change", function () {
         var selected = options.options[options.selectedIndex];
         if (selected && selected.dataset.item) {
-          applyChoice(row, JSON.parse(selected.dataset.item));
+          applyMaterial(row, JSON.parse(selected.dataset.item));
         }
       });
     }
-    setRowDisplay(row, selectedText(material), selectedText(batch));
+    if (batchOptions) {
+      batchOptions.addEventListener("change", function () {
+        var selected = batchOptions.options[batchOptions.selectedIndex];
+        if (selected && selected.dataset.item) {
+          applyBatch(row, JSON.parse(selected.dataset.item));
+        } else {
+          if (batch) {
+            batch.value = "";
+          }
+          if (location) {
+            location.value = "";
+          }
+          setRowDisplay(row, row.dataset.sampleLoanMaterialLabel || selectedText(material), "确认出库前补批次");
+        }
+      });
+    }
+    var materialLabel = selectedText(material);
+    row.dataset.sampleLoanMaterialLabel = materialLabel;
+    setRowDisplay(row, materialLabel, selectedText(batch));
   }
 
   function initAll() {

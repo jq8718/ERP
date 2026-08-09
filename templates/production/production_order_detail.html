@@ -70,6 +70,12 @@
   </div>
 </section>
 
+{% if can_start_requisition_before_receipt %}
+  <section class="panel" style="padding: 12px; margin-bottom: 18px;">
+    <span class="muted">当前生产指令需先生成并确认领料单，之后才能生成生产入库单。</span>
+  </section>
+{% endif %}
+
 {% if can_create_receipt %}
   <section class="panel" style="margin-bottom: 18px;">
     <h2>生成生产入库单</h2>
@@ -86,6 +92,9 @@
         </label>
         <label class="form-row">备注
           <input type="text" name="remark">
+        </label>
+        <label class="form-row">批次号
+          <input type="text" name="batch_no" value="{{ production_order.production_order_no }}-01">
         </label>
       </div>
       <div class="form-actions">

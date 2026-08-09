@@ -98,6 +98,28 @@ class PurchaseRequestListView(ErpListView):
         "created_at": "created_at",
     }
 
+    def get_scope_filter_options(self):
+        can_process = _can_process_purchase(self.request.user)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+            {"value": "approved_open", "label": "已通过待下单"},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    PurchaseRequest.Status.DRAFT,
+                    PurchaseRequest.Status.PENDING_APPROVAL,
+                    PurchaseRequest.Status.REJECTED,
+                    PurchaseRequest.Status.APPROVED,
+                ]
+            )
+        if scope_value == "approved_open":
+            return queryset.filter(status=PurchaseRequest.Status.APPROVED, items__line_status__in=["open", "partial_ordered"]).distinct()
+        return queryset
+
 
 class PurchaseRequestImportTemplateView(LoginRequiredMixin, View):
     def get(self, request):
@@ -147,6 +169,11 @@ class PurchaseRequestCreateView(LoginRequiredMixin, CreateView):
     model = PurchaseRequest
     form_class = PurchaseRequestForm
     template_name = "purchase/purchase_request_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -417,17 +444,44 @@ class PurchaseOrderListView(ErpListView):
         return context
 
     def get_scope_filter_options(self):
+        can_process = _can_process_purchase(self.request.user)
         if _can_view_all_purchase(self.request.user):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待处理", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
+                {"value": "pending_approval", "label": "待审核"},
+                {"value": "approved_open", "label": "已通过待到货"},
+                {"value": "partial_received", "label": "部分到货"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+            {"value": "pending_approval", "label": "待审核"},
+            {"value": "approved_open", "label": "已通过待到货"},
+            {"value": "partial_received", "label": "部分到货"},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    PurchaseOrder.Status.DRAFT,
+                    PurchaseOrder.Status.PENDING_APPROVAL,
+                    PurchaseOrder.Status.REJECTED,
+                    PurchaseOrder.Status.APPROVED,
+                    PurchaseOrder.Status.PARTIAL_RECEIVED,
+                ]
+            )
         if scope_value == "mine":
             return queryset.filter(Q(purchase_owner=self.request.user) | Q(created_by=self.request.user)).distinct()
+        if scope_value == "pending_approval":
+            return queryset.filter(status=PurchaseOrder.Status.PENDING_APPROVAL)
+        if scope_value == "approved_open":
+            return queryset.filter(status=PurchaseOrder.Status.APPROVED)
+        if scope_value == "partial_received":
+            return queryset.filter(status=PurchaseOrder.Status.PARTIAL_RECEIVED)
         if scope_value == "unassigned" and _can_view_all_purchase(self.request.user):
             return queryset.filter(purchase_owner__isnull=True)
         return queryset
@@ -544,6 +598,11 @@ class PurchaseOrderCreateView(LoginRequiredMixin, CreateView):
     model = PurchaseOrder
     form_class = PurchaseOrderForm
     template_name = "purchase/purchase_order_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -726,6 +785,8 @@ class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
         context["page_title"] = f"采购单 {self.object.purchase_order_no}"
         context["can_view_amount"] = can_view_amount(self.request.user)
         context["can_edit"] = can_process_purchase and self.object.status in [PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.REJECTED]
+        context["can_approve"] = can_process_purchase and self.object.status == PurchaseOrder.Status.PENDING_APPROVAL
+        context["can_reject"] = can_process_purchase and self.object.status == PurchaseOrder.Status.PENDING_APPROVAL
         context["can_void"] = can_process_purchase and self.object.status in [
             PurchaseOrder.Status.DRAFT,
             PurchaseOrder.Status.PENDING_APPROVAL,
@@ -827,6 +888,87 @@ class PurchaseOrderVoidView(LoginRequiredMixin, View):
             after_snapshot={**after_snapshot, "operation_reason": reason},
         )
         messages.success(request, "采购单已作废")
+        return redirect("purchase:purchase_order_detail", pk=pk)
+
+
+class PurchaseOrderApproveView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        verification_response = require_second_verify(request, "purchase:purchase_order_detail", pk)
+        if verification_response:
+            return verification_response
+        try:
+            with transaction.atomic():
+                order = _filter_purchase_order_queryset_for_user(
+                    PurchaseOrder.objects.select_for_update().prefetch_related("items__material"),
+                    request.user,
+                ).get(pk=pk)
+                if order.status != PurchaseOrder.Status.PENDING_APPROVAL:
+                    messages.error(request, "只有待审核采购单可以审核通过")
+                    return redirect("purchase:purchase_order_detail", pk=pk)
+                if not order.items.exists():
+                    messages.error(request, "采购单没有明细，不能审核通过")
+                    return redirect("purchase:purchase_order_detail", pk=pk)
+                before_snapshot = _purchase_order_snapshot(order)
+                order.status = PurchaseOrder.Status.APPROVED
+                order.save(update_fields=["status"])
+                after_snapshot = _purchase_order_snapshot(order)
+        except PurchaseOrder.DoesNotExist:
+            messages.error(request, "采购单不存在")
+            return redirect("purchase:purchase_order_list")
+
+        record_audit_log_from_request(
+            request,
+            "purchase_order_approve",
+            "purchase_order",
+            order.id,
+            order.purchase_order_no,
+            before_snapshot=before_snapshot,
+            after_snapshot={**after_snapshot, "operation_reason": "审核通过采购单"},
+        )
+        messages.success(request, "采购单已审核通过，可以生成进货单")
+        return redirect("purchase:purchase_order_detail", pk=pk)
+
+
+class PurchaseOrderRejectView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        reason, reason_response = require_post_reason(
+            request,
+            "purchase:purchase_order_detail",
+            pk,
+            field_names=("reject_reason", "reason"),
+            message="请填写采购单驳回原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                order = _filter_purchase_order_queryset_for_user(
+                    PurchaseOrder.objects.select_for_update().prefetch_related("items__material"),
+                    request.user,
+                ).get(pk=pk)
+                if order.status != PurchaseOrder.Status.PENDING_APPROVAL:
+                    messages.error(request, "只有待审核采购单可以驳回")
+                    return redirect("purchase:purchase_order_detail", pk=pk)
+                before_snapshot = _purchase_order_snapshot(order)
+                order.status = PurchaseOrder.Status.REJECTED
+                order.save(update_fields=["status"])
+                after_snapshot = _purchase_order_snapshot(order)
+        except PurchaseOrder.DoesNotExist:
+            messages.error(request, "采购单不存在")
+            return redirect("purchase:purchase_order_list")
+
+        record_audit_log_from_request(
+            request,
+            "purchase_order_reject",
+            "purchase_order",
+            order.id,
+            order.purchase_order_no,
+            before_snapshot=before_snapshot,
+            after_snapshot={**after_snapshot, "operation_reason": reason},
+        )
+        messages.success(request, "采购单已驳回，可退回编辑修改")
         return redirect("purchase:purchase_order_detail", pk=pk)
 
 
@@ -1013,15 +1155,28 @@ class PurchaseReceiptListView(ErpListView):
         )
 
     def get_scope_filter_options(self):
+        can_process = _can_process_purchase(self.request.user)
         if _can_view_all_purchase(self.request.user):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待入库", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待入库", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    PurchaseReceipt.Status.PENDING_APPROVAL,
+                    PurchaseReceipt.Status.PENDING_RECEIVE,
+                    PurchaseReceipt.Status.PARTIAL_RECEIVED,
+                ]
+            )
         if scope_value == "mine":
             return queryset.filter(
                 Q(purchase_order__purchase_owner=self.request.user)
@@ -1316,15 +1471,29 @@ class SupplierReturnListView(ErpListView):
         return context
 
     def get_scope_filter_options(self):
+        can_process = _can_process_purchase(self.request.user)
         if _can_view_all_purchase(self.request.user):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待处理", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    SupplierReturn.Status.DRAFT,
+                    SupplierReturn.Status.PENDING_APPROVAL,
+                    SupplierReturn.Status.REJECTED,
+                    SupplierReturn.Status.CONFIRMED,
+                ]
+            )
         if scope_value == "mine":
             return queryset.filter(
                 Q(purchase_receipt__purchase_order__purchase_owner=self.request.user)
@@ -1396,6 +1565,11 @@ class SupplierReturnCreateView(LoginRequiredMixin, CreateView):
     model = SupplierReturn
     form_class = SupplierReturnForm
     template_name = "purchase/supplier_return_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_erp_permission(request.user, PermissionCode.PURCHASE_PROCESS, "缺少采购单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()

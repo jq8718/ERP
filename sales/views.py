@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.shortcuts import redirect, render
@@ -133,15 +133,32 @@ class SalesOrderListView(ErpListView):
         return _filter_sales_order_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer")
 
     def get_scope_filter_options(self):
+        can_process = _can_process_sales(self.request.user)
         if _can_view_all_sales(self.request.user) or can_view_amount(self.request.user):
-            return (
-                {"value": "all", "label": "全部", "default": True},
+            options = [
+                {"value": "todo", "label": "待处理", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
-            )
-        return ({"value": "mine", "label": "我的", "default": True},)
+            ]
+            return tuple(options)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    SalesOrder.Status.DRAFT,
+                    SalesOrder.Status.PENDING_APPROVAL,
+                    SalesOrder.Status.REJECTED,
+                    SalesOrder.Status.PENDING_BOM,
+                    SalesOrder.Status.CONFIRMED,
+                    SalesOrder.Status.IN_PRODUCTION,
+                ]
+            )
         if scope_value == "mine":
             return queryset.filter(Q(customer__sales_owner=self.request.user) | Q(created_by=self.request.user)).distinct()
         if scope_value == "unassigned" and (_can_view_all_sales(self.request.user) or can_view_amount(self.request.user)):
@@ -288,6 +305,11 @@ class SalesOrderCreateView(LoginRequiredMixin, CreateView):
     model = SalesOrder
     form_class = SalesOrderForm
     template_name = "sales/sales_order_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -843,6 +865,20 @@ class ShortageAlertListView(ErpListView):
     def get_queryset(self):
         return _filter_shortage_queryset_for_user(super().get_queryset(), self.request.user).select_related("sales_order", "material")
 
+    def get_scope_filter_options(self):
+        return (
+            {"value": "todo", "label": "待处理", "default": True},
+            {"value": "all", "label": "全部"},
+            {"value": "partial", "label": "部分到货"},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=ShortageAlert.Status.UNPROCESSED)
+        if scope_value == "partial":
+            return queryset.filter(status=ShortageAlert.Status.PARTIAL_RECEIVED)
+        return queryset
+
 
 class ShortageAlertExportView(SalesCsvExportView):
     module = "shortage_alerts"
@@ -869,6 +905,7 @@ class SalesShipmentListView(ErpListView):
     )
     ordering = ["-created_at"]
     page_actions = (
+        ("销售出库工作台", "sales:sales_shipment_workbench", "primary"),
         ("导出CSV", "sales:sales_shipment_export", ""),
         ("下载导入模板", "sales:sales_shipment_import_template", ""),
         ("导入CSV", "sales:sales_shipment_import", "primary"),
@@ -905,6 +942,134 @@ class SalesShipmentListView(ErpListView):
 
     def get_queryset(self):
         return _filter_sales_shipment_queryset_for_user(super().get_queryset(), self.request.user).select_related("sales_order", "customer")
+
+    def get_scope_filter_options(self):
+        can_process = _can_process_sales(self.request.user)
+        return (
+            {"value": "todo", "label": "待确认", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=SalesShipment.Status.PENDING_CONFIRM)
+        return queryset
+
+
+class SalesShipmentWorkbenchView(LoginRequiredMixin, TemplateView):
+    template_name = "sales/sales_shipment_workbench.html"
+    page_title = "销售出库"
+
+    def dispatch(self, request, *args, **kwargs):
+        require_any_erp_permission(request.user, SalesShipmentListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = self._rows()
+        query_params = self.request.GET.copy()
+        query_params.pop("page", None)
+        context.update(
+            {
+                "page_title": self.page_title,
+                "rows": rows,
+                "can_process_sales": _can_process_sales(self.request.user),
+                "filters": self._filter_values(),
+                "is_filtered_list": bool(query_params.urlencode()),
+                "shipment_status_choices": SalesShipment.Status.choices,
+                "order_status_choices": (
+                    (SalesOrder.Status.CONFIRMED, SalesOrder.Status.CONFIRMED.label),
+                    (SalesOrder.Status.IN_PRODUCTION, SalesOrder.Status.IN_PRODUCTION.label),
+                ),
+            }
+        )
+        return context
+
+    def _filter_values(self):
+        return {
+            "q": self.request.GET.get("q", "").strip(),
+            "sales_order_no": self.request.GET.get("sales_order_no", "").strip(),
+            "customer_name": self.request.GET.get("customer_name", "").strip(),
+            "material_code": self.request.GET.get("material_code", "").strip(),
+            "material_name": self.request.GET.get("material_name", "").strip(),
+            "material_spec": self.request.GET.get("material_spec", "").strip(),
+            "order_status": self.request.GET.get("order_status", "").strip(),
+        }
+
+    def _queryset(self):
+        order_ids = _filter_sales_order_queryset_for_user(SalesOrder.objects.all(), self.request.user).values("id")
+        queryset = (
+            SalesOrderItem.objects.select_related("sales_order", "sales_order__customer", "finished_material")
+            .filter(
+                sales_order_id__in=order_ids,
+                sales_order__status__in=[SalesOrder.Status.CONFIRMED, SalesOrder.Status.IN_PRODUCTION],
+                line_status=SalesOrderItem.LineStatus.CONFIRMED,
+                inventory_check_status=SalesOrderItem.InventoryCheckStatus.SUFFICIENT,
+                order_qty__gt=F("shipped_qty"),
+            )
+            .order_by("sales_order__delivery_date", "sales_order__sales_order_no", "line_no", "id")
+        )
+        filters = self._filter_values()
+        if filters["q"]:
+            queryset = queryset.filter(
+                Q(sales_order__sales_order_no__icontains=filters["q"])
+                | Q(sales_order__customer__customer_name__icontains=filters["q"])
+                | Q(finished_material__material_code__icontains=filters["q"])
+                | Q(finished_material__material_name__icontains=filters["q"])
+                | Q(finished_material__spec__icontains=filters["q"])
+            )
+        if filters["sales_order_no"]:
+            queryset = queryset.filter(sales_order__sales_order_no__icontains=filters["sales_order_no"])
+        if filters["customer_name"]:
+            queryset = queryset.filter(sales_order__customer__customer_name__icontains=filters["customer_name"])
+        if filters["material_code"]:
+            queryset = queryset.filter(finished_material__material_code__icontains=filters["material_code"])
+        if filters["material_name"]:
+            queryset = queryset.filter(finished_material__material_name__icontains=filters["material_name"])
+        if filters["material_spec"]:
+            queryset = queryset.filter(finished_material__spec__icontains=filters["material_spec"])
+        if filters["order_status"]:
+            queryset = queryset.filter(sales_order__status=filters["order_status"])
+        return queryset
+
+    def _rows(self):
+        items = list(self._queryset()[:200])
+        material_ids = {item.finished_material_id for item in items}
+        available_qty_by_material = {
+            row["material_id"]: row["available_qty"] or Decimal("0")
+            for row in InventoryBatch.objects.filter(
+                material_id__in=material_ids,
+                inventory_type=InventoryBatch.InventoryType.AVAILABLE,
+                batch_status=InventoryBatch.BatchStatus.IN_STOCK,
+                remaining_qty__gt=0,
+            )
+            .values("material_id")
+            .annotate(available_qty=Sum("remaining_qty"))
+        }
+        batches_by_material = {}
+        batches = (
+            InventoryBatch.objects.select_related("location")
+            .filter(
+                material_id__in=material_ids,
+                inventory_type=InventoryBatch.InventoryType.AVAILABLE,
+                batch_status=InventoryBatch.BatchStatus.IN_STOCK,
+                remaining_qty__gt=0,
+            )
+            .order_by("material_id", "received_at", "batch_no", "id")
+        )
+        for batch in batches:
+            rows = batches_by_material.setdefault(batch.material_id, [])
+            if len(rows) < 3:
+                rows.append(batch)
+        return [
+            {
+                "item": item,
+                "remaining_qty": item.order_qty - item.shipped_qty,
+                "available_qty": available_qty_by_material.get(item.finished_material_id, Decimal("0")),
+                "batches": batches_by_material.get(item.finished_material_id, []),
+            }
+            for item in items
+        ]
 
 
 class SalesShipmentExportView(SalesCsvExportView):
@@ -1179,7 +1344,7 @@ class CustomerReturnListView(ErpListView):
     page_title = "客户退货"
     view_permission_required = (PermissionCode.SALES_VIEW, PermissionCode.SALES_PROCESS, PermissionCode.SALES_VIEW_ALL)
     permission_denied_message = "缺少销售数据查看权限"
-    create_url_name = "sales:customer_return_create"
+    create_url_name = "sales:customer_return_workbench"
     detail_url_name = "sales:customer_return_detail"
     columns = (
         ("退货单号", "return_no"),
@@ -1191,11 +1356,13 @@ class CustomerReturnListView(ErpListView):
     sensitive_columns = ("return_amount",)
     ordering = ["-return_date", "-id"]
     page_actions = (
+        ("新建空白退货", "sales:customer_return_create", "primary"),
         ("导出CSV", "sales:customer_return_export", ""),
         ("下载导入模板", "sales:customer_return_import_template", ""),
         ("导入CSV", "sales:customer_return_import", "primary"),
     )
     page_action_permissions = {
+        "sales:customer_return_create": PermissionCode.SALES_PROCESS,
         "sales:customer_return_import_template": PermissionCode.SALES_PROCESS,
         "sales:customer_return_import": PermissionCode.SALES_PROCESS,
     }
@@ -1212,10 +1379,113 @@ class CustomerReturnListView(ErpListView):
     def get_queryset(self):
         return _filter_customer_return_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer", "sales_order")
 
+    def get_scope_filter_options(self):
+        can_process = _can_process_sales(self.request.user)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    CustomerReturn.Status.DRAFT,
+                    CustomerReturn.Status.PENDING_APPROVAL,
+                    CustomerReturn.Status.REJECTED,
+                    CustomerReturn.Status.CONFIRMED,
+                ]
+            )
+        return queryset
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["mask_sensitive_columns"] = not can_view_amount(self.request.user)
         return context
+
+
+class CustomerReturnWorkbenchView(LoginRequiredMixin, TemplateView):
+    template_name = "sales/customer_return_workbench.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        require_any_erp_permission(
+            request.user,
+            CustomerReturnListView.view_permission_required,
+            "缺少销售数据查看权限",
+        )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        query_params = self.request.GET.copy()
+        query_params.pop("page", None)
+        context.update(
+            {
+                "page_title": "客户退货",
+                "rows": self._rows(),
+                "filters": self._filter_values(),
+                "order_status_choices": (
+                    (SalesOrder.Status.SHIPPED, SalesOrder.Status.SHIPPED.label),
+                    (SalesOrder.Status.COMPLETED, SalesOrder.Status.COMPLETED.label),
+                ),
+                "can_process_sales": _can_process_sales(self.request.user),
+                "is_filtered_list": bool(query_params.urlencode()),
+            }
+        )
+        return context
+
+    def _filter_values(self):
+        return {
+            "q": self.request.GET.get("q", "").strip(),
+            "sales_order_no": self.request.GET.get("sales_order_no", "").strip(),
+            "customer_name": self.request.GET.get("customer_name", "").strip(),
+            "material_code": self.request.GET.get("material_code", "").strip(),
+            "material_name": self.request.GET.get("material_name", "").strip(),
+            "material_spec": self.request.GET.get("material_spec", "").strip(),
+            "order_status": self.request.GET.get("order_status", "").strip(),
+        }
+
+    def _queryset(self):
+        order_ids = _customer_return_sales_order_queryset(self.request.user).values("id")
+        queryset = (
+            SalesOrderItem.objects.select_related("sales_order", "sales_order__customer", "finished_material")
+            .filter(sales_order_id__in=order_ids, shipped_qty__gt=0)
+            .order_by("-sales_order__order_date", "-sales_order_id", "line_no", "id")
+        )
+        filters = self._filter_values()
+        if filters["q"]:
+            queryset = queryset.filter(
+                Q(sales_order__sales_order_no__icontains=filters["q"])
+                | Q(sales_order__customer__customer_name__icontains=filters["q"])
+                | Q(finished_material__material_code__icontains=filters["q"])
+                | Q(finished_material__material_name__icontains=filters["q"])
+                | Q(finished_material__spec__icontains=filters["q"])
+                | Q(customer_model_remark__icontains=filters["q"])
+            )
+        if filters["sales_order_no"]:
+            queryset = queryset.filter(sales_order__sales_order_no__icontains=filters["sales_order_no"])
+        if filters["customer_name"]:
+            queryset = queryset.filter(sales_order__customer__customer_name__icontains=filters["customer_name"])
+        if filters["material_code"]:
+            queryset = queryset.filter(finished_material__material_code__icontains=filters["material_code"])
+        if filters["material_name"]:
+            queryset = queryset.filter(finished_material__material_name__icontains=filters["material_name"])
+        if filters["material_spec"]:
+            queryset = queryset.filter(finished_material__spec__icontains=filters["material_spec"])
+        if filters["order_status"]:
+            queryset = queryset.filter(sales_order__status=filters["order_status"])
+        return queryset
+
+    def _rows(self):
+        rows = []
+        for item in self._queryset()[:300]:
+            returnable_qty = customer_returnable_qty(item)
+            if returnable_qty <= 0:
+                continue
+            rows.append({"item": item, "returnable_qty": returnable_qty})
+            if len(rows) >= 200:
+                break
+        return rows
 
 
 class CustomerReturnExportView(SalesCsvExportView):
@@ -1281,12 +1551,22 @@ class CustomerReturnCreateView(LoginRequiredMixin, CreateView):
     form_class = CustomerReturnForm
     template_name = "sales/customer_return_form.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        initial = super().get_initial()
+        sales_order = self._source_sales_order()
+        if sales_order:
+            initial["sales_order"] = sales_order
+            initial["customer"] = sales_order.customer
+        return initial
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["sales_order_queryset"] = _customer_return_sales_order_queryset(self.request.user)
-        kwargs.setdefault("initial", {})
-        if self.request.GET.get("show_all_orders") == "1":
-            kwargs["initial"]["show_all_orders"] = True
         return kwargs
 
     def get_context_data(self, **kwargs):
@@ -1310,8 +1590,22 @@ class CustomerReturnCreateView(LoginRequiredMixin, CreateView):
                 can_edit_amount=context["can_view_amount"],
             )
         else:
+            source_item = self._source_sales_order_item()
+            source_order = source_item.sales_order if source_item else self._source_sales_order()
+            initial_items = []
+            if source_item:
+                initial_items.append(
+                    {
+                        "sales_order_item": source_item,
+                        "material": source_item.finished_material,
+                        "unit_price": source_item.unit_price,
+                    }
+                )
             context["item_formset"] = CustomerReturnItemFormSet(
                 instance=self.object,
+                customer=source_order.customer if source_order else None,
+                sales_order=source_order,
+                initial=initial_items,
                 can_edit_amount=context["can_view_amount"],
             )
         return context
@@ -1354,6 +1648,29 @@ class CustomerReturnCreateView(LoginRequiredMixin, CreateView):
 
     def get_success_url(self):
         return reverse("sales:customer_return_detail", kwargs={"pk": self.object.pk})
+
+    def _source_sales_order(self):
+        source_item = self._source_sales_order_item()
+        if source_item:
+            return source_item.sales_order
+        sales_order_id = self.request.GET.get("sales_order")
+        if not sales_order_id:
+            return None
+        return _customer_return_sales_order_queryset(self.request.user).filter(pk=sales_order_id).first()
+
+    def _source_sales_order_item(self):
+        source_item_id = self.request.GET.get("source_item") or self.request.GET.get("sales_order_item")
+        if not source_item_id:
+            return None
+        allowed_order_ids = _customer_return_sales_order_queryset(self.request.user).values("id")
+        item = (
+            SalesOrderItem.objects.select_related("sales_order", "sales_order__customer", "finished_material")
+            .filter(pk=source_item_id, sales_order_id__in=allowed_order_ids, shipped_qty__gt=0)
+            .first()
+        )
+        if item and customer_returnable_qty(item) > 0:
+            return item
+        return None
 
 
 class CustomerReturnDetailView(LoginRequiredMixin, DetailView):
@@ -1468,7 +1785,6 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
         form = CustomerReturnForm(
             instance=customer_return,
             sales_order_queryset=_customer_return_sales_order_queryset(request.user),
-            initial={"show_all_orders": request.GET.get("show_all_orders") == "1"},
         )
         item_formset = CustomerReturnItemFormSet(
             instance=customer_return,
@@ -1680,6 +1996,28 @@ class SampleLoanListView(ErpListView):
     def get_queryset(self):
         return _filter_sample_loan_queryset_for_user(super().get_queryset(), self.request.user).select_related("customer")
 
+    def get_scope_filter_options(self):
+        can_process = _can_process_sales(self.request.user)
+        return (
+            {"value": "todo", "label": "待处理", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+            {"value": "overdue", "label": "已逾期"},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(
+                status__in=[
+                    SampleLoan.Status.PENDING_APPROVAL,
+                    SampleLoan.Status.OUT,
+                    SampleLoan.Status.PART_RETURNED,
+                    SampleLoan.Status.PART_SOLD,
+                ]
+            )
+        if scope_value == "overdue":
+            return queryset.filter(overdue_status=SampleLoan.OverdueStatus.OVERDUE)
+        return queryset
+
 
 class SampleLoanExportView(SalesCsvExportView):
     module = "sample_loans"
@@ -1698,22 +2036,32 @@ class SampleLoanMaterialOptionsView(LoginRequiredMixin, View):
         if not keyword:
             return JsonResponse({"items": []})
 
+        materials = (
+            Material.objects.filter(
+                status=Material.MaterialStatus.ACTIVE,
+                material_type=Material.MaterialType.FINISHED,
+            )
+            .filter(
+                Q(material_code__icontains=keyword)
+                | Q(material_name__icontains=keyword)
+                | Q(spec__icontains=keyword)
+            )
+            .order_by("material_code")[:20]
+        )
+        material_ids = [material.id for material in materials]
         batches = (
             InventoryBatch.objects.select_related("material", "location")
             .filter(
+                material_id__in=material_ids,
                 batch_status=InventoryBatch.BatchStatus.IN_STOCK,
                 remaining_qty__gt=0,
-                material__status=Material.MaterialStatus.ACTIVE,
-                material__material_type=Material.MaterialType.FINISHED,
             )
-            .filter(
-                Q(material__material_code__icontains=keyword)
-                | Q(material__material_name__icontains=keyword)
-                | Q(material__spec__icontains=keyword)
-            )
-            .order_by("material__material_code", "location__location_code", "received_at", "batch_no")[:20]
+            .order_by("material_id", "location__location_code", "received_at", "batch_no")
         )
-        return JsonResponse({"items": [_sample_loan_batch_payload(batch) for batch in batches]})
+        batches_by_material = {}
+        for batch in batches:
+            batches_by_material.setdefault(batch.material_id, []).append(_sample_loan_batch_payload(batch))
+        return JsonResponse({"items": [_sample_loan_material_payload(material, batches_by_material.get(material.id, [])) for material in materials]})
 
 
 class SampleLoanImportTemplateView(LoginRequiredMixin, View):
@@ -1774,7 +2122,13 @@ class SampleLoanReturnListView(ErpListView):
         ("状态", "get_status_display"),
     )
     ordering = ["-return_date", "-id"]
-    page_actions = (("导出CSV", "sales:sample_loan_return_export", ""),)
+    page_actions = (
+        ("导出CSV", "sales:sample_loan_return_export", ""),
+        ("按客户登记归还", "sales:sample_loan_outstanding", "primary"),
+    )
+    page_action_permissions = {
+        "sales:sample_loan_outstanding": PermissionCode.SALES_PROCESS,
+    }
     search_fields = ("sample_return_no", "sample_loan__sample_loan_no", "customer__customer_name")
     status_filter_field = "status"
     field_filters = (
@@ -1787,6 +2141,90 @@ class SampleLoanReturnListView(ErpListView):
 
     def get_queryset(self):
         return _filter_sample_return_queryset_for_user(super().get_queryset(), self.request.user).select_related("sample_loan", "customer")
+
+    def get_scope_filter_options(self):
+        can_process = _can_process_sales(self.request.user)
+        return (
+            {"value": "todo", "label": "待确认", "default": can_process},
+            {"value": "all", "label": "全部", "default": not can_process},
+        )
+
+    def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=SampleLoanReturn.Status.PENDING_CONFIRM)
+        return queryset
+
+
+class SampleLoanOutstandingView(LoginRequiredMixin, TemplateView):
+    template_name = "sales/sample_loan_outstanding.html"
+    active_statuses = [
+        SampleLoan.Status.OUT,
+        SampleLoan.Status.PART_RETURNED,
+        SampleLoan.Status.PART_SOLD,
+        SampleLoan.Status.SOLD,
+    ]
+
+    def dispatch(self, request, *args, **kwargs):
+        require_any_erp_permission(request.user, SampleLoanReturnListView.view_permission_required, "缺少销售数据查看权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        selected_customer_id = self.request.GET.get("customer", "").strip()
+        loans = (
+            _filter_sample_loan_queryset_for_user(SampleLoan.objects.all(), self.request.user)
+            .filter(status__in=self.active_statuses)
+            .select_related("customer")
+            .prefetch_related("items__material", "items__batch", "items__location")
+            .order_by("customer__customer_name", "-loan_date", "-id")
+        )
+        customer_rows = {}
+        detail_rows = []
+        for loan in loans:
+            customer_row = customer_rows.setdefault(
+                loan.customer_id,
+                {
+                    "customer": loan.customer,
+                    "loan_count": 0,
+                    "loan_ids": set(),
+                    "open_qty": Decimal("0"),
+                    "sold_qty": Decimal("0"),
+                    "earliest_return_date": None,
+                    "overdue_count": 0,
+                },
+            )
+            customer_row["loan_ids"].add(loan.id)
+            if loan.overdue_status == SampleLoan.OverdueStatus.OVERDUE:
+                customer_row["overdue_count"] += 1
+            for item in loan.items.all():
+                open_qty = item.loan_qty - item.returned_qty - item.sold_qty
+                if open_qty <= 0 and item.sold_qty <= 0:
+                    continue
+                return_date = item.expected_return_date or loan.expected_return_date
+                customer_row["open_qty"] += max(open_qty, Decimal("0"))
+                customer_row["sold_qty"] += item.sold_qty
+                if return_date and (
+                    customer_row["earliest_return_date"] is None
+                    or return_date < customer_row["earliest_return_date"]
+                ):
+                    customer_row["earliest_return_date"] = return_date
+                if selected_customer_id and str(loan.customer_id) == selected_customer_id:
+                    detail_rows.append(
+                        {
+                            "loan": loan,
+                            "item": item,
+                            "open_qty": max(open_qty, Decimal("0")),
+                            "return_date": return_date,
+                        }
+                    )
+        for row in customer_rows.values():
+            row["loan_count"] = len(row["loan_ids"])
+        context["page_title"] = "按客户登记借样归还"
+        context["customer_rows"] = sorted(customer_rows.values(), key=lambda row: row["customer"].customer_name)
+        context["selected_customer_id"] = selected_customer_id
+        context["detail_rows"] = detail_rows
+        context["can_process_sales"] = _can_process_sales(self.request.user)
+        return context
 
 
 class SampleLoanReturnExportView(SalesCsvExportView):
@@ -1867,6 +2305,7 @@ class SampleLoanDetailView(LoginRequiredMixin, DetailView):
         context["can_add_item"] = can_process_sales and self.object.status == SampleLoan.Status.PENDING_APPROVAL
         context["can_process_sales"] = can_process_sales
         context["can_confirm_out"] = can_process_sales and self.object.status == SampleLoan.Status.PENDING_APPROVAL
+        context["can_quick_confirm_out"] = context["can_confirm_out"] and all(item.batch_id and item.location_id for item in self.object.items.all())
         context["can_view_amount"] = can_view_amount(self.request.user)
         context["can_convert_to_sales"] = context["can_view_amount"] and can_process_sales and self.object.status in [
             SampleLoan.Status.OUT,
@@ -1883,6 +2322,7 @@ class SampleLoanDetailView(LoginRequiredMixin, DetailView):
             for item in self.object.items.all()
             if item.loan_qty - item.returned_qty - item.sold_qty > 0
         ]
+        context["allocation_rows"] = _sample_loan_allocation_rows(self.object.items.all()) if context["can_confirm_out"] else []
         context["item_formset"] = SampleLoanItemFormSet(instance=self.object)
         context["attachment_panel"] = build_attachment_panel(
             self.request.user,
@@ -1939,8 +2379,10 @@ class SampleLoanItemCreateView(LoginRequiredMixin, View):
             return redirect("sales:sample_loan_detail", pk=pk)
 
         material_id = request.POST.get("material") or request.POST.get("items-0-material")
+        material_search = request.POST.get("material_search") or request.POST.get("items-0-material_search")
         batch_id = request.POST.get("batch") or request.POST.get("items-0-batch") or None
         location_id = request.POST.get("location") or request.POST.get("items-0-location") or None
+        remark = request.POST.get("remark") or request.POST.get("items-0-remark") or ""
         expected_return_date = parse_user_date(
             request.POST.get("expected_return_date") or request.POST.get("items-0-expected_return_date"),
             default=loan.expected_return_date,
@@ -1950,6 +2392,10 @@ class SampleLoanItemCreateView(LoginRequiredMixin, View):
         except (InvalidOperation, TypeError):
             messages.error(request, "借出数量必须正确填写")
             return redirect("sales:sample_loan_detail", pk=pk)
+
+        if not material_id and material_search:
+            material = _material_from_search(material_search)
+            material_id = material.id if material else None
 
         if not material_id or loan_qty <= 0:
             messages.error(request, "样品物料和借出数量必须正确填写")
@@ -1979,6 +2425,7 @@ class SampleLoanItemCreateView(LoginRequiredMixin, View):
             batch_id=batch_id,
             location_id=location_id,
             line_status=SampleLoanItem.LineStatus.OUT,
+            remark=remark,
         )
         messages.success(request, "借样明细已新增")
         return redirect("sales:sample_loan_detail", pk=pk)
@@ -1993,6 +2440,9 @@ class SampleLoanConfirmOutView(LoginRequiredMixin, View):
         if not _filter_sample_loan_queryset_for_user(SampleLoan.objects.all(), request.user).filter(pk=pk).exists():
             messages.error(request, "借样单不存在或无权限操作")
             return redirect("sales:sample_loan_list")
+        allocation_response = _apply_sample_loan_batch_allocation(request, pk)
+        if allocation_response:
+            return allocation_response
         result = confirm_sample_loan_out(pk, request.user.id, f"sample-out:{pk}")
         if result.success:
             record_audit_log_from_request(request, "sample_loan_confirm_out", "sample_loan", pk, after_snapshot=result.data)
@@ -2405,6 +2855,103 @@ def _sample_loan_batch_payload(batch: InventoryBatch) -> dict:
         "remaining_qty": str(batch.remaining_qty),
         "label": sample_loan_batch_label(batch),
     }
+
+
+def _sample_loan_material_payload(material: Material, batches: list[dict]) -> dict:
+    available_qty = sum((Decimal(batch["remaining_qty"]) for batch in batches), Decimal("0"))
+    return {
+        "material_id": material.id,
+        "material_code": material.material_code,
+        "material_name": material.material_name,
+        "material_spec": material.spec,
+        "base_unit": material.base_unit,
+        "available_qty": str(available_qty),
+        "batches": batches,
+    }
+
+
+def _material_from_search(keyword: str) -> Material | None:
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return None
+    queryset = Material.objects.filter(
+        status=Material.MaterialStatus.ACTIVE,
+        material_type=Material.MaterialType.FINISHED,
+    ).filter(
+        Q(material_code__icontains=keyword)
+        | Q(material_name__icontains=keyword)
+        | Q(spec__icontains=keyword)
+    )
+    exact = queryset.filter(Q(material_code__iexact=keyword) | Q(material_name__iexact=keyword) | Q(spec__iexact=keyword))
+    candidates = list((exact or queryset)[:2])
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _sample_loan_allocation_rows(items) -> list[dict]:
+    items = list(items)
+    material_ids = {item.material_id for item in items if item.material_id}
+    batches_by_material = {}
+    batches = (
+        InventoryBatch.objects.select_related("location")
+        .filter(
+            material_id__in=material_ids,
+            batch_status=InventoryBatch.BatchStatus.IN_STOCK,
+            remaining_qty__gt=0,
+        )
+        .order_by("material_id", "location__location_code", "received_at", "batch_no")
+    )
+    for batch in batches:
+        batches_by_material.setdefault(batch.material_id, []).append(batch)
+    return [{"item": item, "batches": batches_by_material.get(item.material_id, [])} for item in items]
+
+
+def _apply_sample_loan_batch_allocation(request, loan_id: int):
+    posted_keys = [key for key in request.POST if key.startswith("item-") and key.endswith("-batch")]
+    if not posted_keys:
+        return None
+    try:
+        with transaction.atomic():
+            loan = (
+                _filter_sample_loan_queryset_for_user(SampleLoan.objects.select_for_update(), request.user)
+                .prefetch_related("items")
+                .get(pk=loan_id)
+            )
+            if loan.status != SampleLoan.Status.PENDING_APPROVAL:
+                messages.error(request, "只有待审核借样单可以配货确认出库")
+                return redirect("sales:sample_loan_detail", pk=loan_id)
+            items_by_id = {item.id: item for item in SampleLoanItem.objects.select_for_update().filter(sample_loan=loan)}
+            for key in posted_keys:
+                raw_item_id = key.removeprefix("item-").removesuffix("-batch")
+                if not raw_item_id.isdigit():
+                    continue
+                item = items_by_id.get(int(raw_item_id))
+                if not item:
+                    continue
+                batch_id = request.POST.get(key) or ""
+                if not batch_id:
+                    item.batch = None
+                    item.location = None
+                    item.save(update_fields=["batch", "location"])
+                    continue
+                batch = InventoryBatch.objects.select_for_update().filter(pk=batch_id).select_related("location").first()
+                if not batch or batch.material_id != item.material_id:
+                    messages.error(request, "所选批次必须与借样明细物料一致")
+                    return redirect("sales:sample_loan_detail", pk=loan_id)
+                if batch.batch_status != InventoryBatch.BatchStatus.IN_STOCK or batch.remaining_qty <= 0:
+                    messages.error(request, "所选批次未在库或无可用库存")
+                    return redirect("sales:sample_loan_detail", pk=loan_id)
+                if batch.remaining_qty < item.loan_qty:
+                    messages.error(request, "借样数量不能超过批次剩余数量")
+                    return redirect("sales:sample_loan_detail", pk=loan_id)
+                item.batch = batch
+                item.location = batch.location
+                item.save(update_fields=["batch", "location"])
+    except SampleLoan.DoesNotExist:
+        messages.error(request, "借样单不存在或无权限操作")
+        return redirect("sales:sample_loan_list")
+    return None
 
 
 def _sales_order_snapshot(order: SalesOrder) -> dict:

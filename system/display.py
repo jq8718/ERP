@@ -1,6 +1,29 @@
 from .date_utils import apply_erp_date_inputs
 
 
+QUANTITY_STEP_FIELD_NAMES = {
+    "accepted_qty",
+    "base_qty",
+    "book_qty",
+    "counted_qty",
+    "difference_qty",
+    "initial_qty",
+    "issued_qty",
+    "loan_qty",
+    "min_stock_qty",
+    "order_qty",
+    "production_qty",
+    "receipt_qty",
+    "received_qty",
+    "rejected_qty",
+    "request_qty",
+    "return_qty",
+    "shipment_qty",
+    "transfer_qty",
+    "usage_qty",
+}
+
+
 FORM_LABELS = {
     "username": "用户名",
     "display_name": "姓名",
@@ -347,6 +370,20 @@ def set_form_labels(form, labels: dict[str, str] | None = None) -> None:
         if field_name in form.fields:
             form.fields[field_name].label = label
     apply_erp_date_inputs(form)
+    apply_quantity_step_inputs(form)
+
+
+def apply_quantity_step_inputs(form) -> None:
+    for field_name, field in form.fields.items():
+        if not _is_quantity_step_field(field_name):
+            continue
+        field.widget.attrs["step"] = "1"
+
+
+def _is_quantity_step_field(field_name: str) -> bool:
+    return field_name in QUANTITY_STEP_FIELD_NAMES or (
+        field_name.endswith("_qty") and field_name not in {"qty_precision", "finished_material_qty_precision"}
+    )
 
 
 def code_label(value: object) -> str:

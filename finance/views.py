@@ -157,15 +157,22 @@ class CustomerReceiptListView(ErpListView):
         return self.create_url_name if _can_process_customer_receipt(self.request.user) else ""
 
     def get_scope_filter_options(self):
+        can_process = _can_process_customer_receipt(self.request.user)
         if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待审核", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待审核", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=CustomerReceipt.Status.PENDING_APPROVAL)
         if scope_value == "mine":
             return queryset.filter(
                 Q(customer__sales_owner=self.request.user)
@@ -672,15 +679,22 @@ class SupplierPaymentListView(ErpListView):
         return self.create_url_name if _can_process_supplier_payment(self.request.user) else ""
 
     def get_scope_filter_options(self):
+        can_process = _can_process_supplier_payment(self.request.user)
         if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待审核", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待审核", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=SupplierPayment.Status.PENDING_APPROVAL)
         if scope_value == "mine":
             return queryset.filter(
                 Q(created_by=self.request.user)
@@ -2073,7 +2087,7 @@ class ReconciliationListView(ErpListView):
     page_title = "对账单"
     view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.SALES_PROCESS, PermissionCode.PURCHASE_PROCESS)
     permission_denied_message = "缺少对账单查看权限"
-    create_url_name = "finance:reconciliation_create"
+    create_url_name = ""
     detail_url_name = "finance:reconciliation_detail"
     columns = (
         ("对账单号", "reconciliation_no"),
@@ -2087,7 +2101,11 @@ class ReconciliationListView(ErpListView):
     )
     sensitive_columns = ("total_amount",)
     ordering = ["-period_start", "-id"]
-    page_actions = (("导出CSV", "finance:reconciliation_export", ""),)
+    page_actions = (
+        ("新建销售对账", "finance:customer_reconciliation_create", "primary"),
+        ("新建生产对账", "finance:production_reconciliation_create", "primary"),
+        ("导出CSV", "finance:reconciliation_export", ""),
+    )
     search_fields = ("reconciliation_no", "customer__customer_name", "supplier__supplier_name")
     status_filter_field = "status"
     field_filters = (
@@ -2112,19 +2130,34 @@ class ReconciliationListView(ErpListView):
     def get_queryset(self):
         return _filter_reconciliation_queryset_for_user(super().get_queryset(), self.request.user)
 
-    def get_create_url_name(self) -> str:
-        return self.create_url_name if _can_create_reconciliation(self.request.user) else ""
+    def get_page_actions(self):
+        if self.__class__ is not ReconciliationListView:
+            return super().get_page_actions()
+        actions = []
+        if _can_create_customer_reconciliation(self.request.user):
+            actions.append(("新建销售对账", "finance:customer_reconciliation_create", "primary"))
+        if _can_create_supplier_reconciliation(self.request.user):
+            actions.append(("新建生产对账", "finance:production_reconciliation_create", "primary"))
+        actions.append(("导出CSV", "finance:reconciliation_export", ""))
+        return tuple(actions)
 
     def get_scope_filter_options(self):
+        can_process = _can_create_reconciliation(self.request.user)
         if _can_view_finance_amount(self.request.user) or user_has_permission(self.request.user, PermissionCode.SALES_VIEW_ALL) or user_has_permission(self.request.user, PermissionCode.PURCHASE_VIEW):
             return (
-                {"value": "all", "label": "全部", "default": True},
+                {"value": "todo", "label": "待确认", "default": can_process},
+                {"value": "all", "label": "全部", "default": not can_process},
                 {"value": "mine", "label": "我的"},
                 {"value": "unassigned", "label": "未分配"},
             )
-        return ({"value": "mine", "label": "我的", "default": True},)
+        return (
+            {"value": "todo", "label": "待确认", "default": can_process},
+            {"value": "mine", "label": "我的", "default": not can_process},
+        )
 
     def apply_scope_filter(self, queryset, scope_value: str):
+        if scope_value == "todo":
+            return queryset.filter(status=Reconciliation.Status.DRAFT)
         if scope_value == "mine":
             conditions = (
                 Q(customer__sales_owner=self.request.user)
@@ -2147,6 +2180,58 @@ class ReconciliationListView(ErpListView):
         return queryset
 
 
+class CustomerReconciliationListView(ReconciliationListView):
+    page_title = "销售对账"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.SALES_PROCESS)
+    create_url_name = "finance:customer_reconciliation_create"
+    columns = (
+        ("对账单号", "reconciliation_no"),
+        ("客户", "customer.customer_name"),
+        ("开始日期", "period_start"),
+        ("结束日期", "period_end"),
+        ("金额", "total_amount"),
+        ("状态", "get_status_display"),
+    )
+    page_actions = (("导出CSV", "finance:customer_reconciliation_export", ""),)
+    search_fields = ("reconciliation_no", "customer__customer_name")
+    field_filters = (
+        {"label": "对账单号", "param": "reconciliation_no", "field": "reconciliation_no", "placeholder": "对账单号"},
+        {"label": "客户", "param": "customer_name", "field": "customer__customer_name", "placeholder": "客户名称"},
+    )
+
+    def get_queryset(self):
+        return super().get_queryset().filter(party_type=Reconciliation.PartyType.CUSTOMER)
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_create_customer_reconciliation(self.request.user) else ""
+
+
+class ProductionReconciliationListView(ReconciliationListView):
+    page_title = "生产对账"
+    view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.PURCHASE_PROCESS)
+    create_url_name = "finance:production_reconciliation_create"
+    columns = (
+        ("对账单号", "reconciliation_no"),
+        ("供应商", "supplier.supplier_name"),
+        ("开始日期", "period_start"),
+        ("结束日期", "period_end"),
+        ("金额", "total_amount"),
+        ("状态", "get_status_display"),
+    )
+    page_actions = (("导出CSV", "finance:production_reconciliation_export", ""),)
+    search_fields = ("reconciliation_no", "supplier__supplier_name")
+    field_filters = (
+        {"label": "对账单号", "param": "reconciliation_no", "field": "reconciliation_no", "placeholder": "对账单号"},
+        {"label": "供应商", "param": "supplier_name", "field": "supplier__supplier_name", "placeholder": "供应商名称"},
+    )
+
+    def get_queryset(self):
+        return super().get_queryset().filter(party_type=Reconciliation.PartyType.SUPPLIER)
+
+    def get_create_url_name(self) -> str:
+        return self.create_url_name if _can_create_supplier_reconciliation(self.request.user) else ""
+
+
 class ReconciliationExportView(FinanceCsvExportView):
     module = "reconciliations"
     list_view_class = ReconciliationListView
@@ -2155,6 +2240,16 @@ class ReconciliationExportView(FinanceCsvExportView):
 
     def get_mask_fields(self):
         return () if _can_view_reconciliation_amount(self.request.user) else self.list_view_class.sensitive_columns
+
+
+class CustomerReconciliationExportView(ReconciliationExportView):
+    module = "customer_reconciliations"
+    list_view_class = CustomerReconciliationListView
+
+
+class ProductionReconciliationExportView(ReconciliationExportView):
+    module = "production_reconciliations"
+    list_view_class = ProductionReconciliationListView
 
 
 class ReconciliationCreateView(LoginRequiredMixin, View):
@@ -2224,6 +2319,140 @@ class ReconciliationCreateView(LoginRequiredMixin, View):
         )
 
 
+class CustomerReconciliationCreateView(LoginRequiredMixin, View):
+    template_name = "finance/customer_reconciliation_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and not _can_create_customer_reconciliation(request.user):
+            raise PermissionDenied("缺少客户对账单处理权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        return self._render(request)
+
+    def post(self, request):
+        period_start = _date_from_post(request, "period_start")
+        period_end = _date_from_post(request, "period_end")
+        customer_id = request.POST.get("customer") or None
+        error_message = _validate_reconciliation_input(
+            Reconciliation.PartyType.CUSTOMER,
+            period_start,
+            period_end,
+            customer_id,
+            None,
+            request.user,
+        )
+        if error_message:
+            messages.error(request, error_message)
+            return self._render(request, period_start, period_end)
+        rows = _customer_reconciliation_rows(customer_id, period_start, period_end, user=request.user)
+        if not rows:
+            messages.error(request, "所选客户和日期范围内没有可对账销售明细")
+            return self._render(request, period_start, period_end)
+        reconciliation = Reconciliation.objects.create(
+            reconciliation_no=next_document_no("REC"),
+            party_type=Reconciliation.PartyType.CUSTOMER,
+            customer_id=customer_id,
+            period_start=period_start,
+            period_end=period_end,
+            total_amount=_rows_total(rows),
+            status=Reconciliation.Status.DRAFT,
+            created_by=request.user,
+            remark=request.POST.get("remark", "").strip(),
+        )
+        record_audit_log_from_request(
+            request,
+            "reconciliation_create",
+            "reconciliation",
+            reconciliation.id,
+            reconciliation.reconciliation_no,
+            after_snapshot=_reconciliation_snapshot(reconciliation),
+        )
+        messages.success(request, "销售对账单已创建")
+        return redirect("finance:reconciliation_detail", pk=reconciliation.pk)
+
+    def _render(self, request, period_start=None, period_end=None):
+        period_start, period_end = _reconciliation_period_from_request(request, period_start, period_end)
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_title": "新建销售对账",
+                "period_start": period_start,
+                "period_end": period_end,
+                "candidate_rows": _customer_reconciliation_candidate_rows(request.user, period_start, period_end),
+                "today": timezone.localdate(),
+            },
+        )
+
+
+class ProductionReconciliationCreateView(LoginRequiredMixin, View):
+    template_name = "finance/production_reconciliation_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and not _can_create_supplier_reconciliation(request.user):
+            raise PermissionDenied("缺少供应商对账单处理权限")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        return self._render(request)
+
+    def post(self, request):
+        period_start = _date_from_post(request, "period_start")
+        period_end = _date_from_post(request, "period_end")
+        supplier_id = request.POST.get("supplier") or None
+        error_message = _validate_reconciliation_input(
+            Reconciliation.PartyType.SUPPLIER,
+            period_start,
+            period_end,
+            None,
+            supplier_id,
+            request.user,
+        )
+        if error_message:
+            messages.error(request, error_message)
+            return self._render(request, period_start, period_end)
+        rows = _supplier_reconciliation_rows(supplier_id, period_start, period_end, user=request.user)
+        if not rows:
+            messages.error(request, "所选供应商和日期范围内没有可对账生产/进货明细")
+            return self._render(request, period_start, period_end)
+        reconciliation = Reconciliation.objects.create(
+            reconciliation_no=next_document_no("REC"),
+            party_type=Reconciliation.PartyType.SUPPLIER,
+            supplier_id=supplier_id,
+            period_start=period_start,
+            period_end=period_end,
+            total_amount=_rows_total(rows),
+            status=Reconciliation.Status.DRAFT,
+            created_by=request.user,
+            remark=request.POST.get("remark", "").strip(),
+        )
+        record_audit_log_from_request(
+            request,
+            "reconciliation_create",
+            "reconciliation",
+            reconciliation.id,
+            reconciliation.reconciliation_no,
+            after_snapshot=_reconciliation_snapshot(reconciliation),
+        )
+        messages.success(request, "生产对账单已创建")
+        return redirect("finance:reconciliation_detail", pk=reconciliation.pk)
+
+    def _render(self, request, period_start=None, period_end=None):
+        period_start, period_end = _reconciliation_period_from_request(request, period_start, period_end)
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_title": "新建生产对账",
+                "period_start": period_start,
+                "period_end": period_end,
+                "candidate_rows": _supplier_reconciliation_candidate_rows(request.user, period_start, period_end),
+                "today": timezone.localdate(),
+            },
+        )
+
+
 class ReconciliationDetailView(LoginRequiredMixin, DetailView):
     model = Reconciliation
     template_name = "finance/reconciliation_detail.html"
@@ -2259,6 +2488,7 @@ class ReconciliationDetailView(LoginRequiredMixin, DetailView):
             and self.object.status in [Reconciliation.Status.DRAFT, Reconciliation.Status.CONFIRMED]
         )
         rows = _display_reconciliation_rows(self.object, self.request.user)
+        rows = _attach_reconciliation_detail_items(self.object, rows, self.request.user)
         if self.object.party_type == Reconciliation.PartyType.CUSTOMER:
             rows, invoice_summary = _decorate_customer_reconciliation_invoice_rows(rows)
         else:
@@ -2711,6 +2941,124 @@ def _decorate_customer_reconciliation_invoice_rows(rows: list[dict]) -> tuple[li
         "invoiced_amount": invoiced_amount,
         "uninvoiced_amount": _money(max(total_amount - invoiced_amount, ZERO_AMOUNT)),
     }
+
+
+def _reconciliation_period_from_request(request, period_start: date | None = None, period_end: date | None = None) -> tuple[date, date]:
+    today = timezone.localdate()
+    default_start = today.replace(day=1)
+    start = period_start or parse_user_date(request.GET.get("period_start", "")) or default_start
+    end = period_end or parse_user_date(request.GET.get("period_end", "")) or today
+    return start, end
+
+
+def _customer_reconciliation_candidate_rows(user, period_start: date, period_end: date) -> list[dict]:
+    if not period_start or not period_end or period_start > period_end:
+        return []
+    customers = (
+        _customer_receipt_customer_queryset(user)
+        .filter(status=Customer.CustomerStatus.ACTIVE)
+        .order_by("customer_no", "id")
+    )
+    rows = []
+    for customer in customers:
+        detail_rows = _customer_reconciliation_rows(customer.id, period_start, period_end, user=user)
+        if not detail_rows:
+            continue
+        rows.append(
+            {
+                "customer": customer,
+                "doc_count": len(detail_rows),
+                "total_amount": _rows_total(detail_rows),
+                "first_date": min(row["source_date"] for row in detail_rows),
+                "last_date": max(row["source_date"] for row in detail_rows),
+            }
+        )
+    return rows
+
+
+def _supplier_reconciliation_candidate_rows(user, period_start: date, period_end: date) -> list[dict]:
+    if not period_start or not period_end or period_start > period_end:
+        return []
+    suppliers = (
+        _supplier_payment_supplier_queryset(user)
+        .filter(status=Supplier.SupplierStatus.ACTIVE)
+        .order_by("supplier_no", "id")
+    )
+    rows = []
+    for supplier in suppliers:
+        detail_rows = _supplier_reconciliation_rows(supplier.id, period_start, period_end, user=user)
+        if not detail_rows:
+            continue
+        rows.append(
+            {
+                "supplier": supplier,
+                "doc_count": len(detail_rows),
+                "total_amount": _rows_total(detail_rows),
+                "first_date": min(row["source_date"] for row in detail_rows),
+                "last_date": max(row["source_date"] for row in detail_rows),
+            }
+        )
+    return rows
+
+
+def _attach_reconciliation_detail_items(reconciliation: Reconciliation, rows: list[dict], user=None) -> list[dict]:
+    decorated_rows = [{**row, "detail_items": []} for row in rows]
+    if reconciliation.party_type == Reconciliation.PartyType.CUSTOMER:
+        order_ids = [
+            row["source_doc_id"]
+            for row in decorated_rows
+            if row["source_type"] == ReconciliationItem.SourceType.SALES_ORDER
+        ]
+        orders = {
+            order.id: order
+            for order in SalesOrder.objects.filter(pk__in=order_ids).prefetch_related("items__finished_material")
+        }
+        for row in decorated_rows:
+            order = orders.get(row["source_doc_id"])
+            if not order:
+                continue
+            row["detail_items"] = [
+                {
+                    "line_no": item.line_no,
+                    "material_code": item.finished_material.material_code,
+                    "material_name": item.finished_material.material_name,
+                    "material_spec": item.finished_material.spec,
+                    "customer_model_remark": item.customer_model_remark,
+                    "qty": item.order_qty,
+                    "unit_price": item.unit_price,
+                    "amount": item.line_amount,
+                }
+                for item in order.items.all().order_by("line_no", "id")
+            ]
+        return decorated_rows
+
+    if reconciliation.party_type == Reconciliation.PartyType.SUPPLIER:
+        receipt_ids = [
+            row["source_doc_id"]
+            for row in decorated_rows
+            if row["source_type"] == ReconciliationItem.SourceType.PURCHASE_RECEIPT
+        ]
+        receipts = {
+            receipt.id: receipt
+            for receipt in PurchaseReceipt.objects.filter(pk__in=receipt_ids).prefetch_related("items__material")
+        }
+        for row in decorated_rows:
+            receipt = receipts.get(row["source_doc_id"])
+            if not receipt:
+                continue
+            row["detail_items"] = [
+                {
+                    "line_no": index,
+                    "material_code": item.material.material_code,
+                    "material_name": item.material.material_name,
+                    "material_spec": item.material.spec,
+                    "qty": item.accepted_qty,
+                    "unit_price": item.unit_price,
+                    "amount": _money(item.accepted_qty * item.unit_price),
+                }
+                for index, item in enumerate(receipt.items.all().order_by("id"), start=1)
+            ]
+    return decorated_rows
 
 
 def _customer_allocation_target_groups(receipt: CustomerReceipt, user=None):

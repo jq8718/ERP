@@ -83,7 +83,7 @@
               <td>{{ row.material_name }}</td>
               <td>{{ row.location_code }} {{ row.location_name }}</td>
               <td>{{ row.batch_no|default:"自动生成" }}</td>
-              <td>{{ row.inventory_type }}</td>
+              <td>{{ row.inventory_type|inventory_type_name }}</td>
               <td>{{ row.initial_qty }}</td>
               <td>{{ row.cost_price }}</td>
               <td>{{ row.received_at }}</td>

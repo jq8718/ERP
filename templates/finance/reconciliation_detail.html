@@ -89,6 +89,7 @@
             <th>已开票</th>
             <th>未开票</th>
           {% endif %}
+          <th>明细</th>
         </tr>
       </thead>
       <tbody>
@@ -112,9 +113,44 @@
               <td>{% if can_view_amount %}{{ row.invoiced_amount }}{% else %}******{% endif %}</td>
               <td>{% if can_view_amount %}{{ row.uninvoiced_amount }}{% else %}******{% endif %}</td>
             {% endif %}
+            <td>
+              <details>
+                <summary>展开</summary>
+                <table class="inline-table" style="margin-top: 8px;">
+                  <thead>
+                    <tr>
+                      <th>行号</th>
+                      <th>物料编码</th>
+                      <th>品名</th>
+                      <th>规格型号</th>
+                      {% if reconciliation.party_type == "customer" %}<th>客户型号/备注</th>{% endif %}
+                      <th>数量</th>
+                      <th>单价</th>
+                      <th>金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in row.detail_items %}
+                      <tr>
+                        <td>{{ item.line_no }}</td>
+                        <td>{{ item.material_code }}</td>
+                        <td>{{ item.material_name }}</td>
+                        <td>{{ item.material_spec }}</td>
+                        {% if reconciliation.party_type == "customer" %}<td>{{ item.customer_model_remark|default:"" }}</td>{% endif %}
+                        <td>{{ item.qty }}</td>
+                        <td>{% if can_view_amount %}{{ item.unit_price }}{% else %}******{% endif %}</td>
+                        <td>{% if can_view_amount %}{{ item.amount }}{% else %}******{% endif %}</td>
+                      </tr>
+                    {% empty %}
+                      <tr><td colspan="{% if reconciliation.party_type == 'customer' %}8{% else %}7{% endif %}" class="empty">暂无来源明细</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </details>
+            </td>
           </tr>
         {% empty %}
-          <tr><td colspan="{% if reconciliation.party_type == 'customer' %}9{% else %}7{% endif %}" class="empty">暂无可对账明细</td></tr>
+          <tr><td colspan="{% if reconciliation.party_type == 'customer' %}10{% else %}8{% endif %}" class="empty">暂无可对账明细</td></tr>
         {% endfor %}
       </tbody>
     </table>

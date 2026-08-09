@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+<div class="form-actions" style="margin-bottom: 16px;">
+  <a class="button" href="{% url 'finance:production_reconciliation_list' %}">生产对账记录</a>
+  <a class="button" href="{% url 'finance:reconciliation_list' %}">全部对账单</a>
+</div>
+
+<form method="get" class="panel filter-panel">
+  <div class="filter-controls">
+    <label class="form-row">开始日期
+      <input type="date" name="period_start" value="{{ period_start|date:'Y-m-d' }}" data-erp-date="1">
+    </label>
+    <label class="form-row">结束日期
+      <input type="date" name="period_end" value="{{ period_end|date:'Y-m-d' }}" data-erp-date="1">
+    </label>
+    <button class="button primary" type="submit">筛选</button>
+  </div>
+</form>
+
+<div class="table-wrap">
+  {% if candidate_rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>供应商编号</th>
+          <th>供应商</th>
+          <th>可对账单数</th>
+          <th>单据日期</th>
+          <th>可对账金额</th>
+          <th>备注</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in candidate_rows %}
+          <tr>
+            <td>{{ row.supplier.supplier_no }}</td>
+            <td>{{ row.supplier.supplier_name }}</td>
+            <td>{{ row.doc_count }}</td>
+            <td>{{ row.first_date }} 至 {{ row.last_date }}</td>
+            <td>{{ row.total_amount }}</td>
+            <td>
+              <input class="filter-input" type="text" name="remark" placeholder="备注" form="production-rec-form-{{ row.supplier.pk }}">
+            </td>
+            <td>
+              <form id="production-rec-form-{{ row.supplier.pk }}" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="supplier" value="{{ row.supplier.pk }}">
+                <input type="hidden" name="period_start" value="{{ period_start|date:'Y-m-d' }}">
+                <input type="hidden" name="period_end" value="{{ period_end|date:'Y-m-d' }}">
+                <button class="button primary" type="submit">生成对账单</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">
+      <strong>暂无可对账供应商</strong>
+      <p>当前日期范围内没有未结生产/进货单据。</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

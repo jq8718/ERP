@@ -219,6 +219,7 @@ class SampleLoanItem(models.Model):
     batch = models.ForeignKey(InventoryBatch, null=True, blank=True, on_delete=models.PROTECT)
     location = models.ForeignKey(WarehouseLocation, null=True, blank=True, on_delete=models.PROTECT)
     line_status = models.CharField(max_length=32, choices=LineStatus.choices, default=LineStatus.OUT)
+    remark = models.TextField(blank=True)
 
     class Meta:
         db_table = "sample_loan_items"
