@@ -9,6 +9,8 @@ backups/
 logs/
 logs-test/
 .pytest_cache/
+.tools-build/
+tools/build/
 .tmp/
 installer/packages/
 installer/work/
