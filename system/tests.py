@@ -17,7 +17,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from accounts.models import Permission, Role
-from accounts.permissions import PermissionCode
+from accounts.permissions import DEFAULT_PERMISSIONS, PermissionCode
 from accounts.management.commands.check_permission_references import check_permission_references
 from accounts.management.commands.check_permissions import check_permissions
 from bom.models import Bom
@@ -222,6 +222,14 @@ class SystemDashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "版本：20260705_0150")
+
+    def test_release_file_overrides_stale_env_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            version_file = Path(directory) / "VERSION"
+            version_file.write_text("20261101_2300\n", encoding="utf-8")
+            with override_settings(ERP_APP_VERSION="20260809_2229", ERP_VERSION_FILE=version_file):
+                response = self.client.get("/login/")
+        self.assertContains(response, "版本：20261101_2300")
 
     @override_settings(ERP_APP_VERSION="20260705_0150")
     def test_authenticated_pages_display_app_version_in_sidebar(self):
@@ -2012,7 +2020,7 @@ class ReleaseGateCommandTests(TestCase):
     def test_permission_check_passes_current_database(self):
         result = check_permissions()
 
-        self.assertEqual(result.expected_count, 17)
+        self.assertEqual(result.expected_count, len(DEFAULT_PERMISSIONS))
         self.assertFalse(result.missing_permission_codes)
         self.assertFalse(result.undeclared_permission_codes)
 

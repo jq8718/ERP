@@ -7,6 +7,7 @@ from django.utils import timezone
 from accounts.models import Permission, Role
 from accounts.permissions import PermissionCode
 from bom.models import Bom, BomItem
+from bom.services import enable_bom
 from files.models import ExportLog
 from masterdata.models import Material
 from system.models import AuditLog
@@ -69,6 +70,22 @@ class BomViewTests(TestCase):
         self.assertContains(response, "产品组成清单")
         self.assertContains(response, "导出CSV")
         self.assertNotContains(response, "/bom/new/")
+
+    def test_resale_material_cannot_have_enabled_bom(self):
+        self.finished.sourcing_type = Material.SourcingType.RESALE
+        self.finished.save(update_fields=["sourcing_type"])
+        self._grant_permission(PermissionCode.BOM_PROCESS)
+        self.client.force_login(self.user)
+        response = self.client.post("/bom/new/", self._bom_form_data())
+        self.assertContains(response, "外购转售成品不能建立 BOM")
+        self.assertFalse(Bom.objects.exists())
+
+        bom = Bom.objects.create(bom_no="BOM-RESALE", finished_material=self.finished, bom_version="V1")
+        BomItem.objects.create(bom=bom, line_no=1, component_material=self.raw, usage_qty="1", usage_unit="pcs")
+        result = enable_bom(bom.id, self.user.id)
+        self.assertFalse(result.success)
+        bom.refresh_from_db()
+        self.assertEqual(bom.status, Bom.BomStatus.DRAFT)
 
     def test_bom_list_shows_create_action_with_bom_process_permission(self):
         self._grant_permission(PermissionCode.BOM_PROCESS)

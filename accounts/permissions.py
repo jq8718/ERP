@@ -23,7 +23,8 @@ class PermissionCode:
     PRODUCTION_PROCESS = "production.process"
     FINANCE_VIEW_AMOUNT = "finance.view_amount"
     FINANCE_PAYMENT_PROCESS = "finance.payment_process"
-    MASTERDATA_VIEW_PERSONAL_INFO = "masterdata.view_personal_info"
+    MASTERDATA_VIEW_CUSTOMER_CONTACT = "masterdata.view_customer_contact"
+    MASTERDATA_VIEW_SUPPLIER_CONTACT = "masterdata.view_supplier_contact"
     ATTACHMENT_VIEW_SENSITIVE = "files.attachment_sensitive_view"
     ATTACHMENT_DELETE = "files.attachment_delete"
 
@@ -43,7 +44,8 @@ DEFAULT_PERMISSIONS = [
     (PermissionCode.PRODUCTION_PROCESS, "处理生产单据", Permission.PermissionType.ACTION),
     (PermissionCode.FINANCE_VIEW_AMOUNT, "查看财务金额", Permission.PermissionType.FIELD),
     (PermissionCode.FINANCE_PAYMENT_PROCESS, "处理收付款和余额", Permission.PermissionType.ACTION),
-    (PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO, "查看客户和供应商联系信息", Permission.PermissionType.FIELD),
+    (PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT, "查看客户联系信息", Permission.PermissionType.FIELD),
+    (PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT, "查看供应商联系信息", Permission.PermissionType.FIELD),
     (PermissionCode.ATTACHMENT_VIEW_SENSITIVE, "查看敏感附件", Permission.PermissionType.FIELD),
     (PermissionCode.ATTACHMENT_DELETE, "删除附件", Permission.PermissionType.ACTION),
 ]
@@ -81,8 +83,16 @@ def can_view_amount(user: User) -> bool:
     return user_has_permission(user, PermissionCode.FINANCE_VIEW_AMOUNT)
 
 
-def can_view_personal_info(user: User) -> bool:
-    return user_has_permission(user, PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+def can_view_customer_contact(user: User, customer=None) -> bool:
+    if not user_has_permission(user, PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT):
+        return False
+    if customer is None or user.is_superuser:
+        return True
+    return customer.created_by_id == user.id or (customer.created_by_id is None and customer.sales_owner_id == user.id)
+
+
+def can_view_supplier_contact(user: User) -> bool:
+    return user_has_permission(user, PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
 
 
 def require_erp_permission(user: User, permission_code: str, message: str = "无权限执行此操作") -> None:

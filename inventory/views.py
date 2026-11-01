@@ -3,6 +3,7 @@ from io import StringIO
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import PermissionDenied
 from decimal import Decimal, InvalidOperation
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -18,7 +19,7 @@ from system.display import set_form_labels
 from system.services import record_audit_log_from_request
 from system.view_helpers import ErpListView, require_post_reason, require_second_verify
 
-from .forms import InitialInventoryManualForm, LocationTransferForm, StockCountForm
+from .forms import BatchQuantityAdjustmentForm, InitialInventoryManualForm, LocationTransferForm, StockCountForm
 from .import_services import (
     INITIAL_INVENTORY_IMPORT_TEMPLATE_ROWS,
     WAREHOUSE_LOCATION_IMPORT_TEMPLATE_ROWS,
@@ -29,7 +30,7 @@ from .import_services import (
     preview_initial_inventory_from_csv,
 )
 from .models import Inventory, InventoryBatch, InventoryTransaction, LocationTransfer, StockCount, StockCountItem, WarehouseLocation
-from .services import confirm_location_transfer, confirm_stock_count_adjustment, create_stock_count_from_batches
+from .services import adjust_batch_quantity, confirm_location_transfer, confirm_stock_count_adjustment, create_stock_count_from_batches
 
 
 class WarehouseLocationListView(ErpListView):
@@ -339,12 +340,44 @@ class InventoryBatchDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"库存批次 {self.object.batch_no}"
+        context["can_adjust_quantity"] = self.request.user.is_superuser and self.object.batch_status in (
+            InventoryBatch.BatchStatus.IN_STOCK, InventoryBatch.BatchStatus.USED_UP
+        )
+        context["adjustment_form"] = BatchQuantityAdjustmentForm(initial={
+            "expected_qty": self.object.remaining_qty,
+            "counted_qty": self.object.remaining_qty,
+        })
         context["transactions"] = (
             InventoryTransaction.objects.filter(batch=self.object)
             .select_related("material", "location", "created_by")
             .order_by("-created_at")[:30]
         )
         return context
+
+
+class InventoryBatchAdjustView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not request.user.is_superuser:
+            raise PermissionDenied("仅超级管理员可调整库存数量")
+        form = BatchQuantityAdjustmentForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "请填写有效的调整后数量、原因和当前密码")
+            return redirect("inventory:inventory_batch_detail", pk=pk)
+        if not request.user.check_password(form.cleaned_data["current_password"]):
+            messages.error(request, "当前密码不正确，库存未调整")
+            return redirect("inventory:inventory_batch_detail", pk=pk)
+        result = adjust_batch_quantity(
+            pk, form.cleaned_data["expected_qty"], form.cleaned_data["counted_qty"], request.user.id
+        )
+        if result.success:
+            record_audit_log_from_request(
+                request, "admin_batch_quantity_adjust", "stock_count", result.data["stock_count_id"],
+                after_snapshot={**result.data, "operation_reason": form.cleaned_data["reason"]},
+            )
+            messages.success(request, "库存数量已调整，可在相关流水中查看记录")
+        else:
+            messages.error(request, result.message or "库存调整失败")
+        return redirect("inventory:inventory_batch_detail", pk=pk)
 
 
 class InventoryTransactionListView(ErpListView):

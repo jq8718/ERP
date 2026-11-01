@@ -170,6 +170,45 @@ def create_stock_count_from_batches(
     )
 
 
+def adjust_batch_quantity(batch_id: int, expected_qty: Decimal, counted_qty: Decimal, operator_id: int) -> ServiceResult:
+    if counted_qty < ZERO:
+        return ServiceResult(False, "STOCK_NEGATIVE_NOT_ALLOWED", "调整后数量不能为负")
+    try:
+        with transaction.atomic():
+            batch = InventoryBatch.objects.select_for_update().get(pk=batch_id)
+            if batch.batch_status not in (InventoryBatch.BatchStatus.IN_STOCK, InventoryBatch.BatchStatus.USED_UP):
+                return ServiceResult(False, "STOCK_BATCH_LOCKED", "冻结或作废的批次不能调整")
+            if batch.remaining_qty != expected_qty:
+                return ServiceResult(False, "STOCK_CHANGED", "批次库存已变化，请刷新页面后重试")
+            if counted_qty == expected_qty:
+                return ServiceResult(False, "NO_CHANGE", "调整后数量与当前数量相同")
+
+            stock_count = StockCount.objects.create(
+                stock_count_no=next_document_no("SC"),
+                scope_type="batch",
+                scope_value=batch.batch_no,
+                snapshot_at=timezone.now(),
+                status=StockCount.CountStatus.APPROVED_PENDING_ADJUSTMENT,
+                created_by_id=operator_id,
+            )
+            StockCountItem.objects.create(
+                stock_count=stock_count,
+                material_id=batch.material_id,
+                batch=batch,
+                location_id=batch.location_id,
+                book_qty=expected_qty,
+                counted_qty=counted_qty,
+                difference_qty=counted_qty - expected_qty,
+            )
+            result = confirm_stock_count_adjustment(stock_count.id, operator_id, f"admin-batch:{stock_count.id}")
+            if not result.success:
+                transaction.set_rollback(True)
+                return result
+            return ServiceResult(True, message="库存数量已调整", data={**result.data, "batch_id": batch.id})
+    except InventoryBatch.DoesNotExist:
+        return ServiceResult(False, "DOC_NOT_FOUND", "库存批次不存在")
+
+
 def confirm_stock_count_adjustment(
     stock_count_id: int,
     operator_id: int,

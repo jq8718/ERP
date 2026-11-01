@@ -13,7 +13,7 @@ from django.views.generic import TemplateView
 from django.views.generic import DetailView
 from django.views.generic.edit import CreateView, UpdateView
 
-from accounts.permissions import PermissionCode, can_view_amount, can_view_personal_info, require_any_erp_permission, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, can_view_amount, can_view_customer_contact, can_view_supplier_contact, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv, uploaded_csv_text_file
 from files.view_helpers import export_file_response
 from system.display import set_form_labels
@@ -111,6 +111,7 @@ class MaterialListView(ErpListView):
         ("名称", "material_name"),
         ("型号", "spec"),
         ("类型", "get_material_type_display"),
+        ("供货方式", "sourcing_label"),
         ("单位", "base_unit"),
         ("状态", "get_status_display"),
     )
@@ -617,10 +618,10 @@ class CustomerListView(ErpListView):
         ("导入客户地址", "masterdata:customer_address_import", ""),
     )
     page_action_permissions = {
-        "masterdata:customer_import_template": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
-        "masterdata:customer_import": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
-        "masterdata:customer_address_import_template": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
-        "masterdata:customer_address_import": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
+        "masterdata:customer_import_template": PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
+        "masterdata:customer_import": PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
+        "masterdata:customer_address_import_template": PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
+        "masterdata:customer_address_import": PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
     }
 
     def get_queryset(self):
@@ -656,7 +657,7 @@ class CustomerExportView(MasterdataCsvExportView):
 class CustomerImportTemplateView(CsvImportTemplateView):
     template_rows = CUSTOMER_IMPORT_TEMPLATE_ROWS
     filename = "customer_import_template.csv"
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    permission_required = PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
@@ -666,14 +667,14 @@ class CustomerImportView(CsvImportView):
     template_url_name = "masterdata:customer_import_template"
     import_url_name = "masterdata:customer_import"
     import_service = staticmethod(import_customers_from_csv)
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    permission_required = PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
 class CustomerAddressImportTemplateView(CsvImportTemplateView):
     template_rows = CUSTOMER_ADDRESS_IMPORT_TEMPLATE_ROWS
     filename = "customer_address_import_template.csv"
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    permission_required = PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
@@ -682,8 +683,15 @@ class CustomerAddressImportView(CsvImportView):
     list_url_name = "masterdata:customer_list"
     template_url_name = "masterdata:customer_address_import_template"
     import_url_name = "masterdata:customer_address_import"
-    import_service = staticmethod(import_customer_addresses_from_csv)
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    def import_service(self, file_obj, operator_id):
+        allowed_ids = None
+        if not self.request.user.is_superuser:
+            allowed_ids = set(Customer.objects.filter(
+                Q(created_by=self.request.user)
+                | Q(created_by__isnull=True, sales_owner=self.request.user)
+            ).values_list("id", flat=True))
+        return import_customer_addresses_from_csv(file_obj, operator_id, allowed_customer_ids=allowed_ids)
+    permission_required = PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
@@ -704,8 +712,10 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         set_form_labels(form)
-        if not can_view_personal_info(self.request.user):
+        if not can_view_customer_contact(self.request.user):
             form.fields.pop("contact_phone_encrypted", None)
+        if not _can_view_all_sales(self.request.user):
+            form.fields.pop("sales_owner", None)
         return configure_customer_form_widgets(form)
 
     def get_context_data(self, **kwargs):
@@ -716,6 +726,8 @@ class CustomerCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.created_by = self.request.user
         form.instance.updated_by = self.request.user
+        if not _can_view_all_sales(self.request.user):
+            form.instance.sales_owner = self.request.user
         messages.success(self.request, "客户已创建")
         return super().form_valid(form)
 
@@ -734,8 +746,10 @@ class CustomerUpdateView(LoginRequiredMixin, UpdateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         set_form_labels(form)
-        if not can_view_personal_info(self.request.user):
+        if not can_view_customer_contact(self.request.user, self.object):
             form.fields.pop("contact_phone_encrypted", None)
+        if not _can_view_all_sales(self.request.user):
+            form.fields.pop("sales_owner", None)
         return configure_customer_form_widgets(form)
 
     def get_context_data(self, **kwargs):
@@ -790,7 +804,7 @@ class CustomerDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"客户 {self.object.customer_name}"
         context["can_view_amount"] = can_view_amount(self.request.user)
-        context["can_view_personal_info"] = can_view_personal_info(self.request.user)
+        context["can_view_personal_info"] = can_view_customer_contact(self.request.user, self.object)
         return context
 
 
@@ -904,9 +918,11 @@ class CustomerAddressCreateView(LoginRequiredMixin, CreateView):
     fields = ["address_type", "receiver_name", "receiver_phone_encrypted", "address_encrypted", "is_default", "status"]
 
     def dispatch(self, request, *args, **kwargs):
-        if not can_view_personal_info(request.user):
+        if not can_view_customer_contact(request.user):
             raise PermissionDenied("缺少个人信息查看权限")
         self.customer = _filter_customer_queryset_for_user(Customer.objects.all(), request.user).get(pk=kwargs["customer_pk"])
+        if not can_view_customer_contact(request.user, self.customer):
+            raise PermissionDenied("不能维护其他销售的客户联系信息")
         return super().dispatch(request, *args, **kwargs)
 
     def get_form(self, form_class=None):
@@ -939,13 +955,17 @@ class CustomerAddressUpdateView(LoginRequiredMixin, UpdateView):
     fields = CustomerAddressCreateView.fields
 
     def dispatch(self, request, *args, **kwargs):
-        if not can_view_personal_info(request.user):
+        if not can_view_customer_contact(request.user):
             raise PermissionDenied("缺少个人信息查看权限")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
         return CustomerAddress.objects.filter(
             customer__in=_filter_customer_queryset_for_user(Customer.objects.all(), self.request.user)
+        ).filter(
+            Q(customer__created_by=self.request.user)
+            | Q(customer__created_by__isnull=True, customer__sales_owner=self.request.user)
+            if not self.request.user.is_superuser else Q()
         ).select_related("customer")
 
     def get_form(self, form_class=None):
@@ -1122,13 +1142,23 @@ class SupplierListView(ErpListView):
         ("导入CSV", "masterdata:supplier_import", "primary"),
     )
     page_action_permissions = {
-        "masterdata:supplier_import_template": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
-        "masterdata:supplier_import": PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
+        "masterdata:supplier_import_template": PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT,
+        "masterdata:supplier_import": PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT,
     }
+
+    def apply_search(self, queryset):
+        if not can_view_supplier_contact(self.request.user):
+            self.search_fields = tuple(field for field in self.search_fields if field != "contact_name")
+        return super().apply_search(queryset)
+
+    def get_field_filters(self):
+        if can_view_supplier_contact(self.request.user):
+            return self.field_filters
+        return tuple(config for config in self.field_filters if config["field"] != "contact_name")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["mask_sensitive_columns"] = not can_view_personal_info(self.request.user)
+        context["mask_sensitive_columns"] = not can_view_supplier_contact(self.request.user)
         return context
 
 
@@ -1138,7 +1168,7 @@ class SupplierExportView(MasterdataCsvExportView):
     ordering = ("supplier_no",)
 
     def get_mask_fields(self):
-        if can_view_personal_info(self.request.user):
+        if can_view_supplier_contact(self.request.user):
             return ()
         return SupplierListView.sensitive_columns
 
@@ -1146,7 +1176,7 @@ class SupplierExportView(MasterdataCsvExportView):
 class SupplierImportTemplateView(CsvImportTemplateView):
     template_rows = SUPPLIER_IMPORT_TEMPLATE_ROWS
     filename = "supplier_import_template.csv"
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    permission_required = PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
@@ -1156,7 +1186,7 @@ class SupplierImportView(CsvImportView):
     template_url_name = "masterdata:supplier_import_template"
     import_url_name = "masterdata:supplier_import"
     import_service = staticmethod(import_suppliers_from_csv)
-    permission_required = PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO
+    permission_required = PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT
     permission_denied_message = "缺少个人信息查看权限"
 
 
@@ -1177,7 +1207,7 @@ class SupplierCreateView(LoginRequiredMixin, CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         set_form_labels(form)
-        if not can_view_personal_info(self.request.user):
+        if not can_view_supplier_contact(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
         return configure_supplier_form_widgets(form)
@@ -1205,7 +1235,7 @@ class SupplierUpdateView(LoginRequiredMixin, UpdateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         set_form_labels(form)
-        if not can_view_personal_info(self.request.user):
+        if not can_view_supplier_contact(self.request.user):
             form.fields.pop("contact_name", None)
             form.fields.pop("contact_phone_encrypted", None)
         return configure_supplier_form_widgets(form)
@@ -1258,24 +1288,26 @@ class SupplierDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context["page_title"] = f"供应商 {self.object.supplier_name}"
         context["can_view_amount"] = can_view_amount(self.request.user)
-        context["can_view_personal_info"] = can_view_personal_info(self.request.user)
+        context["can_view_personal_info"] = can_view_supplier_contact(self.request.user)
         return context
 
 
 def _can_view_all_sales(user) -> bool:
-    return can_view_amount(user) or user_has_permission(user, PermissionCode.SALES_VIEW_ALL)
+    return user_has_permission(user, PermissionCode.SALES_VIEW_ALL) or user_has_permission(
+        user, PermissionCode.FINANCE_PAYMENT_PROCESS
+    )
 
 
 def _filter_customer_queryset_for_user(queryset, user):
     if _can_view_all_sales(user):
         return queryset
-    return queryset.filter(Q(sales_owner=user) | Q(created_by=user)).distinct()
+    return queryset.filter(Q(created_by=user) | Q(created_by__isnull=True, sales_owner=user)).distinct()
 
 
 def _filter_customer_product_queryset_for_user(queryset, user):
     if _can_view_all_sales(user):
         return queryset
-    return queryset.filter(Q(customer__sales_owner=user) | Q(customer__created_by=user)).distinct()
+    return queryset.filter(Q(customer__created_by=user) | Q(customer__created_by__isnull=True, customer__sales_owner=user)).distinct()
 
 
 def _material_snapshot(material: Material) -> dict:
@@ -1284,6 +1316,7 @@ def _material_snapshot(material: Material) -> dict:
         "material_code": material.material_code,
         "material_name": material.material_name,
         "material_type": material.material_type,
+        "sourcing_type": material.sourcing_type,
         "spec": material.spec,
         "base_unit": material.base_unit,
         "qty_precision": material.qty_precision,

@@ -91,6 +91,54 @@ class FinanceServiceTests(TestCase):
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
         self._grant_permission(PermissionCode.FINANCE_PAYMENT_PROCESS)
 
+    def test_reconciliation_navigation_follows_business_role(self):
+        self.client.force_login(self.user)
+
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        sales_page = self.client.get("/finance/customer-reconciliations/")
+        self.assertEqual(sales_page.status_code, 200)
+        sales_html = sales_page.content.decode("utf-8")
+        sales_nav = sales_html.split('id="nav-items-sales"', 1)[1].split("</div>", 1)[0]
+        finance_nav = sales_html.split('id="nav-items-inventory-finance"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("销售对账", sales_nav)
+        self.assertIn("客户收款", sales_nav)
+        self.assertIn("客户开票", sales_nav)
+        self.assertNotIn("供应商对账", sales_nav)
+        self.assertNotIn("销售对账", finance_nav)
+        self.assertNotIn("客户收款", finance_nav)
+        self.assertNotIn("客户开票", finance_nav)
+
+        self.user.roles.clear()
+        self._grant_permission(PermissionCode.PURCHASE_PROCESS)
+        purchase_page = self.client.get("/finance/production-reconciliations/")
+        self.assertEqual(purchase_page.status_code, 200)
+        purchase_html = purchase_page.content.decode("utf-8")
+        purchase_nav = purchase_html.split('id="nav-items-purchase-production"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("供应商对账", purchase_nav)
+        self.assertNotIn("生产对账", purchase_html)
+
+        self.user.roles.clear()
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        finance_page = self.client.get("/finance/reconciliations/")
+        self.assertEqual(finance_page.status_code, 200)
+        finance_html = finance_page.content.decode("utf-8")
+        finance_nav = finance_html.split('id="nav-items-inventory-finance"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("全部对账单", finance_nav)
+        sales_nav = finance_html.split('id="nav-items-sales"', 1)[1].split("</div>", 1)[0]
+        purchase_nav = finance_html.split('id="nav-items-purchase-production"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("销售对账", sales_nav)
+        self.assertIn("客户收款", sales_nav)
+        self.assertIn("客户开票", sales_nav)
+        self.assertIn("供应商对账", purchase_nav)
+        self.assertNotIn("销售对账", finance_nav)
+        self.assertNotIn("供应商对账", finance_nav)
+        self.assertNotIn("客户收款", finance_nav)
+        self.assertNotIn("客户开票", finance_nav)
+        self.assertEqual(self.client.get("/finance/customer-reconciliations/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/production-reconciliations/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/customer-receipts/").status_code, 200)
+        self.assertEqual(self.client.get("/finance/customer-invoices/").status_code, 200)
+
     def _sales_order(self, no="SO001", amount=Decimal("100.00")):
         order = SalesOrder.objects.create(
             sales_order_no=no,

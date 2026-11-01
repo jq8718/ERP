@@ -292,6 +292,76 @@ class ProductionServiceTests(TestCase):
         self.assertEqual(order.locked_bom_version, self.bom.bom_version)
         self.assertEqual(order.created_by, self.user)
 
+    def test_production_order_material_search_and_bom_options(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PRODUCTION_PROCESS)
+        self.finished.spec = "LED-42A"
+        self.finished.save(update_fields=["spec"])
+        another_bom = Bom.objects.create(
+            bom_no="BOM002",
+            finished_material=self.finished,
+            bom_version="V2",
+            status=Bom.BomStatus.ENABLED,
+            is_default=True,
+        )
+        Bom.objects.create(
+            bom_no="BOM003",
+            finished_material=self.finished,
+            bom_version="V3",
+            status=Bom.BomStatus.DISABLED,
+        )
+        Material.objects.create(
+            material_code="FG-NO-BOM",
+            material_name="无BOM成品",
+            material_type=Material.MaterialType.FINISHED,
+            base_unit="pcs",
+        )
+        inactive = Material.objects.create(
+            material_code="FG-INACTIVE",
+            material_name="停用成品",
+            material_type=Material.MaterialType.FINISHED,
+            status=Material.MaterialStatus.INACTIVE,
+            base_unit="pcs",
+        )
+
+        response = self.client.get("/production/orders/material-options/", {"q": "42a"})
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], self.finished.id)
+        self.assertEqual([bom["id"] for bom in items[0]["boms"]], [another_bom.id, self.bom.id])
+        self.assertTrue(items[0]["boms"][0]["is_default"])
+        self.assertEqual(len(self.client.get("/production/orders/material-options/", {"q": "FG001"}).json()["items"]), 1)
+        self.assertEqual(len(self.client.get("/production/orders/material-options/", {"q": "成品 1"}).json()["items"]), 1)
+        self.assertEqual(self.client.get("/production/orders/material-options/", {"q": "无BOM"}).json()["items"][0]["boms"], [])
+        self.assertEqual(self.client.get("/production/orders/material-options/", {"q": inactive.material_code}).json()["items"], [])
+
+        form_page = self.client.get("/production/orders/new/")
+        self.assertContains(form_page, 'id="finished-material-search"')
+        self.assertContains(form_page, 'id="finished-material-results"')
+        self.assertNotContains(form_page, '<option value="%s"' % self.finished.id)
+
+    def test_production_order_material_search_requires_process_permission(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/production/orders/material-options/", {"q": "FG001"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_resale_finished_material_cannot_enter_production_order(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.PRODUCTION_PROCESS)
+        self.finished.sourcing_type = Material.SourcingType.RESALE
+        self.finished.save(update_fields=["sourcing_type"])
+        options = self.client.get("/production/orders/material-options/", {"q": self.finished.material_code})
+        self.assertEqual(options.json()["items"], [])
+        count_before = ProductionOrder.objects.count()
+        response = self.client.post("/production/orders/new/", {
+            "finished_material": self.finished.id,
+            "production_qty": "5",
+            "locked_bom": self.bom.id,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ProductionOrder.objects.count(), count_before)
+
     def test_production_order_create_requires_production_process_permission(self):
         self.client.force_login(self.user)
 

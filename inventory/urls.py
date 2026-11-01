@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     InventoryBatchListView,
     InventoryBatchDetailView,
+    InventoryBatchAdjustView,
     InventoryBatchExportView,
     InventoryExportView,
     InventoryDetailView,
@@ -58,6 +59,7 @@ urlpatterns = [
     path("batches/", InventoryBatchListView.as_view(), name="inventory_batch_list"),
     path("batches/export/", InventoryBatchExportView.as_view(), name="inventory_batch_export"),
     path("batches/<int:pk>/", InventoryBatchDetailView.as_view(), name="inventory_batch_detail"),
+    path("batches/<int:pk>/adjust/", InventoryBatchAdjustView.as_view(), name="inventory_batch_adjust"),
     path("transactions/", InventoryTransactionListView.as_view(), name="inventory_transaction_list"),
     path("transactions/export/", InventoryTransactionExportView.as_view(), name="inventory_transaction_export"),
     path("transactions/<int:pk>/", InventoryTransactionDetailView.as_view(), name="inventory_transaction_detail"),

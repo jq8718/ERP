@@ -13,6 +13,18 @@
     <a class="button primary" href="{% url 'sales:customer_return_edit' customer_return.pk %}">编辑</a>
   {% endif %}
   <a class="button" href="{% url 'sales:customer_return_print' customer_return.pk %}" target="_blank">打印</a>
+  {% if can_review %}
+    <form method="post" action="{% url 'sales:customer_return_approve' customer_return.pk %}">
+      {% csrf_token %}
+      <input type="password" name="current_password" placeholder="当前密码" required style="width: 140px;">
+      <button class="button primary" type="submit">审核通过</button>
+    </form>
+    <form method="post" action="{% url 'sales:customer_return_reject' customer_return.pk %}">
+      {% csrf_token %}
+      <input type="text" name="reject_reason" placeholder="驳回原因" required style="width: 180px;">
+      <button class="button" type="submit">驳回</button>
+    </form>
+  {% endif %}
   {% if can_confirm_receipt %}
     <form method="post" action="{% url 'sales:customer_return_confirm_receipt' customer_return.pk %}">
       {% csrf_token %}

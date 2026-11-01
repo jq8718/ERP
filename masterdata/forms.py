@@ -81,6 +81,7 @@ class MaterialForm(forms.ModelForm):
             "material_code",
             "material_name",
             "material_type",
+            "sourcing_type",
             "spec",
             "base_unit",
             "qty_precision",
@@ -93,16 +94,27 @@ class MaterialForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        material_type_field = self.fields["material_type"]
-        if self.instance and self.instance.pk and self.instance.material_type == Material.MaterialType.FINISHED:
-            material_type_field.choices = Material.MaterialType.choices
-        else:
-            material_type_field.choices = [
-                choice
-                for choice in Material.MaterialType.choices
-                if choice[0] != Material.MaterialType.FINISHED
-            ]
-            material_type_field.help_text = "成品请在“产品组成清单”新建页面维护。"
+        self.fields["sourcing_type"].required = False
+        self.fields["material_type"].help_text = "自产成品请在“产品组成清单”新建；外购转售成品可在此建立。"
+
+    def clean_sourcing_type(self):
+        return self.cleaned_data.get("sourcing_type") or self.instance.sourcing_type or Material.SourcingType.MANUFACTURED
+
+    def clean(self):
+        cleaned = super().clean()
+        material_type = cleaned.get("material_type")
+        sourcing_type = cleaned.get("sourcing_type")
+        if sourcing_type == Material.SourcingType.RESALE and material_type != Material.MaterialType.FINISHED:
+            self.add_error("sourcing_type", "外购转售仅适用于成品")
+        if material_type == Material.MaterialType.FINISHED and sourcing_type == Material.SourcingType.MANUFACTURED:
+            if not self.instance.pk:
+                self.add_error("sourcing_type", "自产成品请在“产品组成清单”新建")
+            elif self.instance.sourcing_type == Material.SourcingType.RESALE:
+                self.add_error("sourcing_type", "外购转售成品不能直接改为自产，请先建立新的成品编码")
+        if self.instance.pk and self.instance.sourcing_type == Material.SourcingType.MANUFACTURED and sourcing_type == Material.SourcingType.RESALE:
+            if self.instance.boms.exists():
+                self.add_error("sourcing_type", "已有 BOM 的自产成品不能改为外购转售")
+        return cleaned
 
     def clean_min_stock_qty(self):
         value = self.cleaned_data.get("min_stock_qty")

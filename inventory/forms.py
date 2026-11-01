@@ -46,6 +46,16 @@ class InitialInventoryManualForm(forms.Form):
         }
 
 
+class BatchQuantityAdjustmentForm(forms.Form):
+    expected_qty = forms.DecimalField(widget=forms.HiddenInput, max_digits=14, decimal_places=4)
+    counted_qty = forms.DecimalField(
+        label="调整后数量", max_digits=14, decimal_places=4, min_value=0,
+        widget=forms.NumberInput(attrs={"step": "1", "min": "0"}),
+    )
+    reason = forms.CharField(label="调整原因", max_length=500)
+    current_password = forms.CharField(label="当前密码", widget=forms.PasswordInput)
+
+
 class StockCountForm(forms.ModelForm):
     location = forms.ModelChoiceField(
         queryset=WarehouseLocation.objects.none(),

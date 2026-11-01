@@ -285,6 +285,8 @@ def _validate_production_order_rows(rows: list[dict]) -> tuple[list[dict], list[
             errors.append({"row": index, "field": "material_code", "message": "成品物料不存在或未启用"})
         elif finished_material.material_type != Material.MaterialType.FINISHED:
             errors.append({"row": index, "field": "material_code", "message": "生产物料必须是成品"})
+        elif finished_material.sourcing_type == Material.SourcingType.RESALE:
+            errors.append({"row": index, "field": "material_code", "message": "外购转售成品不能生成生产指令"})
 
         production_qty = _parse_decimal(row.get("production_qty"))
         if production_qty is None or production_qty <= ZERO:

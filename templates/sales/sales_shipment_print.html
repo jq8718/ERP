@@ -3,188 +3,163 @@
 <head>
   <meta charset="utf-8">
   <title>{{ page_title }}</title>
+  <style id="paper-rule">@page { size: 241mm 140mm; margin: 0; }</style>
   <style>
-    body {
-      margin: 18px;
-      color: #111827;
-      font: 12px/1.35 "Microsoft YaHei", Arial, sans-serif;
-    }
-    .toolbar {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    button {
-      border: 1px solid #9ca3af;
-      background: #fff;
-      border-radius: 4px;
-      padding: 6px 12px;
-      cursor: pointer;
-    }
-    h1 {
-      margin: 0 0 6px;
-      text-align: center;
-      font-size: 22px;
-      letter-spacing: 0;
-    }
-    .company {
-      text-align: center;
-      margin-bottom: 12px;
-      color: #374151;
-    }
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      border: 1px solid #9ca3af;
-      border-bottom: 0;
-    }
-    .cell {
-      min-height: 32px;
-      padding: 6px 8px;
-      border-right: 1px solid #9ca3af;
-      border-bottom: 1px solid #9ca3af;
-    }
-    .cell:nth-child(4n) { border-right: 0; }
-    .label {
-      color: #6b7280;
-      font-size: 12px;
-    }
-    .value {
-      margin-top: 2px;
-      font-weight: 600;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 16px;
-    }
-    th, td {
-      border: 1px solid #9ca3af;
-      padding: 6px 8px;
-      text-align: left;
-      vertical-align: top;
-    }
-    th { background: #f3f4f6; }
-    .signatures {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 28px;
-      margin-top: 34px;
-    }
-    .signature {
-      border-top: 1px solid #374151;
-      padding-top: 8px;
-    }
+    :root { --w: 241mm; --h: 140mm; --x: 0mm; --y: 0mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111; background: #e8eaed; font: 11px/1.25 "Microsoft YaHei", SimSun, sans-serif; }
+    .toolbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #bbb; }
+    .toolbar label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+    .toolbar input, .toolbar select, .toolbar button { min-height: 30px; border: 1px solid #777; border-radius: 3px; background: #fff; padding: 3px 7px; font: inherit; }
+    .toolbar input { width: 68px; }
+    .toolbar button { cursor: pointer; padding: 4px 12px; }
+    .toolbar .primary { background: #174d75; color: #fff; border-color: #174d75; }
+    .notice { width: 100%; color: #a22; min-height: 14px; }
+    .pages { padding: 12px; }
+    .sheet { width: var(--w); height: var(--h); margin: 0 auto 12px; padding: 6mm; position: relative; overflow: hidden; background: #fff; box-shadow: 0 1px 5px #aaa; overflow-wrap: anywhere; }
+    .sheet-content { position: relative; left: var(--x); top: var(--y); }
+    .heading { text-align: center; margin-bottom: 2mm; }
+    .heading strong { display: block; font-size: 15px; }
+    .heading h1 { margin: 1mm 0 0; font-size: 17px; }
+    .contact { font-size: 9px; }
+    .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #111; border-bottom: 0; }
+    .meta span { padding: 2px 4px; min-height: 20px; border-right: 1px solid #111; border-bottom: 1px solid #111; }
+    .meta span:nth-child(4n) { border-right: 0; }
+    .wide { grid-column: span 2; }
+    .items { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 2mm; }
+    .items th, .items td { border: 1px solid #111; padding: 2px 3px; text-align: left; vertical-align: top; }
+    .items th { font-weight: 700; }
+    .items .num { text-align: right; white-space: nowrap; }
+    .footer { position: absolute; left: 6mm; right: 6mm; bottom: 6mm; transform: translate(var(--x), var(--y)); }
+    .remark { min-height: 7mm; border: 1px solid #111; padding: 2px 4px; }
+    .signatures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; padding-top: 4mm; }
+    .page-no { display: block; text-align: right; font-size: 9px; }
+    .calibration { display: none; }
+    .calibration .mark { position: absolute; width: 10mm; height: 10mm; border: 1px solid #111; }
+    .calibration .tl { top: 8mm; left: 8mm; border-right: 0; border-bottom: 0; }
+    .calibration .tr { top: 8mm; right: 8mm; border-left: 0; border-bottom: 0; }
+    .calibration .bl { bottom: 8mm; left: 8mm; border-right: 0; border-top: 0; }
+    .calibration .br { bottom: 8mm; right: 8mm; border-left: 0; border-top: 0; }
+    .calibration p { text-align: center; margin-top: 30mm; }
     @media print {
-      @page { size: 241mm 140mm; margin: 8mm; }
-      body { margin: 0; }
+      body { background: #fff; }
       .toolbar { display: none; }
+      .pages { padding: 0; }
+      .sheet { margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
+      .sheet:last-child { break-after: auto; page-break-after: auto; }
+      body.print-calibration .pages { display: none; }
+      body.print-calibration .calibration { display: block; }
     }
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <button type="button" onclick="window.print()">打印</button>
-    <button type="button" onclick="window.close()">关闭</button>
+    <label>纸张规格<select id="preset"><option value="241,140">241 × 140 mm（三联纸）</option><option value="210,148.5">半张 A4（210 × 148.5 mm）</option><option value="210,297">A4</option><option value="custom">自定义</option></select></label>
+    <label>宽度 mm<input id="width" type="number" min="100" max="400" step="0.5"></label>
+    <label>高度 mm<input id="height" type="number" min="100" max="400" step="0.5"></label>
+    <label>横向偏移 mm<input id="offset-x" type="number" min="-20" max="20" step="0.5"></label>
+    <label>纵向偏移 mm<input id="offset-y" type="number" min="-20" max="20" step="0.5"></label>
+    <button id="calibrate" type="button">校准页</button><button id="print" class="primary" type="button">打印送货单</button><button type="button" onclick="window.close()">关闭</button>
+    <div class="notice" id="notice" role="status"></div>
   </div>
-
-  {% include "common/print_company_header.html" %}
-
-  <h1>送货单</h1>
-  <div class="company">
-    {% if company_info.address %}<span>地址：{{ company_info.address }}</span>{% endif %}
-    {% if company_info.phone %}<span> 电话：{{ company_info.phone }}</span>{% endif %}
-    {% if company_info.contact %}<span> 联系人：{{ company_info.contact }}</span>{% endif %}
-  </div>
-
-  <section class="meta">
-    <div class="cell">
-      <div class="label">送货单号</div>
-      <div class="value">{{ shipment.shipment_no }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">销售订单</div>
-      <div class="value">{{ shipment.sales_order.sales_order_no }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">客户</div>
-      <div class="value">{{ shipment.customer.customer_name }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">送货日期</div>
-      <div class="value">{{ shipment.shipment_date }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">客户合同编号</div>
-      <div class="value">{{ shipment.customer_contract_no }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">客户联系人</div>
-      <div class="value">{{ shipment.customer_contact_name }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">客户电话</div>
-      <div class="value">{{ shipment.customer_contact_phone }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">结算方式</div>
-      <div class="value">{{ shipment.settlement_method }}</div>
-    </div>
-    <div class="cell" style="grid-column: span 2;">
-      <div class="label">客户地址</div>
-      <div class="value">{{ shipment.customer_address_text }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">制单人</div>
-      <div class="value">{{ shipment.created_by|default:"" }}</div>
-    </div>
-    <div class="cell">
-      <div class="label">打印时间</div>
-      <div class="value">{% now "Y-m-d H:i" %}</div>
-    </div>
-  </section>
-
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 54px;">序号</th>
-        <th>产品/物料</th>
-        <th>规格</th>
-        <th>单位</th>
-        <th>送货数量</th>
-        <th>批次</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in shipment.items.all %}
-        <tr>
-          <td>{{ forloop.counter }}</td>
-          <td>{{ item.material }}</td>
-          <td>{{ item.material.spec }}</td>
-          <td>{{ item.material.base_unit }}</td>
-          <td>{{ item.shipment_qty }}</td>
-          <td>{{ item.batch.batch_no }}</td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="6">暂无明细</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <section class="meta" style="margin-top: 16px;">
-    <div class="cell" style="grid-column: span 4;">
-      <div class="label">备注</div>
-      <div class="value">{{ shipment.remark }}</div>
-    </div>
-  </section>
-
-  <section class="signatures">
-    <div class="signature">制单</div>
-    <div class="signature">仓库</div>
-    <div class="signature">送货人</div>
-    <div class="signature">客户签收</div>
-  </section>
+  <main class="pages" id="pages"></main>
+  <template id="sheet-template">
+    <article class="sheet">
+      <div class="sheet-content">
+        <header class="heading"><strong>{{ company_info.name }}</strong><h1>送货单</h1><div class="contact">{% if company_info.address %}{{ company_info.address }}{% endif %}{% if company_info.phone %}　电话：{{ company_info.phone }}{% endif %}{% if company_info.contact %}　联系人：{{ company_info.contact }}{% endif %}</div></header>
+        <section class="meta">
+          <span>送货单号：{{ shipment.shipment_no }}</span><span>销售订单：{{ shipment.sales_order.sales_order_no }}</span><span>客户：{{ shipment.customer.customer_name }}</span><span>送货日期：{{ shipment.shipment_date|date:"Y-m-d" }}</span>
+          <span>客户合同编号：{{ shipment.customer_contract_no }}</span><span>客户联系人：{{ shipment.customer_contact_name }}</span><span>客户电话：{{ shipment.customer_contact_phone }}</span><span>结算方式：{{ shipment.settlement_method }}</span>
+          <span class="wide">客户地址：{{ shipment.customer_address_text }}</span><span>制单人：{{ shipment.created_by|default:"" }}</span><span>打印时间：{% now "Y-m-d H:i" %}</span>
+        </section>
+        <table class="items"><colgroup><col style="width:5%"><col style="width:16%"><col style="width:20%"><col style="width:21%"><col style="width:7%"><col style="width:12%"><col style="width:19%"></colgroup><thead><tr><th>序号</th><th>物料编码</th><th>名称</th><th>规格型号</th><th>单位</th><th>数量</th><th>批次号</th></tr></thead><tbody></tbody></table>
+      </div>
+      <footer class="footer"><div class="remark">备注：{{ shipment.remark }}</div><div class="signatures"><span>制单：________</span><span>仓库：________</span><span>送货人：________</span><span>客户签收：________</span></div><span class="page-no"></span></footer>
+    </article>
+  </template>
+  <template id="rows-template">{% for item in shipment.items.all %}<tr><td>{{ forloop.counter }}</td><td>{{ item.material.material_code }}</td><td>{{ item.material.material_name }}</td><td>{{ item.material.spec }}</td><td>{{ item.material.base_unit }}</td><td class="num">{{ item.shipment_qty }}</td><td>{{ item.batch.batch_no }}</td></tr>{% empty %}<tr><td colspan="7">暂无明细</td></tr>{% endfor %}</template>
+  <article class="sheet calibration"><i class="mark tl"></i><i class="mark tr"></i><i class="mark bl"></i><i class="mark br"></i><p>送货单打印校准页：四角应位于纸张边缘内侧 8 mm</p></article>
+  <form id="print-form" hidden>{% csrf_token %}</form>
+  <script>
+    (() => {
+      const $ = id => document.getElementById(id);
+      const ids = ['width', 'height', 'offset-x', 'offset-y'];
+      const defaults = { preset: '241,140', width: 241, height: 140, 'offset-x': 0, 'offset-y': 0 };
+      let saved = defaults;
+      try { saved = { ...defaults, ...JSON.parse(localStorage.getItem('erp-shipment-paper') || '{}') }; } catch (_) { /* use defaults */ }
+      $('preset').value = saved.preset;
+      ids.forEach(id => { $(id).value = saved[id]; });
+      function paginate() {
+        const pages = $('pages');
+        pages.replaceChildren();
+        const rows = [...$('rows-template').content.querySelectorAll('tr')];
+        const newPage = () => {
+          const sheet = $('sheet-template').content.firstElementChild.cloneNode(true);
+          pages.appendChild(sheet);
+          return sheet;
+        };
+        let sheet = newPage();
+        rows.forEach(row => {
+          let body = sheet.querySelector('tbody');
+          body.appendChild(row.cloneNode(true));
+          const tooTall = () => sheet.querySelector('.items').getBoundingClientRect().bottom > sheet.querySelector('.footer').getBoundingClientRect().top - 4;
+          if (tooTall() && body.children.length > 1) {
+            body.lastElementChild.remove();
+            sheet = newPage();
+            body = sheet.querySelector('tbody');
+            body.appendChild(row.cloneNode(true));
+          }
+          if (tooTall()) $('notice').textContent = '有一行内容超过纸张可用高度，请增大纸张高度或缩短该行文字。';
+        });
+        [...pages.children].forEach((page, i) => { page.querySelector('.page-no').textContent = '第 ' + (i + 1) + ' / ' + pages.children.length + ' 页'; });
+      }
+      function applyPaper() {
+        const width = Number($('width').value), height = Number($('height').value);
+        const x = Number($('offset-x').value), y = Number($('offset-y').value);
+        if (!(width >= 100 && width <= 400 && height >= 100 && height <= 400 && x >= -20 && x <= 20 && y >= -20 && y <= 20)) {
+          $('notice').textContent = '纸张宽高需为 100–400 mm，偏移需为 -20–20 mm。';
+          return false;
+        }
+        $('notice').textContent = '';
+        document.documentElement.style.setProperty('--w', width + 'mm');
+        document.documentElement.style.setProperty('--h', height + 'mm');
+        document.documentElement.style.setProperty('--x', x + 'mm');
+        document.documentElement.style.setProperty('--y', y + 'mm');
+        $('paper-rule').textContent = '@page { size: ' + width + 'mm ' + height + 'mm; margin: 0; }';
+        try { localStorage.setItem('erp-shipment-paper', JSON.stringify({ preset: $('preset').value, width, height, 'offset-x': x, 'offset-y': y })); } catch (_) { /* private mode */ }
+        paginate();
+        return true;
+      }
+      $('preset').addEventListener('change', () => {
+        if ($('preset').value !== 'custom') {
+          const [width, height] = $('preset').value.split(',');
+          $('width').value = width; $('height').value = height;
+        }
+        applyPaper();
+      });
+      ids.forEach(id => $(id).addEventListener('change', () => {
+        if (id === 'width' || id === 'height') $('preset').value = 'custom';
+        applyPaper();
+      }));
+      $('calibrate').addEventListener('click', () => {
+        if (!applyPaper()) return;
+        document.body.classList.add('print-calibration');
+        window.print();
+        document.body.classList.remove('print-calibration');
+      });
+      $('print').addEventListener('click', async () => {
+        if (!applyPaper() || $('notice').textContent) return;
+        const button = $('print');
+        button.disabled = true;
+        try {
+          const response = await fetch(location.pathname, { method: 'POST', headers: { 'X-CSRFToken': $('print-form').querySelector('input').value }, credentials: 'same-origin' });
+          if (!response.ok) throw new Error('打印记录未保存，请刷新页面后重试。');
+          window.print();
+        } catch (error) { $('notice').textContent = error.message; }
+        finally { button.disabled = false; }
+      });
+      applyPaper();
+    })();
+  </script>
 </body>
 </html>
-

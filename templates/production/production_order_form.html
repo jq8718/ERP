@@ -9,7 +9,9 @@
   <section class="panel" style="padding: 14px; margin-bottom: 16px;">
     <div class="form-grid">
       <div class="form-row">
-        <label for="{{ form.finished_material.id_for_label }}">成品</label>
+        <label for="finished-material-search">成品</label>
+        <input id="finished-material-search" type="search" value="{{ form.selected_material_label }}" autocomplete="off" placeholder="输入成品编码、名称或型号" aria-label="搜索成品">
+        <select id="finished-material-results" aria-label="成品搜索结果" hidden style="width: 100%; margin-top: 6px;"></select>
         {{ form.finished_material }}
         {{ form.finished_material.errors }}
       </div>
@@ -21,6 +23,7 @@
       <div class="form-row">
         <label for="{{ form.locked_bom.id_for_label }}">BOM</label>
         {{ form.locked_bom }}
+        <div id="bom-selection-status" class="muted" aria-live="polite"></div>
         {{ form.locked_bom.errors }}
       </div>
       <div class="form-row">
@@ -51,4 +54,97 @@
     {% endif %}
   </div>
 </form>
+<script>
+(function () {
+  var search = document.getElementById("finished-material-search");
+  var results = document.getElementById("finished-material-results");
+  var material = document.getElementById("{{ form.finished_material.id_for_label }}");
+  var bom = document.getElementById("{{ form.locked_bom.id_for_label }}");
+  var status = document.getElementById("bom-selection-status");
+  var optionsUrl = "{% url 'production:production_order_material_options' %}";
+  var timer;
+  var requestNumber = 0;
+
+  function addOption(select, label, value) {
+    var option = document.createElement("option");
+    option.textContent = label;
+    option.value = value;
+    select.appendChild(option);
+    return option;
+  }
+
+  function clearSelection() {
+    material.value = "";
+    bom.replaceChildren();
+    addOption(bom, "请先选择成品", "");
+    status.textContent = "";
+  }
+
+  function chooseProduct(item) {
+    material.value = item.id;
+    search.value = item.label;
+    results.hidden = true;
+    bom.replaceChildren();
+    if (!item.boms.length) {
+      addOption(bom, "该成品暂无已启用BOM", "");
+      status.textContent = "该成品暂无已启用BOM，请先维护BOM。";
+      return;
+    }
+    addOption(bom, "请选择BOM版本", "");
+    item.boms.forEach(function (entry) {
+      addOption(bom, entry.label + (entry.is_default ? "（默认）" : ""), entry.id);
+    });
+    var defaultBom = item.boms.find(function (entry) { return entry.is_default; });
+    if (defaultBom || item.boms.length === 1) {
+      bom.value = String((defaultBom || item.boms[0]).id);
+    }
+    status.textContent = item.boms.length > 1 && !defaultBom ? "该成品有多个BOM版本，请选择。" : "";
+  }
+
+  function searchProducts() {
+    var query = search.value.trim();
+    var currentRequest = ++requestNumber;
+    results.hidden = true;
+    if (!query) {
+      status.textContent = "";
+      return;
+    }
+    fetch(optionsUrl + "?q=" + encodeURIComponent(query), {credentials: "same-origin"})
+      .then(function (response) {
+        if (!response.ok) { throw new Error("search failed"); }
+        return response.json();
+      })
+      .then(function (data) {
+        if (currentRequest !== requestNumber) { return; }
+        results.replaceChildren();
+        (data.items || []).forEach(function (item) {
+          var option = addOption(results, item.label + (item.boms.length ? "" : "｜无已启用BOM"), item.id);
+          option.dataset.item = JSON.stringify(item);
+        });
+        results.selectedIndex = -1;
+        results.size = Math.min(data.items.length, 6);
+        results.hidden = !data.items.length;
+        status.textContent = data.items.length ? (data.has_more ? "结果较多，请输入更完整的编码或型号。" : "") : "未找到匹配成品。";
+      })
+      .catch(function () {
+        if (currentRequest === requestNumber) { status.textContent = "成品查询失败，请重试。"; }
+      });
+  }
+
+  search.addEventListener("input", function () {
+    clearTimeout(timer);
+    ++requestNumber;
+    clearSelection();
+    results.hidden = true;
+    timer = setTimeout(searchProducts, 180);
+  });
+  search.addEventListener("focus", function () {
+    if (!material.value && search.value.trim()) { searchProducts(); }
+  });
+  results.addEventListener("change", function () {
+    var option = results.options[results.selectedIndex];
+    if (option && option.dataset.item) { chooseProduct(JSON.parse(option.dataset.item)); }
+  });
+})();
+</script>
 {% endblock %}

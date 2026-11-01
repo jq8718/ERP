@@ -243,7 +243,7 @@ class Command(BaseCommand):
                 [
                     PermissionCode.SALES_VIEW,
                     PermissionCode.SALES_PROCESS,
-                    PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
+                    PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
                     PermissionCode.FINANCE_VIEW_AMOUNT,
                 ],
             ),
@@ -253,7 +253,7 @@ class Command(BaseCommand):
                 [
                     PermissionCode.PURCHASE_VIEW,
                     PermissionCode.PURCHASE_PROCESS,
-                    PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
+                    PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT,
                     PermissionCode.FINANCE_VIEW_AMOUNT,
                 ],
             ),
@@ -280,7 +280,8 @@ class Command(BaseCommand):
                     PermissionCode.FINANCE_PAYMENT_PROCESS,
                     PermissionCode.SALES_VIEW_ALL,
                     PermissionCode.PURCHASE_VIEW,
-                    PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO,
+                    PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT,
+                    PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT,
                 ],
             ),
         }
@@ -981,10 +982,10 @@ class Command(BaseCommand):
             remark="LED 背光老化线电费分摊",
         )
         report.record("销售对账", customer_reconciliation.reconciliation_no)
-        report.record("生产对账", supplier_reconciliation.reconciliation_no)
+        report.record("供应商对账", supplier_reconciliation.reconciliation_no)
         report.record("客户收款", receipt.receipt_no)
         report.record("供应商付款", payment.payment_no)
-        report.ok("财务已覆盖销售对账、生产对账、收款核销、付款核销、期初和费用记录")
+        report.ok("财务已覆盖销售对账、供应商对账、收款核销、付款核销、期初和费用记录")
 
     def _check_final_pages(self, base_url: str, password: str, users: dict[str, object], report: UatReport) -> None:
         clients = {
@@ -1007,7 +1008,7 @@ class Command(BaseCommand):
             ("production", f"/production/orders/?q={report.tag}", "生产指令列表可按 UAT 标记筛选"),
             ("production", "/production/receipts/workbench/", "生产入库工作台可打开"),
             ("finance", f"/finance/customer-reconciliations/?q={report.tag}", "销售对账列表可按 UAT 标记筛选"),
-            ("finance", f"/finance/production-reconciliations/?q={report.tag}", "生产对账列表可按 UAT 标记筛选"),
+            ("finance", f"/finance/production-reconciliations/?q={report.tag}", "供应商对账列表可按 UAT 标记筛选"),
         ]
         for key, path, label in page_checks:
             status, body = clients[key].get_status(path)

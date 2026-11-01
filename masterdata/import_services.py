@@ -26,13 +26,14 @@ MATERIAL_IMPORT_COLUMNS = (
     "latest_purchase_price",
     "status",
     "remark",
+    "sourcing_type",
 )
 
 
 MATERIAL_IMPORT_TEMPLATE_ROWS = (
     csv_import_header_row(MATERIAL_IMPORT_COLUMNS),
-    ("RM001", "示例原料", "raw", "kg", "通用规格", "3", "0", "12.345600", "active", "示例行，导入前可删除"),
-    ("FG001", "示例成品", "finished", "pcs", "成品规格", "0", "0", "", "active", ""),
+    ("RM001", "示例原料", "raw", "kg", "通用规格", "3", "0", "12.345600", "active", "示例行，导入前可删除", ""),
+    ("FG001", "示例外购转售成品", "finished", "pcs", "成品规格", "0", "0", "", "active", "", "resale"),
 )
 
 CUSTOMER_IMPORT_COLUMNS = (
@@ -262,11 +263,18 @@ def import_material_unit_conversions_from_csv(file_obj: TextIOBase, operator_id:
         return _fail_import_job(job, f"物料单位换算导入失败：{exc}", "FILE_IMPORT_FAILED")
 
 
-def import_customer_addresses_from_csv(file_obj: TextIOBase, operator_id: int | None = None) -> ServiceResult:
+def import_customer_addresses_from_csv(
+    file_obj: TextIOBase, operator_id: int | None = None, allowed_customer_ids: set[int] | None = None
+) -> ServiceResult:
     job = _start_import_job("customer_addresses", operator_id)
     try:
         rows = read_csv_dict_rows(file_obj)
         errors, customer_map = _validate_customer_address_rows(rows)
+        if allowed_customer_ids is not None:
+            for row_no, row in enumerate(rows, start=2):
+                customer = customer_map.get(_clean(row.get("customer_no")))
+                if customer and customer.id not in allowed_customer_ids:
+                    errors.append({"row": row_no, "field": "customer_no", "message": "不能导入其他销售的客户地址"})
         if errors:
             return _validation_failed(job, "客户地址导入校验失败", errors)
 
@@ -315,6 +323,7 @@ def _validate_material_rows(rows: list[dict[str, str]]) -> list[dict]:
     existing_codes = set(Material.objects.filter(material_code__in=[_clean(row.get("material_code")) for row in rows]).values_list("material_code", flat=True))
     valid_types = set(Material.MaterialType.values)
     valid_statuses = set(Material.MaterialStatus.values)
+    valid_sourcing_types = set(Material.SourcingType.values)
     required_fields = ("material_code", "material_name", "material_type", "base_unit")
 
     for row_no, row in enumerate(rows, start=2):
@@ -333,6 +342,11 @@ def _validate_material_rows(rows: list[dict[str, str]]) -> list[dict]:
         material_type = _clean(row.get("material_type"))
         if material_type and material_type not in valid_types:
             errors.append({"row": row_no, "field": "material_type", "message": "物料类型不合法"})
+        sourcing_type = _clean(row.get("sourcing_type")) or Material.SourcingType.MANUFACTURED
+        if sourcing_type not in valid_sourcing_types:
+            errors.append({"row": row_no, "field": "sourcing_type", "message": "供货方式不合法"})
+        elif sourcing_type == Material.SourcingType.RESALE and material_type != Material.MaterialType.FINISHED:
+            errors.append({"row": row_no, "field": "sourcing_type", "message": "外购转售仅适用于成品"})
 
         status = _clean(row.get("status")) or Material.MaterialStatus.ACTIVE
         if status not in valid_statuses:
@@ -655,6 +669,7 @@ def _build_material(row: dict[str, str], operator_id: int | None) -> Material:
         material_code=_clean(row.get("material_code")),
         material_name=_clean(row.get("material_name")),
         material_type=_clean(row.get("material_type")),
+        sourcing_type=_clean(row.get("sourcing_type")) or Material.SourcingType.MANUFACTURED,
         spec=_clean(row.get("spec")),
         base_unit=_clean(row.get("base_unit")),
         qty_precision=int(_clean(row.get("qty_precision")) or "0"),

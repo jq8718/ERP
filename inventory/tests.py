@@ -10,7 +10,7 @@ from accounts.models import Permission, Role
 from accounts.permissions import PermissionCode
 from files.models import ExportLog, ImportJob, InitializationJob, PrintLog
 from inventory.models import Inventory, InventoryBatch, InventoryTransaction, LocationTransfer, StockCount, StockCountItem, WarehouseLocation
-from inventory.services import confirm_location_transfer, confirm_stock_count_adjustment, create_stock_count_from_batches
+from inventory.services import adjust_batch_quantity, confirm_location_transfer, confirm_stock_count_adjustment, create_stock_count_from_batches
 from masterdata.models import Material
 from system.models import AuditLog, PendingEvent
 
@@ -134,6 +134,58 @@ class StockCountAdjustmentServiceTests(TestCase):
         self.assertEqual(inventory.qty, Decimal("7.0000"))
         self.assertEqual(transaction.qty_delta, Decimal("-3.0000"))
         self.assertEqual(transaction.transaction_type, InventoryTransaction.TransactionType.STOCK_ADJUSTMENT)
+
+    def test_only_superuser_can_adjust_batch_quantity(self):
+        batch = self._batch_and_inventory()
+        self._grant_permission(PermissionCode.INVENTORY_PROCESS)
+        self.client.force_login(self.user)
+        url = reverse("inventory:inventory_batch_adjust", args=[batch.id])
+        payload = {"expected_qty": "10", "counted_qty": "8", "reason": "实盘差异", "current_password": "x"}
+
+        self.assertNotContains(self.client.get(reverse("inventory:inventory_batch_detail", args=[batch.id])), "调整库存数量")
+        self.assertEqual(self.client.post(url, payload).status_code, 403)
+        batch.refresh_from_db()
+        self.assertEqual(batch.remaining_qty, Decimal("10"))
+        self.assertFalse(StockCount.objects.exists())
+
+    def test_superuser_adjustment_checks_password_and_stale_quantity(self):
+        batch = self._batch_and_inventory()
+        admin = get_user_model().objects.create_superuser(username="stock-admin", password="secret")
+        self.client.force_login(admin)
+        url = reverse("inventory:inventory_batch_adjust", args=[batch.id])
+        payload = {"expected_qty": "10", "counted_qty": "8", "reason": "实盘差异", "current_password": "wrong"}
+
+        self.assertContains(self.client.get(reverse("inventory:inventory_batch_detail", args=[batch.id])), "调整库存数量")
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+        self.assertFalse(StockCount.objects.exists())
+        payload["current_password"] = "secret"
+        payload["expected_qty"] = "9"
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+        self.assertFalse(StockCount.objects.exists())
+        batch.refresh_from_db()
+        self.assertEqual(batch.remaining_qty, Decimal("10"))
+
+    def test_superuser_adjustment_updates_batch_summary_and_history(self):
+        batch = self._batch_and_inventory()
+        admin = get_user_model().objects.create_superuser(username="stock-admin", password="secret")
+        self.client.force_login(admin)
+        url = reverse("inventory:inventory_batch_adjust", args=[batch.id])
+        payload = {"expected_qty": "10", "counted_qty": "8", "reason": "实盘差异", "current_password": "secret"}
+
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+        batch.refresh_from_db()
+        self.assertEqual(batch.remaining_qty, Decimal("8"))
+        self.assertEqual(Inventory.objects.get(material=self.material, location=self.location).qty, Decimal("8"))
+        stock_count = StockCount.objects.get()
+        self.assertEqual(stock_count.status, StockCount.CountStatus.ADJUSTED)
+        self.assertEqual(InventoryTransaction.objects.get(batch=batch).qty_delta, Decimal("-2"))
+        self.assertTrue(AuditLog.objects.filter(action="admin_batch_quantity_adjust", source_doc_id=stock_count.id).exists())
+
+    def test_adjust_batch_service_rejects_negative_quantity(self):
+        batch = self._batch_and_inventory()
+        result = adjust_batch_quantity(batch.id, Decimal("10"), Decimal("-1"), self.user.id)
+        self.assertFalse(result.success)
+        self.assertFalse(StockCount.objects.exists())
 
     def test_create_stock_count_from_batches_snapshots_current_batches(self):
         batch = self._batch_and_inventory()

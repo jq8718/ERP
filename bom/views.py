@@ -82,6 +82,8 @@ class BomForm(forms.ModelForm):
         existing_material = Material.objects.filter(material_code=material_code).first() if material_code else None
         if existing_material and existing_material.material_type != Material.MaterialType.FINISHED:
             self.add_error("finished_material_code", "该物料号已存在，但不是成品物料")
+        if existing_material and existing_material.sourcing_type == Material.SourcingType.RESALE:
+            self.add_error("finished_material_code", "外购转售成品不能建立 BOM")
         self._finished_material = existing_material
         return cleaned
 

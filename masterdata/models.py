@@ -63,6 +63,10 @@ class SupplierPaymentMethod(models.TextChoices):
 
 
 class Material(TimeStampedModel):
+    class SourcingType(models.TextChoices):
+        MANUFACTURED = "manufactured", "自产"
+        RESALE = "resale", "外购转售"
+
     class MaterialType(models.TextChoices):
         FINISHED = "finished", "成品"
         RAW = "raw", "原料"
@@ -77,6 +81,7 @@ class Material(TimeStampedModel):
     material_code = models.CharField(max_length=80, unique=True)
     material_name = models.CharField(max_length=200)
     material_type = models.CharField(max_length=24, choices=MaterialType.choices)
+    sourcing_type = models.CharField("供货方式", max_length=24, choices=SourcingType.choices, default=SourcingType.MANUFACTURED)
     spec = models.CharField(max_length=200, blank=True)
     base_unit = models.CharField(max_length=32)
     qty_precision = models.PositiveSmallIntegerField(default=0)
@@ -91,6 +96,10 @@ class Material(TimeStampedModel):
             models.Index(fields=["material_type", "status"]),
             models.Index(fields=["material_name"]),
         ]
+
+    @property
+    def sourcing_label(self):
+        return self.get_sourcing_type_display() if self.material_type == self.MaterialType.FINISHED else ""
 
     def __str__(self):
         parts = [self.material_code, self.material_name]

@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import F, Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -14,10 +14,12 @@ from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView
 
 from accounts.permissions import PermissionCode, require_any_erp_permission, require_erp_permission, user_has_permission
+from bom.models import Bom
 from bom.services import UnitConversionMissing, required_component_qty_base
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch, WarehouseLocation
+from masterdata.models import Material
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
 
@@ -99,6 +101,46 @@ class ProductionOrderListView(ErpListView):
         if scope_value == "in_progress":
             return queryset.filter(status=ProductionOrder.Status.IN_PROGRESS)
         return queryset
+
+
+class ProductionOrderMaterialOptionsView(LoginRequiredMixin, View):
+    def get(self, request):
+        require_erp_permission(request.user, PermissionCode.PRODUCTION_PROCESS, "缺少生产单据处理权限")
+        query = request.GET.get("q", "").strip()[:100]
+        if not query:
+            return JsonResponse({"items": [], "has_more": False})
+        materials = Material.objects.filter(
+            status=Material.MaterialStatus.ACTIVE,
+            material_type=Material.MaterialType.FINISHED,
+            sourcing_type=Material.SourcingType.MANUFACTURED,
+        )
+        for term in query.split():
+            materials = materials.filter(
+                Q(material_code__icontains=term) | Q(material_name__icontains=term) | Q(spec__icontains=term)
+            )
+        matches = list(materials.order_by("material_code")[:21])
+        boms = Bom.objects.filter(
+            status=Bom.BomStatus.ENABLED,
+            finished_material_id__in=[material.id for material in matches[:20]],
+        ).order_by("-is_default", "-enabled_at", "-id")
+        boms_by_material = {}
+        for bom in boms:
+            boms_by_material.setdefault(bom.finished_material_id, []).append({
+                "id": bom.id,
+                "label": f"{bom.bom_no} · {bom.bom_version}",
+                "is_default": bom.is_default,
+            })
+        return JsonResponse({
+            "items": [
+                {
+                    "id": material.id,
+                    "label": " ".join(part for part in (material.material_code, material.material_name, material.spec) if part),
+                    "boms": boms_by_material.get(material.id, []),
+                }
+                for material in matches[:20]
+            ],
+            "has_more": len(matches) > 20,
+        })
 
 
 class ProductionOrderCreateView(LoginRequiredMixin, CreateView):

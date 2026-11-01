@@ -120,6 +120,7 @@ FORM_LABELS = {
     "material_code": "物料编码",
     "material_name": "物料名称",
     "material_type": "物料类型",
+    "sourcing_type": "供货方式",
     "spec": "规格",
     "base_unit": "基本单位",
     "qty_precision": "数量精度",

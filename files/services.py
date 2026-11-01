@@ -64,6 +64,7 @@ CSV_IMPORT_COLUMN_LABELS = {
     "material_code": "物料编码",
     "material_name": "物料名称",
     "material_type": "物料类型",
+    "sourcing_type": "供货方式",
     "min_stock_qty": "最低库存",
     "needed_date": "需求日期",
     "order_date": "订单日期",

@@ -139,6 +139,32 @@ $packageDirName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x5B89, 0x88C5, 0x5305
 $planFileName = -join ([char[]](0x0045, 0x0052, 0x0050, 0x6A21, 0x5757, 0x5EFA, 0x8BBE, 0x8BA1, 0x5212, 0x002E, 0x006D, 0x0064))
 $zipFileName = "$packageDirName.zip"
 $packageVersion = Get-PackageVersion -Root $sourceRoot
+$isIncremental = Test-Path -LiteralPath (Join-Path $sourceRoot "INCREMENTAL_UPDATE")
+if ($isIncremental) {
+    $manifestPath = Join-Path $sourceRoot "UPDATE_MANIFEST.sha256"
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        throw "Incremental update manifest is missing: $manifestPath"
+    }
+    foreach ($line in Get-Content -LiteralPath $manifestPath) {
+        if ($line -notmatch '^([0-9A-Fa-f]{64})\s+(.+)$') {
+            throw "Invalid incremental update manifest entry: $line"
+        }
+        $expectedHash = $Matches[1]
+        $relativePath = $Matches[2]
+        if ([IO.Path]::IsPathRooted($relativePath) -or $relativePath -match '(^|[\\/])\.\.([\\/]|$)') {
+            throw "Unsafe incremental update path: $relativePath"
+        }
+        $filePath = Join-Path $sourceRoot $relativePath
+        if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+            throw "Incremental update file missing: $relativePath"
+        }
+        $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $filePath).Hash
+        if ($actualHash -ne $expectedHash) {
+            throw "Incremental update hash mismatch: $relativePath"
+        }
+    }
+    Write-Host "Incremental update manifest verified."
+}
 if ($packageVersion) {
     Write-Host "ERP package version: $packageVersion"
 } else {
@@ -163,7 +189,11 @@ if ($sourceRoot -ne $targetRoot) {
     Write-Host "Copying new ERP files to $targetRoot ..."
     $excludeDirs = @(".git", ".venv", ".tmp", "backups", "logs", "logs-test", "media", "staticfiles", "dist", "work", "__pycache__", "tests_safety", "packages", $packageDirName)
     $excludeFiles = @(".env", "db.sqlite3", "*.pyc", "~*.DDF", "*.docx", $planFileName, $zipFileName)
-    $robocopyArgs = @($sourceRoot, $targetRoot, "/MIR", "/XD") + $excludeDirs + @("/XF") + $excludeFiles
+    $copyMode = if ($isIncremental) { "/E" } else { "/MIR" }
+    if ($isIncremental) {
+        Write-Host "Incremental update: overlay changed files; keep other installed files."
+    }
+    $robocopyArgs = @($sourceRoot, $targetRoot, $copyMode, "/XD") + $excludeDirs + @("/XF") + $excludeFiles + @("INCREMENTAL_UPDATE")
     & robocopy @robocopyArgs | Out-Host
     if ($LASTEXITCODE -ge 8) {
         throw "update robocopy failed with exit code $LASTEXITCODE"

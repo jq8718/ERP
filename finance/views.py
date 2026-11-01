@@ -2103,7 +2103,7 @@ class ReconciliationListView(ErpListView):
     ordering = ["-period_start", "-id"]
     page_actions = (
         ("新建销售对账", "finance:customer_reconciliation_create", "primary"),
-        ("新建生产对账", "finance:production_reconciliation_create", "primary"),
+        ("新建供应商对账", "finance:production_reconciliation_create", "primary"),
         ("导出CSV", "finance:reconciliation_export", ""),
     )
     search_fields = ("reconciliation_no", "customer__customer_name", "supplier__supplier_name")
@@ -2137,7 +2137,7 @@ class ReconciliationListView(ErpListView):
         if _can_create_customer_reconciliation(self.request.user):
             actions.append(("新建销售对账", "finance:customer_reconciliation_create", "primary"))
         if _can_create_supplier_reconciliation(self.request.user):
-            actions.append(("新建生产对账", "finance:production_reconciliation_create", "primary"))
+            actions.append(("新建供应商对账", "finance:production_reconciliation_create", "primary"))
         actions.append(("导出CSV", "finance:reconciliation_export", ""))
         return tuple(actions)
 
@@ -2207,7 +2207,7 @@ class CustomerReconciliationListView(ReconciliationListView):
 
 
 class ProductionReconciliationListView(ReconciliationListView):
-    page_title = "生产对账"
+    page_title = "供应商对账"
     view_permission_required = (PermissionCode.FINANCE_VIEW_AMOUNT, PermissionCode.PURCHASE_PROCESS)
     create_url_name = "finance:production_reconciliation_create"
     columns = (
@@ -2414,7 +2414,7 @@ class ProductionReconciliationCreateView(LoginRequiredMixin, View):
             return self._render(request, period_start, period_end)
         rows = _supplier_reconciliation_rows(supplier_id, period_start, period_end, user=request.user)
         if not rows:
-            messages.error(request, "所选供应商和日期范围内没有可对账生产/进货明细")
+            messages.error(request, "所选供应商和日期范围内没有可对账进货明细")
             return self._render(request, period_start, period_end)
         reconciliation = Reconciliation.objects.create(
             reconciliation_no=next_document_no("REC"),
@@ -2435,7 +2435,7 @@ class ProductionReconciliationCreateView(LoginRequiredMixin, View):
             reconciliation.reconciliation_no,
             after_snapshot=_reconciliation_snapshot(reconciliation),
         )
-        messages.success(request, "生产对账单已创建")
+        messages.success(request, "供应商对账单已创建")
         return redirect("finance:reconciliation_detail", pk=reconciliation.pk)
 
     def _render(self, request, period_start=None, period_end=None):
@@ -2444,7 +2444,7 @@ class ProductionReconciliationCreateView(LoginRequiredMixin, View):
             request,
             self.template_name,
             {
-                "page_title": "新建生产对账",
+                "page_title": "新建供应商对账",
                 "period_start": period_start,
                 "period_end": period_end,
                 "candidate_rows": _supplier_reconciliation_candidate_rows(request.user, period_start, period_end),

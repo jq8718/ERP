@@ -29,7 +29,8 @@ class MasterdataViewTests(TestCase):
             PermissionCode.BOM_VIEW: Permission.PermissionType.MODULE,
             PermissionCode.SALES_VIEW_ALL: Permission.PermissionType.DATA_SCOPE,
             PermissionCode.FINANCE_VIEW_AMOUNT: Permission.PermissionType.FIELD,
-            PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO: Permission.PermissionType.FIELD,
+            PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT: Permission.PermissionType.FIELD,
+            PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT: Permission.PermissionType.FIELD,
         }
         permission, _ = Permission.objects.get_or_create(
             permission_code=permission_code,
@@ -48,6 +49,30 @@ class MasterdataViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login/", response["Location"])
+
+    def test_resale_finished_material_can_be_created_without_bom(self):
+        self.client.force_login(self.user)
+        payload = {
+            "material_code": "FG-RESALE",
+            "material_name": "外购转售成品",
+            "material_type": Material.MaterialType.FINISHED,
+            "sourcing_type": Material.SourcingType.RESALE,
+            "base_unit": "pcs",
+            "qty_precision": "0",
+            "min_stock_qty": "0",
+            "status": Material.MaterialStatus.ACTIVE,
+        }
+        response = self.client.post("/masterdata/materials/new/", payload)
+        self.assertEqual(response.status_code, 302)
+        material = Material.objects.get(material_code="FG-RESALE")
+        self.assertEqual(material.sourcing_type, Material.SourcingType.RESALE)
+        self.assertContains(self.client.get(f"/masterdata/materials/{material.id}/"), "外购转售")
+
+        payload["material_code"] = "FG-MAKE"
+        payload["sourcing_type"] = Material.SourcingType.MANUFACTURED
+        response = self.client.post("/masterdata/materials/new/", payload)
+        self.assertContains(response, "自产成品请在")
+        self.assertFalse(Material.objects.filter(material_code="FG-MAKE").exists())
 
     def test_core_masterdata_lists_render(self):
         self.client.force_login(self.user)
@@ -172,8 +197,9 @@ class MasterdataViewTests(TestCase):
         self.assertContains(response, 'class="record-field medium"')
         self.assertContains(response, 'class="record-field short"')
         self.assertContains(response, 'select name="material_type"')
-        self.assertNotContains(response, '<option value="finished">成品</option>')
-        self.assertContains(response, '成品请在“产品组成清单”新建页面维护。')
+        self.assertContains(response, '<option value="finished">成品</option>')
+        self.assertContains(response, '自产成品请在“产品组成清单”新建')
+        self.assertContains(response, 'select name="sourcing_type"')
         self.assertContains(response, 'select name="status"')
 
     def test_material_edit_updates_material_and_increments_version(self):
@@ -269,7 +295,7 @@ class MasterdataViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv")
-        self.assertIn("编码,名称,型号,类型,单位,状态", content)
+        self.assertIn("编码,名称,型号,类型,供货方式,单位,状态", content)
         self.assertIn("RM-EXP", content)
         self.assertIn("导出原料", content)
         self.assertIn("EXP-0603", content)
@@ -330,6 +356,21 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn("物料编码,物料名称,物料类型,基本单位", content)
         self.assertIn("RM001", content)
+
+    def test_material_import_accepts_resale_sourcing_type(self):
+        self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
+        self.client.force_login(self.user)
+        upload = SimpleUploadedFile(
+            "materials.csv",
+            (
+                "物料编码,物料名称,物料类型,基本单位,供货方式\n"
+                "FG-IMPORT-RESALE,导入外购成品,finished,pcs,resale\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+        response = self.client.post("/masterdata/materials/import/", {"import_file": upload})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Material.objects.get(material_code="FG-IMPORT-RESALE").sourcing_type, Material.SourcingType.RESALE)
 
     def test_material_import_creates_materials_and_import_job(self):
         self._grant_permission(PermissionCode.FINANCE_VIEW_AMOUNT)
@@ -483,7 +524,7 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(export_log.filter_json["query"]["status"], "active")
 
     def test_customer_import_template_downloads_csv(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/customers/import-template/")
@@ -495,7 +536,7 @@ class MasterdataViewTests(TestCase):
 
     def test_customer_import_creates_customers_and_import_job(self):
         owner = get_user_model().objects.create_user(username="sales-owner", password="x")
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "customers.csv",
@@ -517,7 +558,7 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(job.success_count, 1)
 
     def test_customer_import_reports_missing_sales_owner(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "customers.csv",
@@ -718,7 +759,7 @@ class MasterdataViewTests(TestCase):
         self.assertNotIn("李四", content)
 
     def test_supplier_export_shows_contact_with_personal_info_permission(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         Supplier.objects.create(
             supplier_no="S-EXPORT-VIEW",
             supplier_name="导出供应商",
@@ -765,7 +806,7 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(export_log.filter_json["query"]["status"], "active")
 
     def test_supplier_import_template_downloads_csv(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/suppliers/import-template/")
@@ -776,7 +817,7 @@ class MasterdataViewTests(TestCase):
         self.assertIn("S001", content)
 
     def test_supplier_import_creates_suppliers_and_import_job(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "suppliers.csv",
@@ -800,7 +841,7 @@ class MasterdataViewTests(TestCase):
 
     def test_supplier_import_reports_validation_errors(self):
         Supplier.objects.create(supplier_no="S-DUP", supplier_name="已有供应商")
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "suppliers.csv",
@@ -913,7 +954,7 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(import_response.status_code, 403)
 
     def test_customer_address_import_template_downloads_csv(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/customers/addresses/import-template/")
@@ -931,7 +972,7 @@ class MasterdataViewTests(TestCase):
             receiver_name="旧默认",
             is_default=True,
         )
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "customer_addresses.csv",
@@ -955,7 +996,7 @@ class MasterdataViewTests(TestCase):
         self.assertEqual(job.status, ImportJob.JobStatus.SUCCESS)
 
     def test_customer_address_import_reports_validation_errors(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
         upload = SimpleUploadedFile(
             "customer_addresses.csv",
@@ -976,6 +1017,28 @@ class MasterdataViewTests(TestCase):
         self.assertContains(response, "状态不合法")
         job = ImportJob.objects.get(template_type="customer_addresses")
         self.assertEqual(job.status, ImportJob.JobStatus.FAILED)
+
+    def test_customer_address_import_cannot_write_other_sales_customer(self):
+        other = get_user_model().objects.create_user(username="other-address-owner", password="x")
+        customer = Customer.objects.create(
+            customer_no="C-FOREIGN-ADDR", customer_name="其他客户", created_by=other, sales_owner=other
+        )
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
+        self.client.force_login(self.user)
+        upload = SimpleUploadedFile(
+            "customer_addresses.csv",
+            (
+                "客户编号,地址类型,收件人,收件电话,地址,是否默认,状态\n"
+                "C-FOREIGN-ADDR,shipping,越权联系人,13900000000,测试地址,false,active\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post("/masterdata/customers/addresses/import/", {"import_file": upload})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "不能导入其他销售的客户地址")
+        self.assertFalse(CustomerAddress.objects.filter(customer=customer).exists())
 
     def test_material_supplier_price_import_requires_finance_amount_permission(self):
         self.client.force_login(self.user)
@@ -1122,7 +1185,7 @@ class MasterdataViewTests(TestCase):
         self.assertContains(detail_response, "测试客户")
 
     def test_customer_form_uses_compact_record_layout_and_phone_input(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/customers/new/")
@@ -1345,7 +1408,7 @@ class MasterdataViewTests(TestCase):
         self.assertNotContains(response, "13933334444")
 
     def test_customer_contact_info_visible_with_personal_info_permission(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         customer = Customer.objects.create(
             customer_no="C-PII-VIEW",
             customer_name="客户",
@@ -1374,7 +1437,7 @@ class MasterdataViewTests(TestCase):
 
         self.assertEqual(denied_response.status_code, 403)
 
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         response = self.client.post(
             f"/masterdata/customers/{customer.id}/addresses/new/",
             {
@@ -1418,7 +1481,7 @@ class MasterdataViewTests(TestCase):
         denied_response = self.client.get(f"/masterdata/customers/addresses/{address.id}/edit/")
         self.assertEqual(denied_response.status_code, 403)
 
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
         detail_response = self.client.get(f"/masterdata/customers/{customer.id}/")
         response = self.client.post(
             f"/masterdata/customers/addresses/{address.id}/edit/",
@@ -1460,6 +1523,67 @@ class MasterdataViewTests(TestCase):
         self.assertContains(response, "我的客户")
         self.assertNotContains(response, "别人的客户")
 
+    def test_sales_user_sees_only_created_customer_and_own_contact(self):
+        other = get_user_model().objects.create_user(username="other-sales", password="x")
+        own = Customer.objects.create(
+            customer_no="C-MINE", customer_name="我的客户", created_by=self.user,
+            sales_owner=other, contact_phone_encrypted="13811112222",
+        )
+        foreign = Customer.objects.create(
+            customer_no="C-FOREIGN", customer_name="他人客户", created_by=other,
+            sales_owner=self.user, contact_phone_encrypted="13933334444",
+        )
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
+        self.client.force_login(self.user)
+
+        listing = self.client.get("/masterdata/customers/")
+        self.assertContains(listing, own.customer_name)
+        self.assertNotContains(listing, foreign.customer_name)
+        self.assertEqual(self.client.get(f"/masterdata/customers/{foreign.id}/").status_code, 404)
+        self.assertContains(self.client.get(f"/masterdata/customers/{own.id}/"), "13811112222")
+
+    def test_contact_permissions_are_separate_and_view_all_does_not_unlock_foreign_contact(self):
+        other = get_user_model().objects.create_user(username="other-sales", password="x")
+        foreign = Customer.objects.create(
+            customer_no="C-CONTACT-OTHER", customer_name="他人客户", created_by=other,
+            contact_phone_encrypted="13933334444",
+        )
+        supplier = Supplier.objects.create(
+            supplier_no="S-CONTACT", supplier_name="供应商", contact_name="专属联系人",
+            contact_phone_encrypted="13755556666",
+        )
+        self._grant_permission(PermissionCode.SALES_VIEW_ALL)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT)
+        self.client.force_login(self.user)
+
+        customer_page = self.client.get(f"/masterdata/customers/{foreign.id}/")
+        supplier_page = self.client.get(f"/masterdata/suppliers/{supplier.id}/")
+        self.assertContains(customer_page, foreign.customer_name)
+        self.assertNotContains(customer_page, "13933334444")
+        self.assertNotContains(supplier_page, "专属联系人")
+        self.assertNotContains(supplier_page, "13755556666")
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
+        self.assertContains(self.client.get(f"/masterdata/suppliers/{supplier.id}/"), "专属联系人")
+
+    def test_supplier_contact_cannot_be_inferred_by_filter_without_permission(self):
+        Supplier.objects.create(supplier_no="S-PRIVATE", supplier_name="普通供应商", contact_name="隐私姓名")
+        self.client.force_login(self.user)
+        listing = self.client.get("/masterdata/suppliers/?contact_name=隐私姓名")
+        search = self.client.get("/masterdata/suppliers/?q=隐私姓名")
+        self.assertContains(listing, "普通供应商")
+        self.assertNotContains(listing, "隐私姓名")
+        self.assertNotContains(search, "普通供应商")
+
+    def test_new_customer_cannot_assign_another_sales_owner(self):
+        other = get_user_model().objects.create_user(username="assigned-other", password="x")
+        self.client.force_login(self.user)
+        response = self.client.post("/masterdata/customers/new/", {
+            "customer_no": "C-SELF", "customer_name": "新建客户", "sales_owner": other.id,
+            "status": Customer.CustomerStatus.ACTIVE,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Customer.objects.get(customer_no="C-SELF").sales_owner, self.user)
+
     def test_customer_list_view_all_permission_shows_all_customers(self):
         other = get_user_model().objects.create_user(username="other-owner", password="x")
         Customer.objects.create(customer_no="C-OWN", customer_name="我的客户", sales_owner=self.user)
@@ -1500,7 +1624,7 @@ class MasterdataViewTests(TestCase):
         self.assertContains(detail_response, "测试供应商")
 
     def test_supplier_type_and_payment_method_use_select_options(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         self.client.force_login(self.user)
 
         response = self.client.get("/masterdata/suppliers/new/")
@@ -1603,7 +1727,7 @@ class MasterdataViewTests(TestCase):
         self.assertNotContains(detail_response, "13900000000")
 
     def test_supplier_contact_info_visible_with_personal_info_permission(self):
-        self._grant_permission(PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO)
+        self._grant_permission(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT)
         supplier = Supplier.objects.create(
             supplier_no="S-PII-VIEW",
             supplier_name="供应商",

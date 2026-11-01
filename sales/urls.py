@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (
     CustomerReturnCreateView,
+    CustomerReturnApproveView,
+    CustomerReturnRejectView,
     CustomerReturnExportView,
     CustomerReturnImportTemplateView,
     CustomerReturnImportView,
@@ -103,6 +105,8 @@ urlpatterns = [
     path("returns/new/", CustomerReturnCreateView.as_view(), name="customer_return_create"),
     path("returns/<int:pk>/", CustomerReturnDetailView.as_view(), name="customer_return_detail"),
     path("returns/<int:pk>/edit/", CustomerReturnUpdateView.as_view(), name="customer_return_edit"),
+    path("returns/<int:pk>/approve/", CustomerReturnApproveView.as_view(), name="customer_return_approve"),
+    path("returns/<int:pk>/reject/", CustomerReturnRejectView.as_view(), name="customer_return_reject"),
     path("returns/<int:pk>/print/", CustomerReturnPrintView.as_view(), name="customer_return_print"),
     path("returns/<int:pk>/void/", CustomerReturnVoidView.as_view(), name="customer_return_void"),
     path("returns/<int:pk>/confirm-receipt/", CustomerReturnConfirmReceiptView.as_view(), name="customer_return_confirm_receipt"),

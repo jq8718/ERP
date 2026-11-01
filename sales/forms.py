@@ -110,11 +110,17 @@ class SalesOrderForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        customer_queryset = kwargs.pop("customer_queryset", None)
+        self.contact_customer_queryset = kwargs.pop("contact_customer_queryset", Customer.objects.all())
+        show_customer_contact = kwargs.pop("show_customer_contact", True)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
-        self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
+        customers = customer_queryset if customer_queryset is not None else Customer.objects.all()
+        self.fields["customer"].queryset = customers.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["order_date"].initial = self.fields["order_date"].initial or timezone.localdate()
         self.fields["customer_address"].queryset = self._customer_address_queryset()
+        if not show_customer_contact:
+            self.fields["customer_address"].label_from_instance = lambda address: f"收货地址 #{address.pk}"
         self.fields["settlement_method"].required = False
 
     def _customer_address_queryset(self):
@@ -129,6 +135,7 @@ class SalesOrderForm(forms.ModelForm):
             CustomerAddress.objects.select_related("customer")
             .filter(
                 customer_id=customer_id,
+                customer__in=self.contact_customer_queryset,
                 address_type=CustomerAddress.AddressType.SHIPPING,
                 status=CustomerAddress.AddressStatus.ACTIVE,
             )
@@ -145,6 +152,7 @@ class SalesOrderForm(forms.ModelForm):
             cleaned["customer_address"] = (
                 CustomerAddress.objects.filter(
                     customer=customer,
+                    customer__in=self.contact_customer_queryset,
                     address_type=CustomerAddress.AddressType.SHIPPING,
                     status=CustomerAddress.AddressStatus.ACTIVE,
                 )
@@ -365,9 +373,11 @@ class CustomerReturnForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         sales_order_queryset = kwargs.pop("sales_order_queryset", None)
+        customer_queryset = kwargs.pop("customer_queryset", None)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
-        self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
+        customers = customer_queryset if customer_queryset is not None else Customer.objects.all()
+        self.fields["customer"].queryset = customers.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["customer"].required = False
         if sales_order_queryset is None:
             sales_order_queryset = (
@@ -722,9 +732,11 @@ class SampleLoanForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        customer_queryset = kwargs.pop("customer_queryset", None)
         super().__init__(*args, **kwargs)
         set_form_labels(self)
-        self.fields["customer"].queryset = Customer.objects.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
+        customers = customer_queryset if customer_queryset is not None else Customer.objects.all()
+        self.fields["customer"].queryset = customers.filter(status=Customer.CustomerStatus.ACTIVE).order_by("customer_no")
         self.fields["loan_date"].initial = self.fields["loan_date"].initial or timezone.localdate()
 
     def clean(self):

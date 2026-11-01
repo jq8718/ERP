@@ -47,6 +47,22 @@
   </div>
 </section>
 
+{% if can_adjust_quantity %}
+<section class="panel">
+  <h2>调整库存数量</h2>
+  <form method="post" action="{% url 'inventory:inventory_batch_adjust' batch.pk %}">
+    {% csrf_token %}
+    {{ adjustment_form.expected_qty }}
+    <div class="form-grid">
+      <div class="form-field">{{ adjustment_form.counted_qty.label_tag }}{{ adjustment_form.counted_qty }}</div>
+      <div class="form-field">{{ adjustment_form.reason.label_tag }}{{ adjustment_form.reason }}</div>
+      <div class="form-field">{{ adjustment_form.current_password.label_tag }}{{ adjustment_form.current_password }}</div>
+    </div>
+    <div class="form-actions"><button class="button primary" type="submit">确认调整</button></div>
+  </form>
+</section>
+{% endif %}
+
 <section class="panel">
   <h2>相关库存流水</h2>
   {% if transactions %}

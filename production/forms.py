@@ -21,6 +21,7 @@ class ProductionOrderForm(forms.ModelForm):
         model = ProductionOrder
         fields = ["finished_material", "production_qty", "locked_bom", "planned_start_date", "planned_finish_date", "remark"]
         widgets = {
+            "finished_material": forms.HiddenInput(),
             "planned_start_date": forms.DateInput(attrs={"type": "date"}),
             "planned_finish_date": forms.DateInput(attrs={"type": "date"}),
             "remark": forms.Textarea(attrs={"rows": 3}),
@@ -32,10 +33,24 @@ class ProductionOrderForm(forms.ModelForm):
         self.fields["finished_material"].queryset = Material.objects.filter(
             status=Material.MaterialStatus.ACTIVE,
             material_type=Material.MaterialType.FINISHED,
+            sourcing_type=Material.SourcingType.MANUFACTURED,
         ).order_by("material_code")
         self.fields["locked_bom"].queryset = Bom.objects.select_related("finished_material").filter(
             status=Bom.BomStatus.ENABLED
         ).order_by("finished_material__material_code", "-is_default", "-enabled_at", "-id")
+        material_id = self.data.get("finished_material") if self.is_bound else self.initial.get("finished_material")
+        if not material_id and self.instance.pk:
+            material_id = self.instance.finished_material_id
+        self.selected_material_label = ""
+        try:
+            material = self.fields["finished_material"].queryset.filter(pk=material_id).first() if material_id else None
+        except (TypeError, ValueError):
+            material = None
+        if material:
+            self.selected_material_label = " ".join(part for part in (material.material_code, material.material_name, material.spec) if part)
+            self.fields["locked_bom"].queryset = self.fields["locked_bom"].queryset.filter(finished_material=material)
+        else:
+            self.fields["locked_bom"].queryset = self.fields["locked_bom"].queryset.none()
 
     def clean(self):
         cleaned = super().clean()

@@ -15,11 +15,11 @@ from django.views import View
 from django.views.generic import DetailView, TemplateView
 from django.views.generic.edit import CreateView
 
-from accounts.permissions import PermissionCode, can_view_amount, require_any_erp_permission, require_erp_permission, user_has_permission
+from accounts.permissions import PermissionCode, can_view_amount, can_view_customer_contact, require_any_erp_permission, require_erp_permission, user_has_permission
 from files.services import csv_upload_validation_error, export_queryset_to_csv, record_print_log, uploaded_csv_text_file
 from files.view_helpers import build_attachment_panel, export_file_response
 from inventory.models import InventoryBatch
-from masterdata.models import CustomerAddress, Material, SettlementMethod
+from masterdata.models import Customer, CustomerAddress, Material, SettlementMethod
 from system.date_utils import parse_user_date
 from system.services import next_document_no, record_audit_log_from_request
 from system.view_helpers import ErpListView, optional_post_reason, require_post_reason, require_second_verify
@@ -289,6 +289,9 @@ class CustomerAddressOptionsView(LoginRequiredMixin, View):
         customer_id = request.GET.get("customer")
         if not customer_id:
             return JsonResponse({"addresses": []})
+        customer = _filter_customer_queryset_for_user(Customer.objects.all(), request.user).filter(pk=customer_id).first()
+        if not customer:
+            return JsonResponse({"addresses": []})
         addresses = (
             CustomerAddress.objects.filter(
                 customer_id=customer_id,
@@ -298,7 +301,8 @@ class CustomerAddressOptionsView(LoginRequiredMixin, View):
             )
             .order_by("-is_default", "id")
         )
-        return JsonResponse({"addresses": [_customer_address_payload(address) for address in addresses]})
+        show_contact = can_view_customer_contact(request.user, customer)
+        return JsonResponse({"addresses": [_customer_address_payload(address, show_contact) for address in addresses]})
 
 
 class SalesOrderCreateView(LoginRequiredMixin, CreateView):
@@ -310,6 +314,13 @@ class SalesOrderCreateView(LoginRequiredMixin, CreateView):
         if request.user.is_authenticated:
             require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["customer_queryset"] = _filter_customer_queryset_for_user(Customer.objects.all(), self.request.user)
+        kwargs["contact_customer_queryset"] = _contact_customer_queryset_for_user(self.request.user)
+        kwargs["show_customer_contact"] = can_view_customer_contact(self.request.user)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -361,7 +372,11 @@ class SalesOrderUpdateView(LoginRequiredMixin, View):
         if order.status not in self.editable_statuses:
             messages.error(request, "只有草稿或已驳回销售订单可以编辑")
             return redirect("sales:sales_order_detail", pk=pk)
-        form = SalesOrderForm(instance=order)
+        form = SalesOrderForm(
+            instance=order, customer_queryset=_filter_customer_queryset_for_user(Customer.objects.all(), request.user),
+            contact_customer_queryset=_contact_customer_queryset_for_user(request.user),
+            show_customer_contact=can_view_customer_contact(request.user),
+        )
         item_formset = SalesOrderItemFormSet(instance=order, can_edit_amount=can_view_amount(request.user))
         return self._render(request, order, form, item_formset)
 
@@ -374,7 +389,11 @@ class SalesOrderUpdateView(LoginRequiredMixin, View):
             messages.error(request, "只有草稿或已驳回销售订单可以编辑")
             return redirect("sales:sales_order_detail", pk=pk)
         before_snapshot = _sales_order_snapshot(order)
-        form = SalesOrderForm(request.POST, instance=order)
+        form = SalesOrderForm(
+            request.POST, instance=order, customer_queryset=_filter_customer_queryset_for_user(Customer.objects.all(), request.user),
+            contact_customer_queryset=_contact_customer_queryset_for_user(request.user),
+            show_customer_contact=can_view_customer_contact(request.user),
+        )
         item_formset = SalesOrderItemFormSet(
             request.POST,
             instance=order,
@@ -1311,14 +1330,18 @@ class SalesShipmentPrintView(LoginRequiredMixin, DetailView):
             "phone": settings.ERP_COMPANY_PHONE,
             "contact": settings.ERP_COMPANY_CONTACT,
         }
+        return context
+
+    def post(self, request, *args, **kwargs):
+        shipment = self.get_object()
         record_print_log(
             template_type="sales_shipment",
             source_doc_type="sales_shipment",
-            source_doc_id=self.object.id,
-            source_doc_no=self.object.shipment_no,
-            printed_by_id=self.request.user.id,
+            source_doc_id=shipment.id,
+            source_doc_no=shipment.shipment_no,
+            printed_by_id=request.user.id,
         )
-        return context
+        return JsonResponse({"ok": True})
 
 
 class SalesShipmentConfirmView(LoginRequiredMixin, View):
@@ -1567,6 +1590,7 @@ class CustomerReturnCreateView(LoginRequiredMixin, CreateView):
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["sales_order_queryset"] = _customer_return_sales_order_queryset(self.request.user)
+        kwargs["customer_queryset"] = _filter_customer_queryset_for_user(Customer.objects.all(), self.request.user)
         return kwargs
 
     def get_context_data(self, **kwargs):
@@ -1696,6 +1720,7 @@ class CustomerReturnDetailView(LoginRequiredMixin, DetailView):
         context["page_title"] = f"客户退货 {self.object.return_no}"
         context["can_view_amount"] = can_view_amount(self.request.user)
         context["can_edit"] = can_process_sales and self.object.status in [CustomerReturn.Status.DRAFT, CustomerReturn.Status.REJECTED]
+        context["can_review"] = can_process_sales and self.object.status == CustomerReturn.Status.PENDING_APPROVAL
         context["can_void"] = can_process_sales and self.object.status in [
             CustomerReturn.Status.DRAFT,
             CustomerReturn.Status.PENDING_APPROVAL,
@@ -1785,6 +1810,7 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
         form = CustomerReturnForm(
             instance=customer_return,
             sales_order_queryset=_customer_return_sales_order_queryset(request.user),
+            customer_queryset=_filter_customer_queryset_for_user(Customer.objects.all(), request.user),
         )
         item_formset = CustomerReturnItemFormSet(
             instance=customer_return,
@@ -1808,6 +1834,7 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
             request.POST,
             instance=customer_return,
             sales_order_queryset=_customer_return_sales_order_queryset(request.user),
+            customer_queryset=_filter_customer_queryset_for_user(Customer.objects.all(), request.user),
         )
         submit_for_approval = request.POST.get("action") == "submit"
         if not form.is_valid():
@@ -1881,6 +1908,72 @@ class CustomerReturnUpdateView(LoginRequiredMixin, View):
                 "is_edit": True,
             },
         )
+
+
+class CustomerReturnApproveView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        verification_response = require_second_verify(request, "sales:customer_return_detail", pk)
+        if verification_response:
+            return verification_response
+        try:
+            with transaction.atomic():
+                customer_return = _filter_customer_return_queryset_for_user(
+                    CustomerReturn.objects.select_for_update(), request.user
+                ).get(pk=pk)
+                if customer_return.status != CustomerReturn.Status.PENDING_APPROVAL:
+                    messages.error(request, "只有待审核客户退货单可以审核通过")
+                    return redirect("sales:customer_return_detail", pk=pk)
+                if not customer_return.items.exists():
+                    messages.error(request, "客户退货单没有明细，不能审核通过")
+                    return redirect("sales:customer_return_detail", pk=pk)
+                before_snapshot = _customer_return_snapshot(customer_return)
+                customer_return.status = CustomerReturn.Status.CONFIRMED
+                customer_return.save(update_fields=["status"])
+                after_snapshot = _customer_return_snapshot(customer_return)
+        except CustomerReturn.DoesNotExist:
+            messages.error(request, "客户退货单不存在或无权限操作")
+            return redirect("sales:customer_return_list")
+        record_audit_log_from_request(
+            request, "customer_return_approve", "customer_return", pk, customer_return.return_no,
+            before_snapshot=before_snapshot,
+            after_snapshot={**after_snapshot, "operation_reason": "审核通过客户退货单"},
+        )
+        messages.success(request, "客户退货单已审核通过，可以确认退货入库")
+        return redirect("sales:customer_return_detail", pk=pk)
+
+
+class CustomerReturnRejectView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
+        reason, reason_response = require_post_reason(
+            request, "sales:customer_return_detail", pk,
+            field_names=("reject_reason", "reason"), message="请填写客户退货单驳回原因",
+        )
+        if reason_response:
+            return reason_response
+        try:
+            with transaction.atomic():
+                customer_return = _filter_customer_return_queryset_for_user(
+                    CustomerReturn.objects.select_for_update(), request.user
+                ).get(pk=pk)
+                if customer_return.status != CustomerReturn.Status.PENDING_APPROVAL:
+                    messages.error(request, "只有待审核客户退货单可以驳回")
+                    return redirect("sales:customer_return_detail", pk=pk)
+                before_snapshot = _customer_return_snapshot(customer_return)
+                customer_return.status = CustomerReturn.Status.REJECTED
+                customer_return.save(update_fields=["status"])
+                after_snapshot = _customer_return_snapshot(customer_return)
+        except CustomerReturn.DoesNotExist:
+            messages.error(request, "客户退货单不存在或无权限操作")
+            return redirect("sales:customer_return_list")
+        record_audit_log_from_request(
+            request, "customer_return_reject", "customer_return", pk, customer_return.return_no,
+            before_snapshot=before_snapshot,
+            after_snapshot={**after_snapshot, "operation_reason": reason},
+        )
+        messages.success(request, "客户退货单已驳回，可修改后重新提交审核")
+        return redirect("sales:customer_return_detail", pk=pk)
 
 
 class CustomerReturnVoidView(LoginRequiredMixin, View):
@@ -2245,6 +2338,11 @@ class SampleLoanCreateView(LoginRequiredMixin, CreateView):
     def dispatch(self, request, *args, **kwargs):
         require_erp_permission(request.user, PermissionCode.SALES_PROCESS, "缺少销售单据处理权限")
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["customer_queryset"] = _filter_customer_queryset_for_user(Customer.objects.all(), self.request.user)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -2803,10 +2901,10 @@ def _sales_order_has_shippable_items(order: SalesOrder) -> bool:
     )
 
 
-def _customer_address_payload(address: CustomerAddress) -> dict:
+def _customer_address_payload(address: CustomerAddress, show_contact: bool = True) -> dict:
     return {
         "id": address.id,
-        "label": _customer_address_label(address),
+        "label": _customer_address_label(address) if show_contact else f"收货地址 #{address.id}",
         "is_default": address.is_default,
     }
 
@@ -3122,7 +3220,13 @@ def _sales_order_invoice_summary(order: SalesOrder) -> dict:
 def _filter_customer_queryset_for_user(queryset, user):
     if _can_view_all_sales(user):
         return queryset
-    return queryset.filter(sales_owner=user)
+    return queryset.filter(Q(created_by=user) | Q(created_by__isnull=True, sales_owner=user)).distinct()
+
+
+def _contact_customer_queryset_for_user(user):
+    if user.is_superuser:
+        return Customer.objects.all()
+    return Customer.objects.filter(Q(created_by=user) | Q(created_by__isnull=True, sales_owner=user))
 
 
 def _filter_sales_order_queryset_for_user(queryset, user):

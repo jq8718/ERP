@@ -519,7 +519,7 @@
           {% endif %}
         </div>
       </div>
-      {% if can_sales_view or can_sales_process or can_sales_view_all %}
+      {% if can_sales_view or can_sales_process or can_sales_view_all or can_finance_view_amount %}
         <div class="nav-section" data-nav-section="sales">
           <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-sales">
             <span>销售</span><span class="nav-chevron" aria-hidden="true"></span>
@@ -531,21 +531,29 @@
             <a class="nav-link" href="{% url 'sales:sample_loan_list' %}">借样</a>
             <a class="nav-link" href="{% url 'sales:sample_loan_return_list' %}">借样归还</a>
             <a class="nav-link" href="{% url 'sales:customer_return_workbench' %}">客户退货</a>
+            {% if can_sales_process or can_finance_view_amount %}
+              <a class="nav-link" href="{% url 'finance:customer_reconciliation_list' %}">销售对账</a>
+              <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
+              <a class="nav-link" href="{% url 'finance:customer_invoice_list' %}">客户开票</a>
+            {% endif %}
           </div>
         </div>
       {% endif %}
-      {% if can_purchase_view or can_purchase_process or can_production_view or can_production_process %}
+      {% if can_purchase_view or can_purchase_process or can_production_view or can_production_process or can_finance_view_amount %}
         <div class="nav-section" data-nav-section="purchase-production">
           <button class="nav-title nav-toggle" type="button" aria-expanded="true" aria-controls="nav-items-purchase-production">
             <span>采购与生产</span><span class="nav-chevron" aria-hidden="true"></span>
           </button>
           <div class="nav-items" id="nav-items-purchase-production">
-            {% if can_purchase_view or can_purchase_process %}
+            {% if can_purchase_view or can_purchase_process or can_finance_view_amount %}
               <a class="nav-link" href="{% url 'sales:shortage_alert_list' %}">欠料提醒</a>
               <a class="nav-link" href="{% url 'purchase:purchase_request_list' %}">采购需求</a>
               <a class="nav-link" href="{% url 'purchase:purchase_order_list' %}">采购单</a>
               <a class="nav-link" href="{% url 'purchase:purchase_receipt_list' %}">进货单</a>
               <a class="nav-link" href="{% url 'purchase:supplier_return_list' %}">供应商退货</a>
+              {% if can_purchase_process or can_finance_view_amount %}
+                <a class="nav-link" href="{% url 'finance:production_reconciliation_list' %}">供应商对账</a>
+              {% endif %}
             {% endif %}
             {% if can_production_view or can_production_process %}
               <a class="nav-link" href="{% url 'production:production_order_list' %}">生产指令</a>
@@ -572,10 +580,6 @@
             {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:operations_dashboard' %}">经营看板</a>
             {% endif %}
-            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process %}
-              <a class="nav-link" href="{% url 'finance:customer_receipt_list' %}">客户收款</a>
-              <a class="nav-link" href="{% url 'finance:customer_invoice_list' %}">客户开票</a>
-            {% endif %}
             {% if can_finance_view_amount or can_finance_payment_process or can_purchase_process %}
               <a class="nav-link" href="{% url 'finance:supplier_payment_list' %}">供应商付款</a>
             {% endif %}
@@ -584,12 +588,6 @@
               <a class="nav-link" href="{% url 'finance:opening_payable_list' %}">期初应付</a>
               <a class="nav-link" href="{% url 'finance:customer_credit_balance_list' %}">客户余额</a>
               <a class="nav-link" href="{% url 'finance:supplier_credit_balance_list' %}">供应商余额</a>
-            {% endif %}
-            {% if can_finance_view_amount or can_finance_payment_process or can_sales_process %}
-              <a class="nav-link" href="{% url 'finance:customer_reconciliation_list' %}">销售对账</a>
-            {% endif %}
-            {% if can_finance_view_amount or can_finance_payment_process or can_purchase_process %}
-              <a class="nav-link" href="{% url 'finance:production_reconciliation_list' %}">生产对账</a>
             {% endif %}
             {% if can_finance_view_amount or can_finance_payment_process %}
               <a class="nav-link" href="{% url 'finance:reconciliation_list' %}">全部对账单</a>

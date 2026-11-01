@@ -156,6 +156,27 @@ class SalesServiceTests(TestCase):
         )
         return customer_return
 
+    def test_sales_forms_and_address_api_hide_other_sales_customer(self):
+        other = get_user_model().objects.create_user(username="other-sales", password="x")
+        foreign = Customer.objects.create(
+            customer_no="C-OTHER", customer_name="其他销售客户", created_by=other,
+            sales_owner=self.user,
+        )
+        CustomerAddress.objects.create(
+            customer=foreign, receiver_name="其他联系人", receiver_phone_encrypted="13900000000",
+            address_encrypted="其他地址", address_type=CustomerAddress.AddressType.SHIPPING,
+        )
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+
+        for path in ("/sales/orders/new/", "/sales/sample-loans/new/", "/sales/returns/new/"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotContains(response, foreign.customer_name)
+        address_response = self.client.get(f"/sales/customer-address-options/?customer={foreign.id}")
+        self.assertEqual(address_response.json()["addresses"], [])
+
     def _batch(self, material, qty):
         batch = InventoryBatch.objects.create(
             batch_no=f"B{material.material_code}{qty}",
@@ -785,7 +806,7 @@ class SalesOrderViewTests(SalesServiceTests):
             [
                 {
                     "id": address.id,
-                    "label": "王五 - 13900000000 - 深圳市测试路 1 号（默认）",
+                    "label": f"收货地址 #{address.id}",
                     "is_default": True,
                 }
             ],
@@ -2069,7 +2090,7 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertContains(response, "返回销售订单")
         self.assertContains(response, f'href="/sales/orders/{order.id}/"')
 
-    def test_sales_shipment_print_excludes_price_and_records_log(self):
+    def test_sales_shipment_print_excludes_price_and_records_log_on_print_request(self):
         self.client.force_login(self.user)
         batch = self._batch(self.finished, Decimal("10.0000"))
         order, item = self._sales_order()
@@ -2110,6 +2131,12 @@ class SalesOrderViewTests(SalesServiceTests):
         self.assertNotContains(response, "成本价")
         self.assertNotContains(response, "******")
         self.assertNotContains(response, "3.123456")
+        self.assertContains(response, self.finished.material_code)
+        self.assertContains(response, "半张 A4")
+        self.assertFalse(PrintLog.objects.filter(source_doc_type="sales_shipment", source_doc_id=shipment.id).exists())
+
+        print_response = self.client.post(f"/sales/shipments/{shipment.id}/print/")
+        self.assertEqual(print_response.status_code, 200)
         print_log = PrintLog.objects.get(source_doc_type="sales_shipment", source_doc_id=shipment.id)
         self.assertEqual(print_log.template_type, "sales_shipment")
         self.assertEqual(print_log.source_doc_no, shipment.shipment_no)
@@ -2674,6 +2701,46 @@ class SalesOrderViewTests(SalesServiceTests):
         inventory = Inventory.objects.get(material=self.finished, location=self.location)
         self.assertEqual(customer_return.status, CustomerReturn.Status.RECEIVED)
         self.assertEqual(inventory.qty, Decimal("2.0000"))
+
+    def test_customer_return_review_requires_sales_process_and_password(self):
+        customer_return = self._customer_return()
+        customer_return.status = CustomerReturn.Status.PENDING_APPROVAL
+        customer_return.save(update_fields=["status"])
+        url = f"/sales/returns/{customer_return.id}/approve/"
+        self.client.force_login(self.user)
+
+        self.assertEqual(self.client.post(url, {"current_password": "x"}).status_code, 403)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        page = self.client.get(f"/sales/returns/{customer_return.id}/")
+        self.assertContains(page, "审核通过")
+        self.assertContains(page, "驳回")
+        self.assertEqual(self.client.post(url, {"current_password": "wrong"}).status_code, 302)
+        customer_return.refresh_from_db()
+        self.assertEqual(customer_return.status, CustomerReturn.Status.PENDING_APPROVAL)
+
+        self.assertEqual(self.client.post(url, {"current_password": "x"}).status_code, 302)
+        customer_return.refresh_from_db()
+        self.assertEqual(customer_return.status, CustomerReturn.Status.CONFIRMED)
+        self.assertTrue(AuditLog.objects.filter(action="customer_return_approve", source_doc_id=customer_return.id).exists())
+        self.client.post(url, {"current_password": "x"})
+        self.assertEqual(AuditLog.objects.filter(action="customer_return_approve", source_doc_id=customer_return.id).count(), 1)
+
+    def test_customer_return_reject_requires_reason_and_can_be_resubmitted(self):
+        self.client.force_login(self.user)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        customer_return = self._customer_return()
+        customer_return.status = CustomerReturn.Status.PENDING_APPROVAL
+        customer_return.save(update_fields=["status"])
+        url = f"/sales/returns/{customer_return.id}/reject/"
+
+        self.assertEqual(self.client.post(url, {"reject_reason": " "}).status_code, 302)
+        customer_return.refresh_from_db()
+        self.assertEqual(customer_return.status, CustomerReturn.Status.PENDING_APPROVAL)
+        self.assertEqual(self.client.post(url, {"reject_reason": "数量需核实"}).status_code, 302)
+        customer_return.refresh_from_db()
+        self.assertEqual(customer_return.status, CustomerReturn.Status.REJECTED)
+        self.assertTrue(AuditLog.objects.filter(action="customer_return_reject", source_doc_id=customer_return.id).exists())
+        self.assertContains(self.client.get(f"/sales/returns/{customer_return.id}/"), "编辑")
 
     def test_customer_return_create_view_saves_header_and_items(self):
         self.client.force_login(self.user)

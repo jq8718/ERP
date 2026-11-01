@@ -17,6 +17,8 @@ def enable_bom(bom_id: int, operator_id: int, make_default: bool = True) -> Serv
     try:
         with transaction.atomic():
             bom = Bom.objects.select_for_update().prefetch_related("items").get(id=bom_id)
+            if bom.finished_material.sourcing_type == Material.SourcingType.RESALE:
+                return ServiceResult(False, "STATE_INVALID_TRANSITION", "外购转售成品不能启用 BOM")
             if bom.status == Bom.BomStatus.ENABLED:
                 return ServiceResult(False, "STATE_ALREADY_PROCESSED", "BOM 已经启用")
             if bom.status == Bom.BomStatus.VOIDED:

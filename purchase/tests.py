@@ -22,9 +22,10 @@ from purchase.models import (
     SupplierReturn,
     SupplierReturnItem,
 )
-from purchase.services import confirm_purchase_receipt, confirm_supplier_return_shipment, create_purchase_order_from_request
-from sales.models import SalesOrder, SalesOrderItem, ShortageAlert
+from purchase.services import confirm_purchase_receipt, confirm_supplier_return_shipment, create_purchase_order_from_request, create_purchase_request_from_shortages
+from sales.models import SalesOrder, SalesOrderItem, SalesShipment, ShortageAlert
 from sales.services import confirm_sales_order
+from sales.services import confirm_sales_shipment
 from system.models import AuditLog, PendingEvent
 from system.services import process_pending_events
 
@@ -143,6 +144,76 @@ class PurchaseReceiptServiceTests(TestCase):
             location=self.location,
         )
         return order, order_item, receipt, receipt_item
+
+    def test_resale_shortage_flows_through_purchase_receipt_to_sales_stock(self):
+        self.customer.sales_owner = self.user
+        self.customer.save(update_fields=["sales_owner"])
+        self.finished.sourcing_type = Material.SourcingType.RESALE
+        self.finished.save(update_fields=["sourcing_type"])
+        self.bom.delete()
+        sales_order = SalesOrder.objects.create(
+            sales_order_no="SO-RESALE",
+            customer=self.customer,
+            order_date=timezone.localdate(),
+            status=SalesOrder.Status.PENDING_APPROVAL,
+            created_by=self.user,
+        )
+        sales_item = SalesOrderItem.objects.create(
+            sales_order=sales_order,
+            line_no=1,
+            finished_material=self.finished,
+            order_qty=Decimal("5"),
+            unit_price=Decimal("10"),
+            line_amount=Decimal("50"),
+            line_status=SalesOrderItem.LineStatus.PENDING_APPROVAL,
+        )
+        self.assertTrue(confirm_sales_order(sales_order.id, self.user.id).success)
+        sales_item.refresh_from_db()
+        self.assertIsNone(sales_item.locked_bom)
+        self.assertEqual(sales_item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SHORTAGE)
+        alert = ShortageAlert.objects.get(sales_order_item=sales_item)
+        self.assertEqual(alert.material, self.finished)
+        self.assertEqual(alert.shortage_qty, Decimal("5"))
+
+        request_result = create_purchase_request_from_shortages([alert.id], self.user.id)
+        self.assertTrue(request_result.success)
+        purchase_request = PurchaseRequest.objects.get(pk=request_result.data["purchase_request_id"])
+        self.assertEqual(purchase_request.items.get().material, self.finished)
+        order_result = create_purchase_order_from_request(purchase_request.id, self.supplier.id, self.user.id)
+        self.assertTrue(order_result.success)
+        purchase_order = PurchaseOrder.objects.get(pk=order_result.data["purchase_order_id"])
+        purchase_item = purchase_order.items.get()
+        receipt = PurchaseReceipt.objects.create(
+            purchase_receipt_no="GR-RESALE",
+            purchase_order=purchase_order,
+            supplier=self.supplier,
+            receipt_date=timezone.localdate(),
+            status=PurchaseReceipt.Status.PENDING_RECEIVE,
+        )
+        PurchaseReceiptItem.objects.create(
+            purchase_receipt=receipt,
+            purchase_order_item=purchase_item,
+            material=self.finished,
+            received_qty=Decimal("5"),
+            accepted_qty=Decimal("5"),
+            unit_price=Decimal("1"),
+            location=self.location,
+        )
+        self.assertTrue(confirm_purchase_receipt(receipt.id, self.user.id, "resale-receipt").success)
+        self.assertEqual(InventoryBatch.objects.filter(material=self.finished).count(), 1)
+        self.assertTrue(process_pending_events(event_type="purchase_received").success)
+        sales_item.refresh_from_db()
+        self.assertEqual(sales_item.inventory_check_status, SalesOrderItem.InventoryCheckStatus.SUFFICIENT)
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, ShortageAlert.Status.CLOSED)
+        self._grant_permission(PermissionCode.SALES_PROCESS)
+        self.client.force_login(self.user)
+        response = self.client.post(f"/sales/orders/{sales_order.id}/create-shipment/")
+        self.assertEqual(response.status_code, 302)
+        shipment = SalesShipment.objects.get(sales_order=sales_order)
+        self.assertEqual(shipment.items.get().material, self.finished)
+        self.assertTrue(confirm_sales_shipment(shipment.id, self.user.id, "resale-shipment").success)
+        self.assertEqual(InventoryBatch.objects.get(material=self.finished).remaining_qty, Decimal("0"))
 
     def _supplier_return(self, qty=Decimal("4.0000")):
         order, order_item, receipt, receipt_item = self._purchase_receipt(accepted_qty=Decimal("20.0000"))

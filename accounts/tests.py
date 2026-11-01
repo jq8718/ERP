@@ -1,5 +1,7 @@
 from io import StringIO
+from importlib import import_module
 
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.core.management import call_command, CommandError
 from django.test import override_settings
@@ -527,7 +529,35 @@ class PermissionHelperTests(TestCase):
     def test_ensure_default_permissions_creates_personal_info_permission(self):
         ensure_default_permissions()
 
-        self.assertTrue(Permission.objects.filter(permission_code=PermissionCode.MASTERDATA_VIEW_PERSONAL_INFO).exists())
+        self.assertTrue(Permission.objects.filter(permission_code=PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT).exists())
+        self.assertTrue(Permission.objects.filter(permission_code=PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT).exists())
+
+    def test_contact_permission_migration_preserves_business_boundaries(self):
+        old = Permission.objects.create(
+            permission_code="masterdata.view_personal_info", permission_name="旧联合权限", permission_type="field"
+        )
+        sales_permission, _ = Permission.objects.get_or_create(
+            permission_code=PermissionCode.SALES_VIEW, defaults={"permission_name": "销售", "permission_type": "module"}
+        )
+        purchase_permission, _ = Permission.objects.get_or_create(
+            permission_code=PermissionCode.PURCHASE_VIEW, defaults={"permission_name": "采购", "permission_type": "module"}
+        )
+        finance_amount, _ = Permission.objects.get_or_create(
+            permission_code=PermissionCode.FINANCE_VIEW_AMOUNT, defaults={"permission_name": "金额", "permission_type": "field"}
+        )
+        sales = Role.objects.create(role_code="contact-sales", role_name="销售")
+        sales.permissions.add(old, sales_permission, finance_amount)
+        purchase = Role.objects.create(role_code="contact-purchase", role_name="采购")
+        purchase.permissions.add(old, purchase_permission, finance_amount)
+
+        import_module("masterdata.migrations.0006_split_contact_permissions").split_contact_permissions(apps, None)
+
+        sales_codes = set(sales.permissions.values_list("permission_code", flat=True))
+        purchase_codes = set(purchase.permissions.values_list("permission_code", flat=True))
+        self.assertIn(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT, sales_codes)
+        self.assertNotIn(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT, sales_codes)
+        self.assertIn(PermissionCode.MASTERDATA_VIEW_SUPPLIER_CONTACT, purchase_codes)
+        self.assertNotIn(PermissionCode.MASTERDATA_VIEW_CUSTOMER_CONTACT, purchase_codes)
 
     def test_ensure_default_permissions_creates_finance_payment_process_permission(self):
         ensure_default_permissions()

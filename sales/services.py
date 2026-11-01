@@ -672,6 +672,8 @@ def _get_locked_sales_order(sales_order_id: int) -> SalesOrder | None:
 
 
 def _lock_bom_and_evaluate_item(item: SalesOrderItem) -> dict:
+    if item.finished_material.sourcing_type == Material.SourcingType.RESALE:
+        return _evaluate_resale_item(item)
     enabled_bom = (
         Bom.objects.select_for_update()
         .filter(finished_material=item.finished_material, status=Bom.BomStatus.ENABLED)
@@ -691,6 +693,8 @@ def _lock_bom_and_evaluate_item(item: SalesOrderItem) -> dict:
 
 
 def _evaluate_item_with_locked_or_enabled_bom(item: SalesOrderItem) -> dict:
+    if item.finished_material.sourcing_type == Material.SourcingType.RESALE:
+        return _evaluate_resale_item(item)
     if item.locked_bom_id is None:
         return _lock_bom_and_evaluate_item(item)
 
@@ -717,6 +721,32 @@ def _evaluate_item_with_locked_or_enabled_bom(item: SalesOrderItem) -> dict:
     item.save(update_fields=["inventory_check_status", "line_status", "locked_bom", "locked_bom_version"])
     _mark_item_shortages_kitted(item)
     return _line_result(item, SalesOrderItem.InventoryCheckStatus.KITTED, finished_available_qty, shortages)
+
+
+def _evaluate_resale_item(item: SalesOrderItem) -> dict:
+    required_qty = max(ZERO, item.order_qty - item.shipped_qty)
+    available_qty = _available_qty(item.finished_material)
+    item.locked_bom = None
+    item.locked_bom_version = ""
+    item.line_status = SalesOrderItem.LineStatus.CONFIRMED
+    if available_qty >= required_qty:
+        item.inventory_check_status = SalesOrderItem.InventoryCheckStatus.SUFFICIENT
+        _close_item_shortages(item, "外购转售成品库存充足")
+        shortages = []
+    else:
+        item.inventory_check_status = SalesOrderItem.InventoryCheckStatus.SHORTAGE
+        shortages = [{
+            "material_id": item.finished_material_id,
+            "material_code": item.finished_material.material_code,
+            "material_name": item.finished_material.material_name,
+            "required_qty": required_qty,
+            "available_qty": available_qty,
+            "shortage_qty": required_qty - available_qty,
+            "is_required": True,
+        }]
+        _sync_shortage_alerts(item, shortages)
+    item.save(update_fields=["locked_bom", "locked_bom_version", "line_status", "inventory_check_status"])
+    return _line_result(item, item.inventory_check_status, available_qty, shortages)
 
 
 def _calculate_bom_shortages(item: SalesOrderItem) -> list[dict]:

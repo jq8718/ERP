@@ -4,7 +4,7 @@
 <h1>{{ page_title }}</h1>
 
 <div class="form-actions" style="margin-bottom: 16px;">
-  <a class="button" href="{% url 'finance:production_reconciliation_list' %}">生产对账记录</a>
+  <a class="button" href="{% url 'finance:production_reconciliation_list' %}">供应商对账记录</a>
   <a class="button" href="{% url 'finance:reconciliation_list' %}">全部对账单</a>
 </div>
 
@@ -61,7 +61,7 @@
   {% else %}
     <div class="empty">
       <strong>暂无可对账供应商</strong>
-      <p>当前日期范围内没有未结生产/进货单据。</p>
+      <p>当前日期范围内没有未结进货单据。</p>
     </div>
   {% endif %}
 </div>

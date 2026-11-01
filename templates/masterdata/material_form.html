@@ -30,6 +30,10 @@
         {% if form.material_type.help_text %}<span class="muted">{{ form.material_type.help_text }}</span>{% endif %}
         {% if form.material_type.errors %}<span class="error">{{ form.material_type.errors|join:", " }}</span>{% endif %}
       </label>
+      <label class="record-field medium" id="sourcing-type-field">{{ form.sourcing_type.label }}
+        {{ form.sourcing_type }}
+        {% if form.sourcing_type.errors %}<span class="error">{{ form.sourcing_type.errors|join:", " }}</span>{% endif %}
+      </label>
       <label class="record-field wide">{{ form.spec.label }}
         {{ form.spec }}
         {% if form.spec.errors %}<span class="error">{{ form.spec.errors|join:", " }}</span>{% endif %}
@@ -72,4 +76,20 @@
     </div>
   </form>
 </section>
+<script>
+(function () {
+  var type = document.getElementById("{{ form.material_type.id_for_label }}");
+  var source = document.getElementById("{{ form.sourcing_type.id_for_label }}");
+  var sourceField = document.getElementById("sourcing-type-field");
+  if (!type || !source || !sourceField) { return; }
+  function update(changed) {
+    var finished = type.value === "finished";
+    sourceField.hidden = !finished && !sourceField.querySelector(".error");
+    if (!finished && changed) { source.value = "manufactured"; }
+    else if (changed && !{{ is_edit|yesno:"true,false" }}) { source.value = "resale"; }
+  }
+  type.addEventListener("change", function () { update(true); });
+  update(false);
+})();
+</script>
 {% endblock %}

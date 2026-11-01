@@ -17,6 +17,12 @@
     <div class="detail-label">类型</div>
     <div class="detail-value">{{ material.get_material_type_display }}</div>
   </div>
+  {% if material.material_type == "finished" %}
+  <div class="detail-cell">
+    <div class="detail-label">供货方式</div>
+    <div class="detail-value">{{ material.get_sourcing_type_display }}</div>
+  </div>
+  {% endif %}
   <div class="detail-cell">
     <div class="detail-label">规格</div>
     <div class="detail-value">{{ material.spec }}</div>
